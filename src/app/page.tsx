@@ -1,103 +1,138 @@
-import Image from "next/image";
+'use client';
 
-export default function Home() {
+import React from 'react';
+import {
+  AppBar,
+  Toolbar,
+  Typography,
+  Button,
+  Container,
+  Box,
+  IconButton,
+  Paper,
+  styled,
+} from '@mui/material';
+import { PlayArrow as PlayArrowIcon, VolumeUp as VolumeUpIcon } from '@mui/icons-material';
+import Link from 'next/link';
+
+// Styled components for custom styling
+const StyledAppBar = styled(AppBar)(({ theme }) => ({
+  backgroundColor: 'white',
+  boxShadow: 'none',
+  borderBottom: `1px solid ${theme.palette.divider}`,
+}));
+
+const LogoTypography = styled(Typography)(({ theme }) => ({
+  fontWeight: 'bold',
+  color: theme.palette.primary.main, // Or a specific brand color
+  fontSize: '1.8rem',
+  background: 'linear-gradient(45deg, #2196F3 30%, #9C27B0 90%)',
+  WebkitBackgroundClip: 'text',
+  WebkitTextFillColor: 'transparent',
+  marginRight: theme.spacing(4),
+}));
+
+const HeroSection = styled(Container)(({ theme }) => ({
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  textAlign: 'center',
+  paddingTop: theme.spacing(12),
+  paddingBottom: theme.spacing(12),
+}));
+
+const HeroTitle = styled(Typography)(({ theme }) => ({
+  marginBottom: theme.spacing(3),
+  fontWeight: 'bold',
+  color: theme.palette.text.primary,
+}));
+
+const HeroSubtitle = styled(Typography)(({ theme }) => ({
+  marginBottom: theme.spacing(4),
+  color: theme.palette.text.secondary,
+}));
+
+const SignUpButton = styled(Button)(({ theme }) => ({
+  padding: theme.spacing(1.5, 6),
+  fontSize: '1.1rem',
+  borderRadius: theme.shape.borderRadius * 2,
+  textTransform: 'none',
+  fontWeight: 'bold',
+  marginBottom: theme.spacing(2),
+}));
+
+const PronunciationBox = styled(Box)(({ theme }) => ({
+  display: 'flex',
+  alignItems: 'center',
+  color: theme.palette.text.secondary,
+}));
+
+export default function LandingPage() {
   return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+    <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+      {/* Header */}
+      <StyledAppBar position="static">
+        <Toolbar>
+          <LogoTypography variant="h6">
+            Blooket Clone
+          </LogoTypography>
+          <Box sx={{ flexGrow: 1 }} /> {/* Spacer */}
+          <Button
+            variant="outlined"
+            startIcon={<PlayArrowIcon />}
+            sx={{ mr: 2, textTransform: 'none' }}
+            // Add Link component or onClick handler for navigation
+            // href="/join" // Example using Link
+          >
+            Join a game
+          </Button>
+          <Button
+            variant="outlined"
+            sx={{ textTransform: 'none' }}
+            href="/login" // Link to login page
+            LinkComponent={Link}
+          >
+            Log in
+          </Button>
+        </Toolbar>
+      </StyledAppBar>
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
+      {/* Hero Section */}
+      <HeroSection maxWidth="md">
+        {/* Optional: Add images similar to Blooket here */}
+        {/* Example: <img src="/path/to/image.svg" alt="Educational illustration" /> */}
+
+        <HeroTitle variant="h3">
+          Fun, free, educational games for everyone!
+        </HeroTitle>
+
+        <SignUpButton
+          variant="contained"
+          color="primary"
+          href="/signup" // Link to sign up page
+          LinkComponent={Link}
         >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+          Sign up
+        </SignUpButton>
+
+        <PronunciationBox>
+          <IconButton size="small" sx={{ mr: 0.5 }}>
+            <VolumeUpIcon fontSize="inherit" />
+          </IconButton>
+          <Typography variant="caption">Pronounced ("Blue-kit")</Typography>
+        </PronunciationBox>
+
+        {/* Optional: Add more images/illustrations here */}
+      </HeroSection>
+
+      {/* Optional: Footer Section */}
+      {/* <Box component="footer" sx={{ py: 3, px: 2, mt: 'auto', backgroundColor: (theme) => theme.palette.grey[200] }}>
+        <Container maxWidth="lg">
+          <Typography variant="body2" color="text.secondary" align="center">
+            {'Copyright © '} Blooket Clone {new Date().getFullYear()}.
+          </Typography>
+        </Container>
+      </Box> */}
+    </Box>
   );
 }
