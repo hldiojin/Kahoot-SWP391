@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useAuth } from '../context/AuthContext';
 import {
   Box,
   Drawer,
@@ -34,17 +35,29 @@ const collapsedWidth = 80;
 
 const Sidebar = () => {
   const [isOpen, setIsOpen] = useState(true);
+  const [mounted, setMounted] = useState(false);
   const pathname = usePathname();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const { user } = useAuth();
+
+  // Only set mounted state after component mounts to prevent hydration mismatch
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const menuItems = [
-    { name: 'Home', path: '/home', icon: HomeIcon },
+    { name: 'Home', path: '/dashboard', icon: HomeIcon },
     { name: 'Discover', path: '/discover', icon: SearchIcon },
     { name: 'My Sets', path: '/my-sets', icon: BookIcon },
     { name: 'Favorites', path: '/favorites', icon: StarIcon },
     { name: 'History', path: '/history', icon: HistoryIcon },
   ];
+
+  // Don't render content until component has mounted on the client
+  if (!mounted) {
+    return null;
+  }
 
   const drawer = (
     <Box
@@ -82,7 +95,7 @@ const Sidebar = () => {
               WebkitTextFillColor: 'transparent',
             }}
           >
-            Blooket
+            Kahoot Clone
           </Typography>
         )}
       </Box>
@@ -120,7 +133,7 @@ const Sidebar = () => {
         })}
       </List>
 
-      {isOpen && (
+      {isOpen && (user?.role === 'teacher' || user?.role === 'admin') && (
         <Box sx={{ mt: 'auto', p: 2 }}>
           <Paper
             elevation={3}

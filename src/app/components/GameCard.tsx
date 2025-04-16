@@ -178,16 +178,13 @@ const GameCard: React.FC<GameCardProps> = ({
           animate={{ opacity: isHovered ? 1 : 0, scale: isHovered ? 1 : 0.8 }}
           transition={{ duration: 0.2 }}
         >
-          <PlayButton
-              onClick={handlePlayClick}
+          <PlayButton onClick={handlePlayClick}>
+            <motion.div
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
             >
-          <motion.div
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
-          >
-            <PlayIcon />
-          </motion.div>
-            <PlayIcon />
+              <PlayIcon />
+            </motion.div>
           </PlayButton>
         </motion.div>
       </Box>

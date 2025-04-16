@@ -179,7 +179,7 @@ export default function LandingPage() {
       <StyledAppBar position="static">
         <Toolbar>
           <LogoTypography variant="h6">
-            Danh dep trai
+            Blooket
           </LogoTypography>
           <Box sx={{ flexGrow: 1 }} /> {/* Spacer */}
           <Button
@@ -419,7 +419,7 @@ export default function LandingPage() {
       >
         <Container maxWidth="lg">
           <Typography variant="body2" color="text.secondary" align="center">
-            {'Copyright © '} Blooket Clone {new Date().getFullYear()}.
+            {'Copyright © '} Blooket {new Date().getFullYear()}.
           </Typography>
         </Container>
       </Box>

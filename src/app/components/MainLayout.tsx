@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Box, Container, CssBaseline } from '@mui/material';
 import Sidebar from './Sidebar';
 
@@ -9,10 +9,17 @@ interface MainLayoutProps {
 }
 
 const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
+  const [isMounted, setIsMounted] = useState(false);
+  
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+  
+  // Prevent hydration issues by only rendering sidebar after component mounts
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh' }}>
       <CssBaseline />
-      <Sidebar />
+      {isMounted && <Sidebar />}
       <Box
         component="main"
         sx={{

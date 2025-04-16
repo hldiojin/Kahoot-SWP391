@@ -69,25 +69,41 @@ const suggestedGames = [
 ];
 
 export default function Dashboard() {
-  const { user, isLoading } = useAuth();
   const router = useRouter();
   const [tabValue, setTabValue] = useState(0);
   const [mounted, setMounted] = useState(false);
+  // Use this state to make sure we only access auth after client rendering
+  const [userData, setUserData] = useState<any>(null);
+  const [isClient, setIsClient] = useState(false);
+  const { user, isLoading } = useAuth();
 
   useEffect(() => {
-    // Redirect if not authenticated
-    if (!isLoading && !user) {
-      router.push('/login');
-    }
+    // This will only run on the client
+    setIsClient(true);
+    
+    // Set mounted flag for UI rendering
     setMounted(true);
+    
+    // Set user data after mounting to prevent hydration mismatch
+    if (!isLoading) {
+      setUserData(user);
+      if (!user) {
+        router.push('/login');
+      }
+    }
   }, [user, isLoading, router]);
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
     setTabValue(newValue);
   };
 
-  // Show nothing while checking authentication or redirecting
-  if (isLoading || !user || !mounted) {
+  // Return a loading state or null during server-side rendering and initial client mount
+  if (!isClient || isLoading || !mounted) {
+    return null;
+  }
+  
+  // Return null if no user is found after client-side checks
+  if (!userData) {
     return null;
   }
 
@@ -105,33 +121,35 @@ export default function Dashboard() {
                 background: 'linear-gradient(45deg, #2196F3 30%, #9C27B0 90%)'
               }}
             >
-              {user.firstName.charAt(0)}{user.lastName.charAt(0)}
+              {userData?.firstName?.charAt(0) || ''}{userData?.lastName?.charAt(0) || ''}
             </Avatar>
             <Box>
               <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
-                Welcome back, {user.firstName}!
+                Welcome back, {userData?.firstName || 'User'}!
               </Typography>
               <Chip 
-                label={user.role === 'teacher' ? 'Teacher' : 'Student'} 
-                color={user.role === 'teacher' ? 'primary' : 'secondary'} 
+                label={userData?.role === 'teacher' ? 'Teacher' : 'Student'} 
+                color={userData?.role === 'teacher' ? 'primary' : 'secondary'} 
                 size="small" 
                 sx={{ mt: 0.5 }}
               />
             </Box>
           </Box>
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            sx={{
-              background: 'linear-gradient(45deg, #2196F3 30%, #9C27B0 90%)',
-              color: 'white',
-              fontWeight: 'bold',
-              borderRadius: 2,
-              px: 3
-            }}
-          >
-            Create New Set
-          </Button>
+          {(userData?.role === 'teacher' || userData?.role === 'admin') && (
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              sx={{
+                background: 'linear-gradient(45deg, #2196F3 30%, #9C27B0 90%)',
+                color: 'white',
+                fontWeight: 'bold',
+                borderRadius: 2,
+                px: 3
+              }}
+            >
+              Create New Set
+            </Button>
+          )}
         </Box>
 
         {/* Quick stats paper */}
@@ -151,21 +169,21 @@ export default function Dashboard() {
           <Box sx={{ textAlign: 'center', flex: 1, minWidth: 150 }}>
             <Typography variant="h6" color="text.secondary">Sets Created</Typography>
             <Typography variant="h3" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
-              {user.role === 'teacher' ? '12' : '5'}
+              {userData?.role === 'teacher' ? '12' : '5'}
             </Typography>
           </Box>
           <Divider orientation="vertical" flexItem sx={{ display: { xs: 'none', sm: 'block' } }} />
           <Box sx={{ textAlign: 'center', flex: 1, minWidth: 150 }}>
             <Typography variant="h6" color="text.secondary">Games Played</Typography>
             <Typography variant="h3" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
-              {user.role === 'teacher' ? '28' : '43'}
+              {userData?.role === 'teacher' ? '28' : '43'}
             </Typography>
           </Box>
           <Divider orientation="vertical" flexItem sx={{ display: { xs: 'none', sm: 'block' } }} />
           <Box sx={{ textAlign: 'center', flex: 1, minWidth: 150 }}>
             <Typography variant="h6" color="text.secondary">Favorites</Typography>
             <Typography variant="h3" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
-              {user.role === 'teacher' ? '8' : '15'}
+              {userData?.role === 'teacher' ? '8' : '15'}
             </Typography>
           </Box>
         </Paper>

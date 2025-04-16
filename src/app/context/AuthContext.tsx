@@ -9,7 +9,7 @@ interface User {
   firstName: string;
   lastName: string;
   email: string;
-  role: 'student' | 'teacher';
+  role: 'student' | 'teacher' | 'admin';
 }
 
 // Define context type
@@ -27,7 +27,7 @@ interface SignupData {
   lastName: string;
   email: string;
   password: string;
-  role: 'student' | 'teacher';
+  role: 'student' | 'teacher' | 'admin';
 }
 
 // Hard-coded users for demonstration
@@ -54,17 +54,24 @@ const DEMO_PASSWORDS: Record<string, string> = {
   'jane@example.com': 'password123'
 };
 
-const AuthContext = createContext<AuthContextType | null>(null);
+// Create context with default values to prevent null checks
+const AuthContext = createContext<AuthContextType>({
+  user: null,
+  isLoading: true,
+  login: async () => ({ success: false }),
+  signup: async () => ({ success: false }),
+  logout: () => {}
+});
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
 
-  // Check for existing user on mount
+  // Check for existing user on mount - only run on client side
   useEffect(() => {
-    // Only run this on the client side
-    if (typeof window !== 'undefined') {
+    // Get stored user from localStorage
+    const getStoredUser = () => {
       try {
         const storedUser = localStorage.getItem('user');
         if (storedUser) {
@@ -74,6 +81,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         console.error('Error restoring auth state:', error);
         localStorage.removeItem('user'); // Clear corrupted data
       }
+      setIsLoading(false);
+    };
+
+    // Only run on client-side to prevent hydration mismatch
+    if (typeof window !== 'undefined') {
+      getStoredUser();
+    } else {
+      // On server-side, just mark as not loading without trying to access localStorage
       setIsLoading(false);
     }
   }, []);
@@ -107,7 +122,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     
     // Success - set user and save to localStorage
     setUser(foundUser);
-    localStorage.setItem('user', JSON.stringify(foundUser));
+    
+    // Only use localStorage on the client
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('user', JSON.stringify(foundUser));
+    }
+    
     return { success: true };
   };
 
@@ -154,14 +174,24 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     
     // Log the user in
     setUser(newUser);
-    localStorage.setItem('user', JSON.stringify(newUser));
+    
+    // Only use localStorage on the client
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('user', JSON.stringify(newUser));
+    }
+    
     return { success: true };
   };
 
   // Logout function
   const logout = () => {
     setUser(null);
-    localStorage.removeItem('user');
+    
+    // Only use localStorage on the client
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('user');
+    }
+    
     router.push('/');
   };
 
