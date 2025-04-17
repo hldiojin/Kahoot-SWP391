@@ -148,6 +148,8 @@ const Sidebar = () => {
             </Typography>
             <Button
               variant="contained"
+              component={Link}
+              href="/create-game"
               fullWidth
               startIcon={<AddIcon />}
               sx={{
@@ -188,4 +190,4 @@ const Sidebar = () => {
   );
 };
 
-export default Sidebar; 
+export default Sidebar;

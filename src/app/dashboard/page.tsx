@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Box, Typography, Paper, Tabs, Tab, Divider, Button, Avatar, Chip, Grid } from '@mui/material';
+import { Box, Typography, Paper, Tabs, Tab, Divider, Button, Avatar, Chip } from '@mui/material';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '../context/AuthContext';
 import MainLayout from '../components/MainLayout';
@@ -139,6 +139,7 @@ export default function Dashboard() {
             <Button
               variant="contained"
               startIcon={<AddIcon />}
+              onClick={() => router.push('/create-game')}  
               sx={{
                 background: 'linear-gradient(45deg, #2196F3 30%, #9C27B0 90%)',
                 color: 'white',
@@ -209,9 +210,9 @@ export default function Dashboard() {
         {/* Game cards based on selected tab */}
         <Box>
           {tabValue === 0 ? (
-            <Grid container spacing={3}>
+            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)', lg: 'repeat(4, 1fr)' }, gap: 3 }}>
               {sampleGames.map((game) => (
-                <Grid item xs={12} sm={6} md={4} lg={3} key={game.id}>
+                <Box key={game.id}>
                   <GameCard
                     title={game.title}
                     description={game.description}
@@ -220,13 +221,13 @@ export default function Dashboard() {
                     playsCount={game.playsCount}
                     creator={game.creator}
                   />
-                </Grid>
+                </Box>
               ))}
-            </Grid>
+            </Box>
           ) : (
-            <Grid container spacing={3}>
+            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)', lg: 'repeat(4, 1fr)' }, gap: 3 }}>
               {suggestedGames.concat(sampleGames.slice(0, 2)).map((game) => (
-                <Grid item xs={12} sm={6} md={4} lg={3} key={`suggested-${game.id}`}>
+                <Box key={`suggested-${game.id}`}>
                   <GameCard
                     title={game.title}
                     description={game.description}
@@ -235,9 +236,9 @@ export default function Dashboard() {
                     playsCount={game.playsCount}
                     creator={game.creator}
                   />
-                </Grid>
+                </Box>
               ))}
-            </Grid>
+            </Box>
           )}
         </Box>
       </Box>

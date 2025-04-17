@@ -13,10 +13,12 @@
     "@emotion/styled": "^11.10.0",
     "@heroicons/react": "^2.2.0",
     "@mui/icons-material": "^7.0.2",
-    "@mui/material": "^5.11.0",
+    "@mui/material": "^7.0.2",
+    "@types/react-beautiful-dnd": "^13.1.8",
     "framer-motion": "^12.7.3",
     "next": "15.3.0",
     "react": "^19.0.0",
+    "react-beautiful-dnd": "^13.1.1",
     "react-dom": "^19.0.0"
   },
   "devDependencies": {

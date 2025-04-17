@@ -174,19 +174,14 @@ const GameCard: React.FC<GameCardProps> = ({
         />
         
         {/* Play button that appears on hover */}
-        <motion.div
-          animate={{ opacity: isHovered ? 1 : 0, scale: isHovered ? 1 : 0.8 }}
-          transition={{ duration: 0.2 }}
-        >
-          <PlayButton onClick={handlePlayClick}>
-            <motion.div
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.9 }}
-            >
-              <PlayIcon />
-            </motion.div>
-          </PlayButton>
-        </motion.div>
+        <PlayButton sx={{ opacity: isHovered ? 1 : 0, transition: 'opacity 0.2s' }}>
+          <motion.div
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
+          >
+            <PlayIcon />
+          </motion.div>
+        </PlayButton>
       </Box>
       
       {/* Content section */}
@@ -260,29 +255,31 @@ const GameCard: React.FC<GameCardProps> = ({
         
         <Box sx={{ display: 'flex', gap: '4px' }}>
           <Tooltip title="Edit">
-            <span> {/* Use span as a wrapper to fix Tooltip with disabled button */}
-              <IconButton size="small" sx={{ color: 'text.secondary' }} onClick={(e) => e.stopPropagation()}>
-                <EditIcon fontSize="small" />
-              </IconButton>
-            </span>
+            <IconButton 
+              size="small" 
+              sx={{ color: 'text.secondary' }} 
+              onClick={(e) => e.stopPropagation()}
+            >
+              <EditIcon fontSize="small" />
+            </IconButton>
           </Tooltip>
           <Tooltip title="View Stats">
-            <span>
-              <IconButton size="small" sx={{ color: 'text.secondary' }} onClick={(e) => e.stopPropagation()}>
-                <StatsIcon fontSize="small" />
-              </IconButton>
-            </span>
+            <IconButton 
+              size="small" 
+              sx={{ color: 'text.secondary' }} 
+              onClick={(e) => e.stopPropagation()}
+            >
+              <StatsIcon fontSize="small" />
+            </IconButton>
           </Tooltip>
           <Tooltip title={isFavorite ? "Remove from Favorites" : "Add to Favorites"}>
-            <span>
-              <IconButton 
-                size="small"
-                onClick={toggleFavorite}
-                color={isFavorite ? "error" : "default"}
-              >
-                {isFavorite ? <FavoriteIcon fontSize="small" /> : <FavoriteBorderIcon fontSize="small" />}
-              </IconButton>
-            </span>
+            <IconButton 
+              size="small"
+              onClick={toggleFavorite}
+              color={isFavorite ? "error" : "default"}
+            >
+              {isFavorite ? <FavoriteIcon fontSize="small" /> : <FavoriteBorderIcon fontSize="small" />}
+            </IconButton>
           </Tooltip>
         </Box>
       </CardActions>
