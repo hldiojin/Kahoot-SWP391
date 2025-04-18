@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import {
   AppBar,
   Toolbar,
@@ -12,11 +12,19 @@ import {
   Paper,
   styled,
   useMediaQuery,
-  useTheme
+  useTheme,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  Alert,
+  alpha
 } from '@mui/material';
 import { PlayArrow as PlayArrowIcon, VolumeUp as VolumeUpIcon } from '@mui/icons-material';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
+import { useRouter } from 'next/navigation';
 
 // Styled components for custom styling
 const StyledAppBar = styled(AppBar)(({ theme }) => ({
@@ -139,6 +147,10 @@ const FeatureBox = styled(Box)(({ theme }) => ({
 export default function LandingPage() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const router = useRouter();
+  const [joinDialogOpen, setJoinDialogOpen] = useState(false);
+  const [gameCode, setGameCode] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
 
   const floatingCardVariants = {
     hidden: { opacity: 0, y: 20 },
@@ -150,6 +162,126 @@ export default function LandingPage() {
         ease: "easeOut"
       }
     }
+  };
+
+  const handleJoinGame = () => {
+    setJoinDialogOpen(true);
+  };
+
+  const handleCloseDialog = () => {
+    setJoinDialogOpen(false);
+    setGameCode('');
+    setErrorMessage('');
+  };
+
+  const handleSubmitCode = () => {
+    if (!gameCode.trim()) {
+      setErrorMessage('Please enter a game code');
+      return;
+    }
+    
+    // Check if it's a 6-digit code
+    if (!/^\d{6}$/.test(gameCode)) {
+      setErrorMessage('Game code should be 6 digits');
+      return;
+    }
+
+    console.log("Checking game code:", gameCode);
+    
+    // Try all possible sources of game codes:
+    
+    // 1. Check in sessionStorage for this specific game
+    const specificGameKey = `game_${gameCode}`;
+    if (sessionStorage.getItem(specificGameKey)) {
+      console.log(`Found game with code ${gameCode} in sessionStorage`);
+      // Store the current code being used
+      sessionStorage.setItem('currentGameCode', gameCode);
+      router.push(`/play-game?code=${gameCode}`);
+      return;
+    }
+    
+    // 2. Check in the list of available game codes in sessionStorage
+    try {
+      const availableGameCodes = JSON.parse(sessionStorage.getItem('availableGameCodes') || '[]');
+      if (availableGameCodes.includes(gameCode)) {
+        console.log(`Found code ${gameCode} in available game codes list`);
+        sessionStorage.setItem('currentGameCode', gameCode);
+        router.push(`/play-game?code=${gameCode}`);
+        return;
+      }
+    } catch (e) {
+      console.error("Error checking availableGameCodes:", e);
+    }
+    
+    // 3. Check localStorage for games by code
+    try {
+      const gamesByCode = JSON.parse(localStorage.getItem('gamesByCode') || '{}');
+      if (gamesByCode[gameCode]) {
+        console.log(`Found game with code ${gameCode} in localStorage`);
+        
+        // Copy this game to sessionStorage for play
+        sessionStorage.setItem(`game_${gameCode}`, JSON.stringify(gamesByCode[gameCode]));
+        sessionStorage.setItem('currentGameCode', gameCode);
+        
+        // Format for quizPreviewData
+        const game = gamesByCode[gameCode];
+        const playableQuiz = {
+          title: game.title,
+          description: game.description,
+          coverImage: game.coverImage,
+          category: game.category,
+          isPublic: game.isPublic,
+          questions: game.questions
+        };
+        sessionStorage.setItem('quizPreviewData', JSON.stringify(playableQuiz));
+        
+        router.push(`/play-game?code=${gameCode}`);
+        return;
+      }
+    } catch (e) {
+      console.error("Error checking gamesByCode in localStorage:", e);
+    }
+    
+    // 4. Check in mySets from localStorage
+    try {
+      const mySets = JSON.parse(localStorage.getItem('mySets') || '[]');
+      const foundSet = mySets.find((set: { gameCode: string; }) => set.gameCode === gameCode);
+      if (foundSet) {
+        console.log(`Found game with code ${gameCode} in mySets`);
+        
+        // Copy this game to sessionStorage for play
+        sessionStorage.setItem(`game_${gameCode}`, JSON.stringify(foundSet));
+        sessionStorage.setItem('currentGameCode', gameCode);
+        
+        // Format for quizPreviewData
+        const playableQuiz = {
+          title: foundSet.title,
+          description: foundSet.description,
+          coverImage: foundSet.coverImage,
+          category: foundSet.category,
+          isPublic: foundSet.isPublic,
+          questions: foundSet.questions
+        };
+        sessionStorage.setItem('quizPreviewData', JSON.stringify(playableQuiz));
+        
+        router.push(`/play-game?code=${gameCode}`);
+        return;
+      }
+    } catch (e) {
+      console.error("Error checking mySets in localStorage:", e);
+    }
+    
+    // 5. For demo purposes, allow some specific codes
+    const demoValidCodes = ['123456', '234567', '345678', '857527', '925101'];
+    if (demoValidCodes.includes(gameCode)) {
+      console.log(`Using demo code: ${gameCode}`);
+      sessionStorage.setItem('currentGameCode', gameCode);
+      router.push(`/play-game?code=${gameCode}`);
+      return;
+    }
+
+    // If we reach here, the code is invalid
+    setErrorMessage(`Invalid game code. No game found with code: ${gameCode}`);
   };
 
   return (
@@ -181,7 +313,7 @@ export default function LandingPage() {
           <LogoTypography variant="h6">
             Blooket
           </LogoTypography>
-          <Box sx={{ flexGrow: 1 }} /> {/* Spacer */}
+          <Box sx={{ flexGrow: 1 }} /> {}
           <Button
             variant="outlined"
             startIcon={<PlayArrowIcon />}
@@ -194,6 +326,7 @@ export default function LandingPage() {
                 borderWidth: 2,
               }
             }}
+            onClick={handleJoinGame}
           >
             Join a game
           </Button>
@@ -402,6 +535,120 @@ export default function LandingPage() {
           </Box>
         </FloatingCard>
       </HeroSection>
+
+      {/* Join Game Dialog */}
+      <Dialog 
+        open={joinDialogOpen} 
+        onClose={handleCloseDialog}
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            maxWidth: 450,
+            width: '90%'
+          }
+        }}
+      >
+        <DialogTitle 
+          component="div"
+          sx={{ 
+            textAlign: 'center', 
+            fontWeight: 'bold',
+            pt: 3,
+            pb: 1,
+            fontSize: '1.5rem',
+            background: 'linear-gradient(45deg, #2196F3 30%, #9C27B0 90%)',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+          }}
+        >
+          Join a Game
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ textAlign: 'center' }}>
+            <Typography variant="subtitle1" sx={{ mb: 1 }}>
+              No account needed to play!
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+              Enter the 6-digit game code provided by your teacher
+            </Typography>
+            
+            {errorMessage && (
+              <Alert severity="error" sx={{ mb: 2 }}>
+                {errorMessage}
+              </Alert>
+            )}
+            
+            <Box 
+              component={motion.div}
+              initial={{ scale: 0.95 }}
+              animate={{ scale: 1 }}
+              transition={{ duration: 0.3 }}
+              sx={{ mb: 3 }}
+            >
+              <TextField
+                autoFocus
+                fullWidth
+                value={gameCode}
+                onChange={(e) => setGameCode(e.target.value)}
+                placeholder="Enter code"
+                variant="outlined"
+                inputProps={{ 
+                  style: { 
+                    textAlign: 'center', 
+                    fontSize: '2rem', 
+                    fontWeight: 'bold',
+                    letterSpacing: 8,
+                    padding: '16px'
+                  },
+                  maxLength: 6
+                }}
+                InputProps={{
+                  sx: { 
+                    borderRadius: 3,
+                    backgroundColor: alpha('#f5f7fa', 0.7)
+                  }
+                }}
+              />
+            </Box>
+
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1, display: 'block', textAlign: 'center' }}>
+              For demo purposes, try codes: 123456, 234567, 345678, 857527, or 925101
+            </Typography>
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ 
+          justifyContent: 'center',
+          flexDirection: 'column', 
+          pb: 3, 
+          px: 3,
+          gap: 1
+        }}>
+          <Button 
+            onClick={handleSubmitCode} 
+            variant="contained" 
+            fullWidth
+            size="large"
+            sx={{ 
+              borderRadius: 2,
+              py: 1.5,
+              background: 'linear-gradient(45deg, #2196F3 30%, #9C27B0 90%)',
+              boxShadow: '0 4px 20px rgba(33, 150, 243, 0.4)',
+              fontWeight: 'bold',
+              fontSize: '1.1rem'
+            }}
+          >
+            Enter
+          </Button>
+          <Button 
+            onClick={handleCloseDialog} 
+            variant="text"
+            size="small"
+            sx={{ color: 'text.secondary' }}
+          >
+            Cancel
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Footer */}
       <Box 

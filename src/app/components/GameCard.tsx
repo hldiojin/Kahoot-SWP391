@@ -24,6 +24,7 @@ import {
 } from '@mui/icons-material';
 import { motion } from 'framer-motion';
 import { styled } from '@mui/material/styles';
+import { useRouter } from 'next/navigation';
 
 // Styled components
 const StyledCard = styled(Card)(({ theme }) => ({
@@ -99,6 +100,7 @@ interface GameCardProps {
   questionsCount: number;
   playsCount: number;
   creator: string;
+  gameCode?: string;
 }
 
 const GameCard: React.FC<GameCardProps> = ({
@@ -108,7 +110,9 @@ const GameCard: React.FC<GameCardProps> = ({
   questionsCount,
   playsCount,
   creator,
+  gameCode,
 }) => {
+  const router = useRouter();
   const [isFavorite, setIsFavorite] = React.useState(false);
   const [isHovered, setIsHovered] = React.useState(false);
 
@@ -119,7 +123,14 @@ const GameCard: React.FC<GameCardProps> = ({
 
   const handlePlayClick = () => {
     console.log(`Playing game: ${title}`);
-    // Add your game start logic here
+    if (gameCode) {
+      // Store the current code being used
+      sessionStorage.setItem('currentGameCode', gameCode);
+      // Navigate to play-game page with the code
+      router.push(`/play-game?code=${gameCode}`);
+    } else {
+      console.log('No game code available for this game');
+    }
   };
 
   // Generate a gradient background based on the title (for consistency)

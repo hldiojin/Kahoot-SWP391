@@ -26,7 +26,11 @@ import {
   CardMedia,
   CardActions,
   useTheme,
-  alpha
+  alpha,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions
 } from '@mui/material';
 import { 
   Add as AddIcon, 
@@ -47,7 +51,8 @@ import {
   ArrowUpward as ArrowUpIcon,
   ArrowDownward as ArrowDownIcon,
   PlayArrow as PlayIcon,
-  QuestionMark as QuestionIcon
+  QuestionMark as QuestionIcon,
+  ContentCopy as ContentCopy
 } from '@mui/icons-material';
 import MainLayout from '../components/MainLayout';
 import { useAuth } from '../context/AuthContext';
@@ -100,6 +105,8 @@ const CreateGamePage = () => {
     questionType: 'multiple-choice',
   }]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [successDialogOpen, setSuccessDialogOpen] = useState(false);
+  const [gameCode, setGameCode] = useState('');
 
   // Steps for the quiz creation process
   const steps = ['Quiz Info', 'Add Questions', 'Preview & Finish'];
@@ -262,19 +269,95 @@ const CreateGamePage = () => {
 
   // Function to submit the quiz
   const submitQuiz = () => {
-    // Here you would typically send the quiz data to your backend
-    console.log({
-      title: quizTitle,
-      description: quizDescription,
-      category: quizCategory,
-      isPublic,
-      coverImage,
-      questions
-    });
+    // Generate a unique 6-digit game code
+    const generateGameCode = () => {
+      return Math.floor(100000 + Math.random() * 900000).toString();
+    };
 
-    // Show a success message and redirect to dashboard
-    alert('Quiz created successfully!');
-    router.push('/dashboard');
+    const generatedGameCode = generateGameCode();
+    setGameCode(generatedGameCode);
+    
+    // Create the game data object
+    const quizData = {
+      id: 'quiz-' + Date.now(),
+      title: quizTitle || 'Untitled Quiz',
+      description: quizDescription || '',
+      gameCode: generatedGameCode,
+      questions: questions.map(q => ({
+        id: q.id,
+        question: q.text || 'Question',
+        options: q.answers.map(a => a.text || 'Option'),
+        correctAnswer: q.answers.findIndex(a => a.isCorrect) || 0,
+        timeLimit: q.timeLimit || 20,
+        points: q.points || 100
+      })),
+      category: quizCategory || 'Uncategorized',
+      isPublic: isPublic,
+      coverImage: coverImage || 'https://source.unsplash.com/random/300x200?quiz',
+      createdBy: user?.firstName + ' ' + user?.lastName || 'User',
+      createdAt: new Date().toISOString(),
+      playsCount: 0
+    };
+
+    console.log("Created new game with code:", generatedGameCode, quizData);
+
+    // Save to localStorage for persistence
+    try {
+      // 1. Save to mySets for the My Sets page
+      const existingSets = JSON.parse(localStorage.getItem('mySets') || '[]');
+      existingSets.push(quizData);
+      localStorage.setItem('mySets', JSON.stringify(existingSets));
+      
+      // 2. Also save to gamesByCode in localStorage for easier access
+      const gamesByCode = JSON.parse(localStorage.getItem('gamesByCode') || '{}');
+      gamesByCode[generatedGameCode] = quizData;
+      localStorage.setItem('gamesByCode', JSON.stringify(gamesByCode));
+    } catch (error) {
+      console.error("Error saving to localStorage:", error);
+    }
+    
+    // Save to sessionStorage for immediate play
+    try {
+      // 1. Save the current game code for reference
+      sessionStorage.setItem('currentGameCode', generatedGameCode);
+      
+      // 2. Save this specific game by its code
+      sessionStorage.setItem(`game_${generatedGameCode}`, JSON.stringify(quizData));
+      
+      // 3. Save a complete list of all available game codes
+      const allCodes = JSON.parse(sessionStorage.getItem('availableGameCodes') || '[]');
+      if (!allCodes.includes(generatedGameCode)) {
+        allCodes.push(generatedGameCode);
+        sessionStorage.setItem('availableGameCodes', JSON.stringify(allCodes));
+      }
+      
+      // 4. Save the formatted quiz for immediate play
+      const playableQuiz = {
+        title: quizData.title,
+        description: quizData.description,
+        coverImage: quizData.coverImage,
+        category: quizData.category,
+        isPublic: quizData.isPublic,
+        questions: quizData.questions.map(q => ({
+          id: q.id,
+          question: q.question,
+          options: q.options,
+          correctAnswer: q.correctAnswer,
+          timeLimit: q.timeLimit
+        }))
+      };
+      sessionStorage.setItem('quizPreviewData', JSON.stringify(playableQuiz));
+    } catch (error) {
+      console.error("Error saving to sessionStorage:", error);
+    }
+
+    // Open success dialog with the game code
+    setSuccessDialogOpen(true);
+  };
+
+  // Add copy to clipboard function
+  const copyCodeToClipboard = () => {
+    navigator.clipboard.writeText(gameCode);
   };
 
   // Function to generate colors based on question index
@@ -1192,6 +1275,88 @@ const CreateGamePage = () => {
           </Box>
         </Box>
       </Container>
+      <Dialog 
+        open={successDialogOpen} 
+        onClose={() => setSuccessDialogOpen(false)}
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            maxWidth: 500,
+            width: '90%'
+          }
+        }}
+      >
+        <DialogTitle sx={{ 
+          textAlign: 'center', 
+          fontWeight: 'bold',
+          pt: 3,
+          fontSize: '1.5rem',
+          color: theme.palette.primary.main
+        }}
+        component="div"
+        >
+          Quiz Created Successfully!
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ textAlign: 'center', py: 2 }}>
+            <Typography variant="body1" sx={{ mb: 3 }}>
+              Share this code with your students to join the game:
+            </Typography>
+            
+            <Box 
+              sx={{ 
+                p: 3, 
+                backgroundColor: alpha(theme.palette.primary.light, 0.1),
+                borderRadius: 2,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                mb: 3
+              }}
+            >
+              <Typography 
+                variant="h2" 
+                sx={{ 
+                  letterSpacing: 4,
+                  fontWeight: 'bold',
+                  color: theme.palette.primary.main,
+                  mb: 2
+                }}
+              >
+                {gameCode}
+              </Typography>
+              
+              <Button 
+                variant="outlined" 
+                size="small"
+                onClick={copyCodeToClipboard}
+                startIcon={<ContentCopy />}
+                sx={{ borderRadius: 2 }}
+              >
+                Copy Code
+              </Button>
+            </Box>
+            
+            <Typography variant="body2" color="text.secondary">
+              Students can enter this code on the home page without logging in.
+            </Typography>
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ justifyContent: 'center', pb: 3, px: 3 }}>
+          <Button 
+            onClick={() => router.push('/my-sets')} 
+            variant="contained" 
+            color="primary"
+            sx={{ 
+              borderRadius: 2,
+              px: 3,
+              background: 'linear-gradient(45deg, #2196F3 30%, #9C27B0 90%)',
+            }}
+          >
+            Go to My Sets
+          </Button>
+        </DialogActions>
+      </Dialog>
     </MainLayout>
   );
 };

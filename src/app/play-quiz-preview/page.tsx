@@ -33,7 +33,7 @@ import {
   Refresh as RefreshIcon
 } from '@mui/icons-material';
 import { motion, AnimatePresence } from 'framer-motion';
-import MainLayout from '../components/MainLayout';
+import PublicLayout from '../components/PublicLayout';
 
 // Define types for the quiz data
 interface QuizQuestion {
@@ -97,21 +97,66 @@ export default function PlayQuizPreview() {
   const [answers, setAnswers] = useState<AnswerRecord[]>([]);
   const [showFeedback, setShowFeedback] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [playerName, setPlayerName] = useState('Anonymous');
 
   // Load quiz data from sessionStorage when component mounts
   useEffect(() => {
     setMounted(true);
     
     try {
+      // Log what's in sessionStorage for debugging
+      console.log("Available sessionStorage items:", 
+        Object.keys(sessionStorage).map(key => ({ key, length: sessionStorage.getItem(key)?.length || 0 }))
+      );
+
       // Retrieve data when the page loads
       const storedData = sessionStorage.getItem('quizPreviewData');
       if (storedData) {
-        const parsedData = JSON.parse(storedData);
-        console.log('Loaded quiz data from sessionStorage:', parsedData);
-        setQuizData(parsedData);
+        console.log(`Loaded quizPreviewData from sessionStorage (${storedData.length} bytes)`);
         
-        // Optionally remove from sessionStorage after loading
-        // sessionStorage.removeItem('quizPreviewData');
+        try {
+          const parsedData = JSON.parse(storedData);
+          console.log('Parsed data structure:', Object.keys(parsedData));
+          
+          if (!parsedData.questions || !Array.isArray(parsedData.questions) || parsedData.questions.length === 0) {
+            console.warn('Quiz data has no questions or invalid question format!', parsedData);
+            setQuizData(defaultQuizData);
+            return;
+          }
+          
+          // Ensure the parsedData has the correct format for the quiz
+          const formattedData: QuizData = {
+            title: parsedData.title || 'Quiz',
+            description: parsedData.description || '',
+            category: parsedData.category || 'General Knowledge',
+            isPublic: parsedData.isPublic ?? true,
+            coverImage: parsedData.coverImage || parsedData.imageUrl || 'https://source.unsplash.com/random/300x200?quiz',
+            questions: parsedData.questions.map((q: any) => {
+              console.log('Processing question:', q.question || q.text);
+              return {
+                id: q.id || `q-${Math.random().toString(36).substr(2, 9)}`,
+                question: q.question || q.text || '',
+                options: q.options || (Array.isArray(q.answers) ? q.answers.map((a: any) => a.text || a) : ['Option 1', 'Option 2', 'Option 3', 'Option 4']),
+                correctAnswer: typeof q.correctAnswer === 'number' ? q.correctAnswer : 
+                  (Array.isArray(q.answers) ? q.answers.findIndex((a: any) => a.isCorrect) : 0),
+                timeLimit: q.timeLimit || 20
+              };
+            })
+          };
+          
+          console.log(`Formatted quiz: ${formattedData.title} with ${formattedData.questions.length} questions`);
+          
+          setQuizData(formattedData);
+          
+          // Get player name if available
+          const currentPlayer = sessionStorage.getItem('currentPlayer');
+          if (currentPlayer) {
+            setPlayerName(currentPlayer);
+          }
+        } catch (parseError) {
+          console.error('Error parsing quiz data JSON:', parseError);
+          setQuizData(defaultQuizData);
+        }
       } else {
         console.log('No quiz data found in sessionStorage, using default data');
         setQuizData(defaultQuizData);
@@ -167,6 +212,7 @@ export default function PlayQuizPreview() {
   };
 
   const startGame = () => {
+    console.log(`Starting game with ${quizData?.questions?.length || 0} questions`);
     setGameStarted(true);
     setScore(0);
     setCurrentQuestionIndex(0);
@@ -233,7 +279,7 @@ export default function PlayQuizPreview() {
   // Show loading state when no data is available
   if (!quizData) {
     return (
-      <MainLayout>
+      <PublicLayout>
         <Box sx={{ 
           display: 'flex', 
           flexDirection: 'column', 
@@ -244,13 +290,13 @@ export default function PlayQuizPreview() {
           <CircularProgress size={60} sx={{ mb: 3 }} />
           <Typography variant="h6">Loading quiz preview...</Typography>
         </Box>
-      </MainLayout>
+      </PublicLayout>
     );
   }
 
   if (showResults) {
     return (
-      <MainLayout>
+      <PublicLayout>
         <Box sx={{ maxWidth: 800, mx: 'auto', py: 4 }}>
           <Typography variant="h4" sx={{ mb: 4, textAlign: 'center', fontWeight: 'bold' }}>
             Quiz Results
@@ -346,13 +392,13 @@ export default function PlayQuizPreview() {
             </Button>
           </Box>
         </Box>
-      </MainLayout>
+      </PublicLayout>
     );
   }
 
   if (!gameStarted) {
     return (
-      <MainLayout>
+      <PublicLayout>
         <Box sx={{ maxWidth: 700, mx: 'auto', textAlign: 'center', py: 6 }}>
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -364,7 +410,11 @@ export default function PlayQuizPreview() {
             </Typography>
             
             <Typography variant="subtitle1" color="text.secondary" sx={{ mb: 1 }}>
-              Category: {quizData.category}
+              Category: {quizData.category || "General"}
+            </Typography>
+
+            <Typography variant="subtitle2" sx={{ mb: 2 }}>
+              Player: {playerName}
             </Typography>
             
             <Typography variant="h6" color="text.secondary" sx={{ mb: 4 }}>
@@ -383,7 +433,7 @@ export default function PlayQuizPreview() {
               }}
             >
               <Typography variant="body1" sx={{ mb: 3 }}>
-                This is a preview of your quiz with {quizData.questions.length} questions.
+                This quiz has {quizData.questions.length} questions.
               </Typography>
               
               <Box sx={{ textAlign: 'left', mb: 3 }}>
@@ -422,18 +472,18 @@ export default function PlayQuizPreview() {
                 fontSize: '1.1rem'
               }}
             >
-              Start Preview
+              Start Game
             </Button>
           </motion.div>
         </Box>
-      </MainLayout>
+      </PublicLayout>
     );
   }
 
   const currentQuestion = quizData.questions[currentQuestionIndex];
   
   return (
-    <MainLayout>
+    <PublicLayout>
       <Box sx={{ maxWidth: 800, mx: 'auto', py: 2 }}>
         {/* Progress bar and question number */}
         <Box sx={{ display: 'flex', alignItems: 'center', mb: 2, gap: 2 }}>
@@ -549,7 +599,7 @@ export default function PlayQuizPreview() {
           open={showFeedback}
           sx={{ '& .MuiDialog-paper': { borderRadius: 3 } }}
         >
-          <DialogTitle sx={{ textAlign: 'center', pt: 3 }}>
+          <DialogTitle component="div" sx={{ textAlign: 'center', pt: 3 }}>
             {selectedOption === currentQuestion.correctAnswer ? (
               <Typography variant="h5" color="success.main" sx={{ fontWeight: 'bold' }}>
                 Correct!
@@ -593,6 +643,6 @@ export default function PlayQuizPreview() {
           </DialogActions>
         </Dialog>
       </Box>
-    </MainLayout>
+    </PublicLayout>
   );
 } 

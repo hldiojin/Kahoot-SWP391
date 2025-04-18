@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import MainLayout from '../components/MainLayout';
 import {
   Box,
@@ -27,11 +27,12 @@ import {
   Edit as EditIcon,
   Delete as DeleteIcon,
   ContentCopy as DuplicateIcon,
+  PlayArrow as PlayIcon,
 } from '@mui/icons-material';
 import GameCard from '../components/GameCard';
 
 // Sample data for user's created games
-const mySets = [
+const sampleSets = [
   {
     id: 1,
     title: 'World Geography',
@@ -40,6 +41,7 @@ const mySets = [
     questionsCount: 25,
     playsCount: 1200,
     creator: 'You',
+    gameCode: '123456',
   },
   {
     id: 2,
@@ -49,6 +51,7 @@ const mySets = [
     questionsCount: 20,
     playsCount: 850,
     creator: 'You',
+    gameCode: '234567',
   },
   {
     id: 3,
@@ -58,6 +61,7 @@ const mySets = [
     questionsCount: 18,
     playsCount: 730,
     creator: 'You',
+    gameCode: '345678',
   },
 ];
 
@@ -91,16 +95,31 @@ export default function MySetsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [tabValue, setTabValue] = useState(0);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
-  const [selectedGameId, setSelectedGameId] = useState<number | null>(null);
+  const [selectedGameId, setSelectedGameId] = useState<string | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [mySets, setMySets] = useState<any[]>([]);
+  const [codeDialogOpen, setCodeDialogOpen] = useState(false);
+  const [selectedGame, setSelectedGame] = useState<any>(null);
+
+  // Load sets from localStorage when component mounts
+  useEffect(() => {
+    const storedSets = localStorage.getItem('mySets');
+    if (storedSets) {
+      setMySets(JSON.parse(storedSets));
+    } else {
+      // Use sample data if no stored sets found
+      setMySets(sampleSets);
+    }
+  }, []);
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
     setTabValue(newValue);
   };
 
-  const handleMenuOpen = (event: React.MouseEvent<HTMLElement>, gameId: number) => {
+  const handleMenuOpen = (event: React.MouseEvent<HTMLElement>, gameId: string) => {
     setAnchorEl(event.currentTarget);
     setSelectedGameId(gameId);
+    setSelectedGame(mySets.find(game => game.id === gameId));
   };
 
   const handleMenuClose = () => {
@@ -113,8 +132,9 @@ export default function MySetsPage() {
   };
 
   const handleDeleteConfirm = () => {
-    // TODO: Implement delete functionality
-    console.log(`Deleting game ${selectedGameId}`);
+    const updatedSets = mySets.filter(game => game.id !== selectedGameId);
+    setMySets(updatedSets);
+    localStorage.setItem('mySets', JSON.stringify(updatedSets));
     setDeleteDialogOpen(false);
   };
 
@@ -134,6 +154,20 @@ export default function MySetsPage() {
     console.log(`Duplicating game ${selectedGameId}`);
   };
 
+  const handleShowCode = () => {
+    handleMenuClose();
+    setCodeDialogOpen(true);
+  };
+
+  const handleCloseCodeDialog = () => {
+    setCodeDialogOpen(false);
+  };
+
+  const filteredSets = mySets.filter(game => 
+    game.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    game.description.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   return (
     <MainLayout>
       <Box sx={{ mb: 4 }}>
@@ -145,6 +179,7 @@ export default function MySetsPage() {
             variant="contained"
             color="primary"
             startIcon={<AddIcon />}
+            href="/create-game"
             sx={{
               borderRadius: 2,
               textTransform: 'none',
@@ -215,55 +250,103 @@ export default function MySetsPage() {
         </Box>
 
         <TabPanel value={tabValue} index={0}>
-          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
-            {mySets.map((game) => (
-              <Box key={game.id} sx={{ width: { xs: '100%', sm: '45%', md: '30%' }, position: 'relative' }}>
-                <Box sx={{ position: 'absolute', top: 10, right: 10, zIndex: 1 }}>
-                  <IconButton
-                    aria-label="more"
-                    onClick={(e) => handleMenuOpen(e, game.id)}
-                    sx={{ bgcolor: 'rgba(255, 255, 255, 0.8)', '&:hover': { bgcolor: 'rgba(255, 255, 255, 0.9)' } }}
-                  >
-                    <MoreVertIcon />
-                  </IconButton>
+          {filteredSets.length > 0 ? (
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+              {filteredSets.map((game) => (
+                <Box key={game.id} sx={{ width: { xs: '100%', sm: '45%', md: '30%' }, position: 'relative' }}>
+                  <Box sx={{ position: 'absolute', top: 10, right: 10, zIndex: 1 }}>
+                    <IconButton
+                      aria-label="more"
+                      onClick={(e) => handleMenuOpen(e, game.id)}
+                      sx={{ bgcolor: 'rgba(255, 255, 255, 0.8)', '&:hover': { bgcolor: 'rgba(255, 255, 255, 0.9)' } }}
+                    >
+                      <MoreVertIcon />
+                    </IconButton>
+                  </Box>
+                  <GameCard
+                    title={game.title}
+                    description={game.description}
+                    imageUrl={game.coverImage || game.imageUrl}
+                    questionsCount={game.questions ? game.questions.length : game.questionsCount}
+                    playsCount={game.playsCount}
+                    creator={game.createdBy || game.creator}
+                  />
                 </Box>
-                <GameCard
-                  title={game.title}
-                  description={game.description}
-                  imageUrl={game.imageUrl}
-                  questionsCount={game.questionsCount}
-                  playsCount={game.playsCount}
-                  creator={game.creator}
-                />
-              </Box>
-            ))}
-          </Box>
+              ))}
+            </Box>
+          ) : (
+            <Box sx={{ textAlign: 'center', py: 6 }}>
+              <Typography variant="h6" color="text.secondary">
+                No sets found
+              </Typography>
+              <Typography variant="body1" color="text.secondary" sx={{ mt: 1 }}>
+                Create your first set to get started
+              </Typography>
+              <Button
+                variant="contained"
+                color="primary"
+                startIcon={<AddIcon />}
+                href="/create-game"
+                sx={{
+                  mt: 3,
+                  borderRadius: 2,
+                  textTransform: 'none',
+                }}
+              >
+                Create New Set
+              </Button>
+            </Box>
+          )}
         </TabPanel>
         
         <TabPanel value={tabValue} index={1}>
-          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
-            {mySets.map((game) => (
-              <Box key={game.id} sx={{ width: { xs: '100%', sm: '45%', md: '30%' }, position: 'relative' }}>
-                <Box sx={{ position: 'absolute', top: 10, right: 10, zIndex: 1 }}>
-                  <IconButton
-                    aria-label="more"
-                    onClick={(e) => handleMenuOpen(e, game.id)}
-                    sx={{ bgcolor: 'rgba(255, 255, 255, 0.8)', '&:hover': { bgcolor: 'rgba(255, 255, 255, 0.9)' } }}
-                  >
-                    <MoreVertIcon />
-                  </IconButton>
+          {filteredSets.length > 0 ? (
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+              {filteredSets.map((game) => (
+                <Box key={game.id} sx={{ width: { xs: '100%', sm: '45%', md: '30%' }, position: 'relative' }}>
+                  <Box sx={{ position: 'absolute', top: 10, right: 10, zIndex: 1 }}>
+                    <IconButton
+                      aria-label="more"
+                      onClick={(e) => handleMenuOpen(e, game.id)}
+                      sx={{ bgcolor: 'rgba(255, 255, 255, 0.8)', '&:hover': { bgcolor: 'rgba(255, 255, 255, 0.9)' } }}
+                    >
+                      <MoreVertIcon />
+                    </IconButton>
+                  </Box>
+                  <GameCard
+                    title={game.title}
+                    description={game.description}
+                    imageUrl={game.coverImage || game.imageUrl}
+                    questionsCount={game.questions ? game.questions.length : game.questionsCount}
+                    playsCount={game.playsCount}
+                    creator={game.createdBy || game.creator}
+                  />
                 </Box>
-                <GameCard
-                  title={game.title}
-                  description={game.description}
-                  imageUrl={game.imageUrl}
-                  questionsCount={game.questionsCount}
-                  playsCount={game.playsCount}
-                  creator={game.creator}
-                />
-              </Box>
-            ))}
-          </Box>
+              ))}
+            </Box>
+          ) : (
+            <Box sx={{ textAlign: 'center', py: 6 }}>
+              <Typography variant="h6" color="text.secondary">
+                No sets found
+              </Typography>
+              <Typography variant="body1" color="text.secondary" sx={{ mt: 1 }}>
+                Create your first set to get started
+              </Typography>
+              <Button
+                variant="contained"
+                color="primary"
+                startIcon={<AddIcon />}
+                href="/create-game"
+                sx={{
+                  mt: 3,
+                  borderRadius: 2,
+                  textTransform: 'none',
+                }}
+              >
+                Create New Set
+              </Button>
+            </Box>
+          )}
         </TabPanel>
         
         <TabPanel value={tabValue} index={2}>
@@ -284,6 +367,12 @@ export default function MySetsPage() {
         open={Boolean(anchorEl)}
         onClose={handleMenuClose}
       >
+        <MenuItem onClick={handleShowCode}>
+          <Typography color="primary" sx={{ display: 'flex', alignItems: 'center' }}>
+            <PlayIcon fontSize="small" sx={{ mr: 1 }} />
+            Show Game Code
+          </Typography>
+        </MenuItem>
         <MenuItem onClick={handleEditClick}>
           <EditIcon fontSize="small" sx={{ mr: 1 }} />
           Edit
@@ -305,7 +394,7 @@ export default function MySetsPage() {
         aria-labelledby="alert-dialog-title"
         aria-describedby="alert-dialog-description"
       >
-        <DialogTitle id="alert-dialog-title">
+        <DialogTitle id="alert-dialog-title" component="div">
           {"Delete this set?"}
         </DialogTitle>
         <DialogContent>
@@ -317,6 +406,46 @@ export default function MySetsPage() {
           <Button onClick={handleDeleteCancel}>Cancel</Button>
           <Button onClick={handleDeleteConfirm} color="error" autoFocus>
             Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Game Code Dialog */}
+      <Dialog
+        open={codeDialogOpen}
+        onClose={handleCloseCodeDialog}
+        aria-labelledby="code-dialog-title"
+      >
+        <DialogTitle id="code-dialog-title" component="div" sx={{ textAlign: 'center' }}>
+          Game Join Code
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ textAlign: 'center', py: 3 }}>
+            <Typography variant="body1" sx={{ mb: 2 }}>
+              Share this code with students to join your game:
+            </Typography>
+            <Typography 
+              variant="h3" 
+              sx={{ 
+                fontWeight: 'bold', 
+                letterSpacing: 2,
+                p: 2,
+                borderRadius: 2,
+                bgcolor: 'primary.light',
+                color: 'primary.contrastText',
+                display: 'inline-block'
+              }}
+            >
+              {selectedGame?.gameCode}
+            </Typography>
+          </Box>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 2, textAlign: 'center' }}>
+            Students can enter this code on the home page
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ justifyContent: 'center', pb: 3 }}>
+          <Button onClick={handleCloseCodeDialog} variant="contained">
+            Close
           </Button>
         </DialogActions>
       </Dialog>
