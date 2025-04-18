@@ -93,9 +93,10 @@ const Sidebar = () => {
               background: 'linear-gradient(45deg, #2196F3 30%, #9C27B0 90%)',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',
+              fontSize: '40px',
             }}
           >
-            Kahoot Clone
+            dan choi 36
           </Typography>
         )}
       </Box>

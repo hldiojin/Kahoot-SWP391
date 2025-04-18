@@ -292,6 +292,32 @@ const CreateGamePage = () => {
     return colors[index % colors.length];
   };
 
+  // Handle preview quiz - saves current quiz data to sessionStorage
+  const handlePreview = () => {
+    const quizData = {
+      id: 'preview-' + Date.now(),
+      title: quizTitle || 'Untitled Quiz',
+      description: quizDescription || 'Preview of your quiz',
+      questions: questions.map(q => ({
+        id: q.id,
+        question: q.text || 'Question',
+        options: q.answers.map(a => a.text || 'Option'),
+        correctAnswer: q.answers.findIndex(a => a.isCorrect) || 0,
+        timeLimit: q.timeLimit || 20,
+        points: q.points || 100
+      })),
+      category: quizCategory || 'Uncategorized',
+      isPublic: isPublic,
+      coverImage: coverImage || 'https://source.unsplash.com/random/300x200?quiz',
+      createdBy: user?.firstName + ' ' + user?.lastName || 'User',
+      createdAt: new Date().toISOString()
+    };
+
+    // Save to sessionStorage before opening preview
+    sessionStorage.setItem('quizPreviewData', JSON.stringify(quizData));
+    window.open('/play-quiz-preview', '_blank');
+  };
+
   // Render the current step content
   const getStepContent = (step: number) => {
     switch (step) {
@@ -839,7 +865,7 @@ const CreateGamePage = () => {
                   startIcon={<PreviewIcon />} 
                   variant="contained"
                   color="secondary"
-                  onClick={() => window.open('/play-quiz-preview', '_blank')}
+                  onClick={handlePreview}
                   sx={{ borderRadius: 8, px: 3 }}
                 >
                   Preview Game
@@ -1004,7 +1030,7 @@ const CreateGamePage = () => {
                   size="large"
                   color="primary"
                   startIcon={<PlayIcon />}
-                  onClick={() => window.open('/play-quiz-preview', '_blank')}
+                  onClick={handlePreview}
                   sx={{ 
                     borderRadius: 8, 
                     px: 4, 
