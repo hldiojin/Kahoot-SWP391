@@ -94,7 +94,7 @@ const CreateGamePage = () => {
     id: '1',
     text: '',
     timeLimit: 30,
-    points: 1000,
+    points: 100,
     image: null,
     answers: [
       { id: '1-1', text: '', isCorrect: false, color: 'red' },
@@ -117,7 +117,7 @@ const CreateGamePage = () => {
       id: (questions.length + 1).toString(),
       text: '',
       timeLimit: 30,
-      points: 1000,
+      points: 100,
       image: null,
       answers: [
         { id: `${questions.length + 1}-1`, text: '', isCorrect: false, color: 'red' },
@@ -669,9 +669,9 @@ const CreateGamePage = () => {
                         label="Points"
                         onChange={(e) => handlePointsChange(currentQuestionIndex, Number(e.target.value))}
                       >
-                        <MenuItem value={500}>500 pts</MenuItem>
-                        <MenuItem value={1000}>1000 pts</MenuItem>
-                        <MenuItem value={2000}>2000 pts</MenuItem>
+                        <MenuItem value={100}>100 pts</MenuItem>
+                        <MenuItem value={150}>150 pts</MenuItem>
+                        <MenuItem value={200}>200 pts</MenuItem>
                       </Select>
                     </FormControl>
                     

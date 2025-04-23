@@ -392,7 +392,8 @@ export default function PlayGamePage() {
           score: 0,
           correctAnswers: 0,
           totalQuestions: formattedQuizData.questions.length,
-          timeBonus: 0
+          timeBonus: 0,
+          averageAnswerTime: 0 // This will be calculated during gameplay
         }
       ];
       
@@ -404,21 +405,24 @@ export default function PlayGamePage() {
             score: Math.floor(Math.random() * 800) + 200,
             correctAnswers: Math.floor(Math.random() * formattedQuizData.questions.length),
             totalQuestions: formattedQuizData.questions.length,
-            timeBonus: Math.floor(Math.random() * 100)
+            timeBonus: Math.floor(Math.random() * 150) + 50,
+            averageAnswerTime: Math.round((Math.random() * 8 + 3) * 10) / 10 // 3-11 seconds
           },
           {
             name: "Player 3",
             score: Math.floor(Math.random() * 700) + 100,
             correctAnswers: Math.floor(Math.random() * formattedQuizData.questions.length),
             totalQuestions: formattedQuizData.questions.length,
-            timeBonus: Math.floor(Math.random() * 80)
+            timeBonus: Math.floor(Math.random() * 120) + 30,
+            averageAnswerTime: Math.round((Math.random() * 10 + 4) * 10) / 10 // 4-14 seconds
           },
           {
             name: "Player 4",
             score: Math.floor(Math.random() * 600) + 100,
             correctAnswers: Math.floor(Math.random() * formattedQuizData.questions.length),
             totalQuestions: formattedQuizData.questions.length,
-            timeBonus: Math.floor(Math.random() * 60)
+            timeBonus: Math.floor(Math.random() * 100) + 20,
+            averageAnswerTime: Math.round((Math.random() * 12 + 5) * 10) / 10 // 5-17 seconds
           }
         );
       }
@@ -539,6 +543,34 @@ export default function PlayGamePage() {
               This quiz has {gameData.questions.length} questions
             </Typography>
             
+            {/* Quiz details section to explain scoring */}
+            <Paper 
+              elevation={2}
+              sx={{ 
+                p: 3, 
+                mb: 4, 
+                borderRadius: 3,
+                backgroundColor: 'rgba(255, 255, 255, 0.8)',
+                boxShadow: '0 8px 20px rgba(0,0,0,0.08)',
+              }}
+            >
+              <Typography variant="h6" component="div" sx={{ mb: 2, fontWeight: 'medium', display: 'flex', alignItems: 'center' }}>
+                How Scoring Works
+              </Typography>
+              
+              <Box sx={{ mb: 2 }}>
+                <Typography variant="body2" component="div" sx={{ mb: 1 }}>
+                  <strong>• Base points:</strong> 100 points for each correct answer
+                </Typography>
+                <Typography variant="body2" component="div" sx={{ mb: 1 }}>
+                  <strong>• Speed bonus:</strong> Up to 150 extra points based on how quickly you answer
+                </Typography>
+                <Typography variant="body2" component="div" color="primary.main" fontWeight="medium">
+                  Answer faster to earn more points!
+                </Typography>
+              </Box>
+            </Paper>
+            
             {/* Player name section */}
             <Paper 
               elevation={2}
@@ -551,7 +583,7 @@ export default function PlayGamePage() {
                 border: `1px solid ${nameError ? 'rgba(211, 47, 47, 0.5)' : 'rgba(0, 0, 0, 0.08)'}`
               }}
             >
-              <Typography variant="h6" sx={{ mb: 2, fontWeight: 'medium', display: 'flex', alignItems: 'center' }}>
+              <Typography variant="h6" component="div" sx={{ mb: 2, fontWeight: 'medium', display: 'flex', alignItems: 'center' }}>
                 <PersonIcon sx={{ color: 'primary.main', mr: 1 }} />
                 Enter Your Name
               </Typography>
@@ -609,7 +641,7 @@ export default function PlayGamePage() {
               )}
               
               {nameError && !isEditingName && (
-                <Typography color="error" variant="caption" sx={{ pl: 7, display: 'block', mt: 1 }}>
+                <Typography variant="caption" component="div" sx={{ pl: 7, display: 'block', mt: 1, color: 'error.main' }}>
                   {nameError}
                 </Typography>
               )}

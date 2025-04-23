@@ -596,6 +596,31 @@ export default function MySetsPage() {
               <span>{gameResults.length} Players</span>
             </Typography>
             
+            {/* Scoring system explanation for teachers */}
+            <Paper
+              elevation={1}
+              sx={{ 
+                p: 2, 
+                mb: 3, 
+                borderRadius: 2, 
+                backgroundColor: 'rgba(237, 247, 255, 0.7)',
+                borderLeft: '4px solid #1976d2'
+              }}
+            >
+              <Typography variant="subtitle2" color="primary" fontWeight="medium">
+                Scoring System
+              </Typography>
+              <Typography variant="body2" sx={{ mt: 1 }}>
+                • Students earn 100 base points for each correct answer
+              </Typography>
+              <Typography variant="body2">
+                • Speed bonuses of up to 150 additional points are awarded based on answer speed
+              </Typography>
+              <Typography variant="body2">
+                • Faster responses earn higher bonuses, encouraging quick thinking
+              </Typography>
+            </Paper>
+            
             <List>
               {gameResults
                 .sort((a, b) => b.score - a.score)
@@ -633,22 +658,84 @@ export default function MySetsPage() {
                           <Typography variant="subtitle1" sx={{ fontWeight: index < 3 ? 'bold' : 'regular' }}>
                             {player.name}
                           </Typography>
-                          <Typography variant="h6" sx={{ fontWeight: 'bold', color: index < 3 ? 'primary.main' : 'text.primary' }}>
-                            {player.score} points
-                          </Typography>
+                          <Box sx={{ textAlign: 'right' }}>
+                            <Typography variant="h6" sx={{ fontWeight: 'bold', color: index < 3 ? 'primary.main' : 'text.primary' }}>
+                              {player.score} points
+                            </Typography>
+                            {player.timeBonus > 0 && (
+                              <Typography variant="caption" component="span" sx={{ color: 'secondary.main' }}>
+                                includes {player.timeBonus} speed bonus
+                              </Typography>
+                            )}
+                          </Box>
                         </Box>
                       }
                       secondary={
-                        <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                          Correct answers: {player.correctAnswers}/{player.totalQuestions} 
-                          {player.timeBonus ? ` • Time bonus: +${player.timeBonus}` : ''}
-                        </Typography>
+                        <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, justifyContent: 'space-between', mt: 0.5 }}>
+                          <Typography variant="body2" component="span" sx={{ color: 'text.secondary' }}>
+                            Correct answers: {player.correctAnswers}/{player.totalQuestions} 
+                            {player.timeBonus ? ` • Time bonus: +${player.timeBonus}` : ''}
+                          </Typography>
+                          
+                          {player.averageAnswerTime && (
+                            <Typography variant="body2" component="span" color="text.secondary">
+                              Avg. answer time: <strong>{player.averageAnswerTime}s</strong>
+                            </Typography>
+                          )}
+                        </Box>
                       }
                     />
                   </ListItem>
                 </React.Fragment>
               ))}
             </List>
+            
+            {/* Performance summary */}
+            {gameResults.length > 0 && (
+              <Paper
+                elevation={1}
+                sx={{ 
+                  p: 2, 
+                  mt: 3, 
+                  borderRadius: 2, 
+                  backgroundColor: 'rgba(246, 246, 246, 0.7)'
+                }}
+              >
+                <Typography variant="subtitle2" component="div" gutterBottom>
+                  Performance Summary
+                </Typography>
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: { xs: 2, sm: 4 }, justifyContent: 'space-around' }}>
+                  <Box>
+                    <Typography variant="body2" component="span" color="text.secondary">
+                      Average Score
+                    </Typography>
+                    <Typography variant="h6" component="div" fontWeight="medium">
+                      {Math.round(gameResults.reduce((sum, player) => sum + player.score, 0) / gameResults.length)}
+                    </Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="body2" component="span" color="text.secondary">
+                      Correct Answer Rate
+                    </Typography>
+                    <Typography variant="h6" component="div" fontWeight="medium">
+                      {Math.round((gameResults.reduce((sum, player) => sum + player.correctAnswers, 0) / 
+                      (gameResults.reduce((sum, player) => sum + player.totalQuestions, 0))) * 100)}%
+                    </Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="body2" component="span" color="text.secondary">
+                      Avg. Response Time
+                    </Typography>
+                    <Typography variant="h6" component="div" fontWeight="medium">
+                      {gameResults[0].averageAnswerTime ? 
+                        Math.round((gameResults.reduce((sum, player) => 
+                          sum + (player.averageAnswerTime || 0), 0) / gameResults.length) * 10) / 10 + 's' :
+                        'N/A'}
+                    </Typography>
+                  </Box>
+                </Box>
+              </Paper>
+            )}
           </Box>
         </DialogContent>
         <DialogActions sx={{ justifyContent: 'center', p: 3 }}>

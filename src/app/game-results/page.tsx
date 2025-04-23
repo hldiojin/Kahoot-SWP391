@@ -30,6 +30,7 @@ interface PlayerScore {
   correctAnswers: number;
   totalQuestions: number;
   timeBonus?: number;
+  averageAnswerTime?: number;
 }
 
 export default function GameResultsPage() {
@@ -52,6 +53,16 @@ export default function GameResultsPage() {
         
         // Sort results by score (highest first)
         const sortedResults = [...results].sort((a, b) => b.score - a.score);
+        
+        // Calculate speed metrics for displaying
+        sortedResults.forEach(player => {
+          // Set a default average answer time if not provided
+          if (!player.averageAnswerTime) {
+            // Average answer time is random between 3-15 seconds for demo purposes
+            // In a real app, this would be calculated from actual answer times
+            player.averageAnswerTime = Math.round((Math.random() * 12 + 3) * 10) / 10;
+          }
+        });
         
         setPlayerResults(sortedResults);
         setGameTitle(quiz.title);
@@ -154,7 +165,7 @@ export default function GameResultsPage() {
             {/* Current player's result highlight */}
             {currentPlayer && (
               <Box sx={{ mb: 4 }}>
-                <Typography variant="subtitle1" sx={{ mb: 2, textAlign: 'center' }}>
+                <Typography variant="subtitle1" component="div" sx={{ mb: 2, textAlign: 'center' }}>
                   Your Result
                 </Typography>
                 <Paper
@@ -169,7 +180,7 @@ export default function GameResultsPage() {
                   {playerResults.map((player, index) => {
                     if (player.name === currentPlayer) {
                       return (
-                        <Box key={index} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <Box key={index} sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: { xs: 'flex-start', sm: 'center' }, justifyContent: 'space-between', gap: 2 }}>
                           <Box sx={{ display: 'flex', alignItems: 'center' }}>
                             <Avatar
                               sx={{
@@ -184,18 +195,31 @@ export default function GameResultsPage() {
                               {player.name.charAt(0)}
                             </Avatar>
                             <Box>
-                              <Typography variant="h6">{player.name}</Typography>
-                              <Typography variant="body2">
+                              <Typography variant="h6" component="div">{player.name}</Typography>
+                              <Typography variant="body2" component="div">
                                 Rank: <strong>#{getPlayerRank(player.name)}</strong> • 
                                 Correct: <strong>{player.correctAnswers}/{player.totalQuestions}</strong>
+                                {player.averageAnswerTime && (
+                                  <> • Avg. time: <strong>{player.averageAnswerTime}s</strong></>
+                                )}
                               </Typography>
                             </Box>
                           </Box>
-                          <Box sx={{ textAlign: 'right' }}>
-                            <Typography variant="h5" color="primary" sx={{ fontWeight: 'bold' }}>
+                          <Box sx={{ textAlign: { xs: 'left', sm: 'right' }, pl: { xs: 7, sm: 0 } }}>
+                            <Typography variant="h5" component="div" color="primary" sx={{ fontWeight: 'bold' }}>
                               {player.score}
                             </Typography>
-                            <Typography variant="body2">points</Typography>
+                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: { xs: 'flex-start', sm: 'flex-end' }, gap: 1 }}>
+                              <Typography variant="body2" component="span">points</Typography>
+                              {player.timeBonus && (
+                                <Chip 
+                                  size="small" 
+                                  label={`+${player.timeBonus} speed bonus`}
+                                  color="secondary"
+                                  sx={{ height: 20, fontSize: '0.7rem' }}
+                                />
+                              )}
+                            </Box>
                           </Box>
                         </Box>
                       );
@@ -205,6 +229,32 @@ export default function GameResultsPage() {
                 </Paper>
               </Box>
             )}
+
+            {/* Explanation of scoring */}
+            <Paper
+              elevation={2}
+              sx={{
+                p: 2,
+                mb: 3,
+                borderRadius: 2,
+                backgroundColor: 'rgba(255, 255, 255, 0.7)',
+                borderLeft: '4px solid',
+                borderColor: 'info.main',
+              }}
+            >
+              <Typography variant="subtitle2" component="div" color="info.main" fontWeight="medium">
+                Scoring System
+              </Typography>
+              <Typography variant="body2" component="div" sx={{ mt: 1 }}>
+                • Base points: 100 points per correct answer
+              </Typography>
+              <Typography variant="body2" component="div">
+                • Speed bonus: Up to 150 additional points based on how quickly you answer
+              </Typography>
+              <Typography variant="body2" component="div">
+                • Fastest answers receive the highest bonuses!
+              </Typography>
+            </Paper>
 
             {/* Leaderboard */}
             <Typography variant="h5" sx={{ mb: 2, display: 'flex', alignItems: 'center' }}>
@@ -236,28 +286,37 @@ export default function GameResultsPage() {
                         {index < 3 ? (
                           <TrophyIcon sx={{ color: '#fff' }} />
                         ) : (
-                          <Typography>{index + 1}</Typography>
+                          <Typography component="span">{index + 1}</Typography>
                         )}
                       </Avatar>
                     </ListItemAvatar>
                     <ListItemText
                       primary={
                         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <Typography variant="subtitle1" sx={{ fontWeight: player.name === currentPlayer ? 'bold' : 'regular' }}>
+                          <Typography variant="subtitle1" component="span" sx={{ fontWeight: player.name === currentPlayer ? 'bold' : 'regular' }}>
                             {player.name}
                             {player.name === currentPlayer && (
                               <Chip size="small" label="You" sx={{ ml: 1, fontSize: '0.7rem', height: 20 }} color="primary" />
                             )}
                           </Typography>
-                          <Typography variant="h6" sx={{ fontWeight: 'bold', color: index < 3 ? 'primary.main' : 'text.primary' }}>
-                            {player.score} pts
-                          </Typography>
+                          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                            <Typography variant="h6" component="div" sx={{ fontWeight: 'bold', color: index < 3 ? 'primary.main' : 'text.primary' }}>
+                              {player.score} pts
+                            </Typography>
+                            {player.timeBonus && player.timeBonus > 0 && (
+                              <Typography variant="caption" component="span" sx={{ color: 'secondary.main', fontWeight: 'medium' }}>
+                                includes {player.timeBonus} speed bonus
+                              </Typography>
+                            )}
+                          </Box>
                         </Box>
                       }
                       secondary={
-                        <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                        <Typography variant="body2" component="span" sx={{ color: 'text.secondary' }}>
                           Correct answers: {player.correctAnswers}/{player.totalQuestions}
-                          {player.timeBonus ? ` • Time bonus: +${player.timeBonus}` : ''}
+                          {player.averageAnswerTime && 
+                            ` • Avg. time: ${player.averageAnswerTime}s`
+                          }
                         </Typography>
                       }
                     />

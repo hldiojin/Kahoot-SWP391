@@ -83,6 +83,9 @@ interface AnswerRecord {
   questionId: string;
   selectedOption: number | null;
   isCorrect: boolean;
+  points?: number;
+  timeBonus?: number;
+  answerTime?: number; // Time taken to answer in seconds
 }
 
 export default function PlayQuizPreview() {
@@ -98,6 +101,8 @@ export default function PlayQuizPreview() {
   const [showFeedback, setShowFeedback] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [playerName, setPlayerName] = useState('Anonymous');
+  const [answerTimes, setAnswerTimes] = useState<number[]>([]);
+  const [questionStartTime, setQuestionStartTime] = useState<number>(0);
 
   // Load quiz data from sessionStorage when component mounts
   useEffect(() => {
@@ -177,6 +182,9 @@ export default function PlayQuizPreview() {
       const currentQuestion = quizData.questions[currentQuestionIndex];
       setTimeLeft(currentQuestion.timeLimit || 20);
       
+      // Record when the question started for timing
+      setQuestionStartTime(Date.now());
+      
       timer = setInterval(() => {
         setTimeLeft((prevTime) => {
           if (prevTime <= 1) {
@@ -198,11 +206,18 @@ export default function PlayQuizPreview() {
     if (!quizData) return;
     
     if (!isAnswered) {
+      // Calculate how long it took (full time in this case)
       const currentQuestion = quizData.questions[currentQuestionIndex];
+      const answerTime = currentQuestion.timeLimit || 20;
+      
+      // Record this answer time
+      setAnswerTimes(prev => [...prev, answerTime]);
+      
       const answerRecord: AnswerRecord = {
         questionId: currentQuestion.id,
         selectedOption: null,
-        isCorrect: false
+        isCorrect: false,
+        answerTime: answerTime
       };
       
       setAnswers(prev => [...prev, answerRecord]);
@@ -227,22 +242,53 @@ export default function PlayQuizPreview() {
     
     if (isAnswered) return;
     
+    // Calculate how long it took to answer
+    const currentQuestion = quizData.questions[currentQuestionIndex];
+    const answerTime = (currentQuestion.timeLimit || 20) - timeLeft;
+    
+    // Record this answer time
+    setAnswerTimes(prev => [...prev, answerTime]);
+    
     setSelectedOption(optionIndex);
     setIsAnswered(true);
     
-    const currentQuestion = quizData.questions[currentQuestionIndex];
     const isCorrect = optionIndex === currentQuestion.correctAnswer;
     
     const answerRecord: AnswerRecord = {
       questionId: currentQuestion.id,
       selectedOption: optionIndex,
-      isCorrect
+      isCorrect,
+      answerTime: answerTime
     };
     
     if (isCorrect) {
-      // Calculate time bonus (more time left = more points)
-      const timeBonus = Math.floor((timeLeft / (currentQuestion.timeLimit || 20)) * 50);
-      setScore(prev => prev + 100 + timeBonus);
+      // Calculate points based on speed:
+      // 1. Base points for a correct answer
+      const basePoints = 100;
+      
+      // 2. Time bonus calculation - faster answers get more points
+      // If user answers in the first 20% of available time, they get maximum bonus
+      const maxTimeBonus = 150;
+      const questionTimeLimit = currentQuestion.timeLimit || 20;
+      const timeTaken = questionTimeLimit - timeLeft;
+      
+      // Calculate percentage of maximum time used (inverted so faster = higher percentage)
+      const timePercentage = Math.max(0, 1 - (timeTaken / questionTimeLimit));
+      
+      // Calculate time bonus based on speed (exponential curve to reward quick answers more)
+      const timeBonus = Math.round(maxTimeBonus * Math.pow(timePercentage, 1.5));
+      
+      // Total points for this question
+      const pointsEarned = basePoints + timeBonus;
+      
+      // Update the score
+      setScore(prev => prev + pointsEarned);
+      
+      // For feedback in UI
+      answerRecord.points = pointsEarned;
+      answerRecord.timeBonus = timeBonus;
+      
+      console.log(`Correct answer! +${basePoints} base points, +${timeBonus} time bonus (answered in ${timeTaken}s of ${questionTimeLimit}s)`);
     }
     
     setAnswers(prev => [...prev, answerRecord]);
@@ -274,10 +320,19 @@ export default function PlayQuizPreview() {
           if (currentPlayerResult) {
             const correctAnswers = answers.filter(a => a.isCorrect).length;
             
+            // Calculate average answer time
+            const totalAnswerTime = answerTimes.reduce((sum, time) => sum + time, 0);
+            const avgAnswerTime = Math.round((totalAnswerTime / answerTimes.length) * 10) / 10;
+            
+            // Calculate total time bonus earned
+            const totalTimeBonus = answers.reduce((sum, a) => sum + (a.timeBonus || 0), 0);
+            
             // Update the player result data
             currentPlayerResult.score = score;
             currentPlayerResult.correctAnswers = correctAnswers;
             currentPlayerResult.totalQuestions = quizData.questions.length;
+            currentPlayerResult.timeBonus = totalTimeBonus;
+            currentPlayerResult.averageAnswerTime = avgAnswerTime;
             
             // Save updated results back to session storage
             sessionStorage.setItem('gameResults', JSON.stringify(gameResults));
@@ -346,10 +401,19 @@ export default function PlayQuizPreview() {
         if (currentPlayerResult) {
           const correctAnswers = answers.filter(a => a.isCorrect).length;
           
+          // Calculate average answer time
+          const totalAnswerTime = answerTimes.reduce((sum, time) => sum + time, 0);
+          const avgAnswerTime = Math.round((totalAnswerTime / answerTimes.length) * 10) / 10;
+          
+          // Calculate total time bonus earned
+          const totalTimeBonus = answers.reduce((sum, a) => sum + (a.timeBonus || 0), 0);
+          
           // Update the player result data
           currentPlayerResult.score = score;
           currentPlayerResult.correctAnswers = correctAnswers;
           currentPlayerResult.totalQuestions = quizData.questions.length;
+          currentPlayerResult.timeBonus = totalTimeBonus;
+          currentPlayerResult.averageAnswerTime = avgAnswerTime;
           
           // Save updated results back to session storage
           sessionStorage.setItem('gameResults', JSON.stringify(gameResults));
@@ -362,13 +426,13 @@ export default function PlayQuizPreview() {
     return (
       <PublicLayout>
         <Box sx={{ maxWidth: 800, mx: 'auto', py: 4 }}>
-          <Typography variant="h4" sx={{ mb: 4, textAlign: 'center', fontWeight: 'bold' }}>
+          <Typography variant="h4" component="div" sx={{ mb: 4, textAlign: 'center', fontWeight: 'bold' }}>
             Quiz Results
           </Typography>
           
           <Paper elevation={3} sx={{ p: 4, borderRadius: 3, mb: 4 }}>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-              <Typography variant="h5">
+              <Typography variant="h5" component="div">
                 {quizData.title}
               </Typography>
               <Chip 
@@ -380,7 +444,7 @@ export default function PlayQuizPreview() {
             
             <Divider sx={{ mb: 3 }} />
             
-            <Typography variant="h6" sx={{ mb: 2 }}>
+            <Typography variant="h6" component="div" sx={{ mb: 2 }}>
               Your Answers:
             </Typography>
             
@@ -410,18 +474,18 @@ export default function PlayQuizPreview() {
                       </ListItemIcon>
                       
                       <Box sx={{ flex: 1 }}>
-                        <Typography variant="subtitle1" sx={{ fontWeight: 'medium', mb: 1 }}>
+                        <Typography variant="subtitle1" component="div" sx={{ fontWeight: 'medium', mb: 1 }}>
                           {`${index + 1}. ${question.question}`}
                         </Typography>
                         
                         <Box sx={{ ml: 1 }}>
-                          <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
+                          <Typography variant="body2" component="div" color="text.secondary" sx={{ mb: 0.5 }}>
                             Your answer: {answer?.selectedOption !== undefined && answer.selectedOption !== null 
                               ? question.options[answer.selectedOption] 
                               : 'No answer'}
                           </Typography>
                           
-                          <Typography variant="body2" color="success.main">
+                          <Typography variant="body2" component="div" color="success.main">
                             Correct answer: {question.options[question.correctAnswer]}
                           </Typography>
                         </Box>
@@ -431,6 +495,44 @@ export default function PlayQuizPreview() {
                 );
               })}
             </List>
+          </Paper>
+          
+          {/* Time statistics */}
+          <Paper elevation={2} sx={{ p: 3, borderRadius: 3, mb: 4 }}>
+            <Typography variant="h6" component="div" sx={{ mb: 2 }}>
+              Your Speed Stats
+            </Typography>
+            
+            <Box sx={{ display: 'flex', justifyContent: 'space-around', textAlign: 'center' }}>
+              <Box>
+                <Typography variant="body2" component="div" color="text.secondary">
+                  Average Answer Time
+                </Typography>
+                <Typography variant="h5" component="div" color="primary" fontWeight="medium">
+                  {answerTimes.length > 0 ? 
+                    `${Math.round((answerTimes.reduce((sum, time) => sum + time, 0) / answerTimes.length) * 10) / 10}s` : 
+                    'N/A'}
+                </Typography>
+              </Box>
+              
+              <Box>
+                <Typography variant="body2" component="div" color="text.secondary">
+                  Speed Bonus Earned
+                </Typography>
+                <Typography variant="h5" component="div" color="secondary" fontWeight="medium">
+                  +{answers.reduce((sum, a) => sum + (a.timeBonus || 0), 0)}
+                </Typography>
+              </Box>
+              
+              <Box>
+                <Typography variant="body2" component="div" color="text.secondary">
+                  Fastest Answer
+                </Typography>
+                <Typography variant="h5" component="div" fontWeight="medium">
+                  {answerTimes.length > 0 ? `${Math.min(...answerTimes)}s` : 'N/A'}
+                </Typography>
+              </Box>
+            </Box>
           </Paper>
           
           <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2 }}>
@@ -664,11 +766,11 @@ export default function PlayQuizPreview() {
         >
           <DialogTitle component="div" sx={{ textAlign: 'center', pt: 3 }}>
             {selectedOption === currentQuestion.correctAnswer ? (
-              <Typography variant="h5" color="success.main" sx={{ fontWeight: 'bold' }}>
+              <Typography variant="h5" component="div" color="success.main" sx={{ fontWeight: 'bold' }}>
                 Correct!
               </Typography>
             ) : (
-              <Typography variant="h5" color="error.main" sx={{ fontWeight: 'bold' }}>
+              <Typography variant="h5" component="div" color="error.main" sx={{ fontWeight: 'bold' }}>
                 Incorrect
               </Typography>
             )}
@@ -677,12 +779,26 @@ export default function PlayQuizPreview() {
           <DialogContent>
             <Box sx={{ textAlign: 'center', py: 2 }}>
               {selectedOption === currentQuestion.correctAnswer ? (
-                <CorrectIcon color="success" sx={{ fontSize: 60 }} />
+                <>
+                  <CorrectIcon color="success" sx={{ fontSize: 60 }} />
+                  
+                  {/* Show points earned for this question */}
+                  {answers.length > 0 && answers[answers.length - 1].points && (
+                    <Box sx={{ mt: 2, mb: 1 }}>
+                      <Typography variant="h5" component="div" color="success.main" sx={{ fontWeight: 'bold' }}>
+                        +{answers[answers.length - 1].points} points
+                      </Typography>
+                      <Typography variant="body2" component="div" color="text.secondary">
+                        (includes +{answers[answers.length - 1].timeBonus} speed bonus)
+                      </Typography>
+                    </Box>
+                  )}
+                </>
               ) : (
                 <IncorrectIcon color="error" sx={{ fontSize: 60 }} />
               )}
               
-              <Typography variant="body1" sx={{ mt: 2, mb: 1 }}>
+              <Typography variant="body1" component="div" sx={{ mt: 2, mb: 1 }}>
                 {selectedOption === currentQuestion.correctAnswer
                   ? "Great job! You got it right."
                   : `The correct answer was: ${currentQuestion.options[currentQuestion.correctAnswer]}`}
@@ -708,4 +824,4 @@ export default function PlayQuizPreview() {
       </Box>
     </PublicLayout>
   );
-} 
+}
