@@ -23,7 +23,10 @@ import {
 import { useRouter, useSearchParams } from 'next/navigation';
 import PublicLayout from '../components/PublicLayout';
 import { motion } from 'framer-motion';
-import Animal from 'react-animals';
+import dynamic from 'next/dynamic';
+
+// Dynamically import the Animal component with no SSR
+const Animal = dynamic(() => import('react-animals'), { ssr: false });
 
 interface GameData {
   id: number;

@@ -210,3 +210,14 @@ export const useAuth = () => {
   }
   return context;
 };
+
+// Example: Add a function to check if a user can create a game
+const canCreateGame = (role: 'student' | 'teacher' | 'admin') => {
+  return role === 'student' || role === 'teacher' || role === 'admin';
+};
+
+// Use this function where necessary to check permissions
+// For example, in a component where game creation is handled, you might do:
+// if (!canCreateGame(user.role)) {
+//   // Show an error or redirect
+// }
