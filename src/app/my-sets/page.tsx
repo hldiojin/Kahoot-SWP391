@@ -655,15 +655,15 @@ export default function MySetsPage() {
                     <ListItemText
                       primary={
                         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <Typography variant="subtitle1" sx={{ fontWeight: index < 3 ? 'bold' : 'regular' }}>
+                          <Typography variant="subtitle1" component="div" sx={{ fontWeight: index < 3 ? 'bold' : 'regular' }}>
                             {player.name}
                           </Typography>
                           <Box sx={{ textAlign: 'right' }}>
-                            <Typography variant="h6" sx={{ fontWeight: 'bold', color: index < 3 ? 'primary.main' : 'text.primary' }}>
+                            <Typography variant="h6" component="div" sx={{ fontWeight: 'bold', color: index < 3 ? 'primary.main' : 'text.primary' }}>
                               {player.score} points
                             </Typography>
                             {player.timeBonus > 0 && (
-                              <Typography variant="caption" component="span" sx={{ color: 'secondary.main' }}>
+                              <Typography variant="caption" component="div" sx={{ color: 'secondary.main' }}>
                                 includes {player.timeBonus} speed bonus
                               </Typography>
                             )}
@@ -672,13 +672,13 @@ export default function MySetsPage() {
                       }
                       secondary={
                         <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, justifyContent: 'space-between', mt: 0.5 }}>
-                          <Typography variant="body2" component="span" sx={{ color: 'text.secondary' }}>
+                          <Typography variant="body2" component="div" sx={{ color: 'text.secondary' }}>
                             Correct answers: {player.correctAnswers}/{player.totalQuestions} 
                             {player.timeBonus ? ` • Time bonus: +${player.timeBonus}` : ''}
                           </Typography>
                           
                           {player.averageAnswerTime && (
-                            <Typography variant="body2" component="span" color="text.secondary">
+                            <Typography variant="body2" component="div" color="text.secondary">
                               Avg. answer time: <strong>{player.averageAnswerTime}s</strong>
                             </Typography>
                           )}
@@ -706,7 +706,7 @@ export default function MySetsPage() {
                 </Typography>
                 <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: { xs: 2, sm: 4 }, justifyContent: 'space-around' }}>
                   <Box>
-                    <Typography variant="body2" component="span" color="text.secondary">
+                    <Typography variant="body2" component="div" color="text.secondary">
                       Average Score
                     </Typography>
                     <Typography variant="h6" component="div" fontWeight="medium">
@@ -714,7 +714,7 @@ export default function MySetsPage() {
                     </Typography>
                   </Box>
                   <Box>
-                    <Typography variant="body2" component="span" color="text.secondary">
+                    <Typography variant="body2" component="div" color="text.secondary">
                       Correct Answer Rate
                     </Typography>
                     <Typography variant="h6" component="div" fontWeight="medium">
@@ -723,7 +723,7 @@ export default function MySetsPage() {
                     </Typography>
                   </Box>
                   <Box>
-                    <Typography variant="body2" component="span" color="text.secondary">
+                    <Typography variant="body2" component="div" color="text.secondary">
                       Avg. Response Time
                     </Typography>
                     <Typography variant="h6" component="div" fontWeight="medium">

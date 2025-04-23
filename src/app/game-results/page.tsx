@@ -23,6 +23,7 @@ import {
 import { useRouter } from 'next/navigation';
 import PublicLayout from '../components/PublicLayout';
 import { motion } from 'framer-motion';
+import Animal from 'react-animals';
 
 interface PlayerScore {
   name: string;
@@ -31,7 +32,20 @@ interface PlayerScore {
   totalQuestions: number;
   timeBonus?: number;
   averageAnswerTime?: number;
+  avatar?: string;
 }
+
+// Array of valid animal avatars and colors
+const animalAvatars = [
+  { id: 'alligator', name: 'alligator', color: 'orange' },
+  { id: 'elephant', name: 'elephant', color: 'teal' },
+  { id: 'dolphin', name: 'dolphin', color: 'blue' },
+  { id: 'turtle', name: 'turtle', color: 'green' },
+  { id: 'penguin', name: 'penguin', color: 'purple' },
+  { id: 'beaver', name: 'beaver', color: 'red' },
+  { id: 'tiger', name: 'tiger', color: 'yellow' },
+  { id: 'fox', name: 'fox', color: 'orange' }
+];
 
 export default function GameResultsPage() {
   const router = useRouter();
@@ -39,6 +53,7 @@ export default function GameResultsPage() {
   const [gameTitle, setGameTitle] = useState('');
   const [currentPlayer, setCurrentPlayer] = useState('');
   const [loading, setLoading] = useState(true);
+  const [playerAvatar, setPlayerAvatar] = useState('alligator');
 
   useEffect(() => {
     // Get data from sessionStorage
@@ -46,6 +61,11 @@ export default function GameResultsPage() {
       const storedResults = sessionStorage.getItem('gameResults');
       const quizData = sessionStorage.getItem('quizPreviewData');
       const playerName = sessionStorage.getItem('currentPlayer');
+      const storedAvatar = sessionStorage.getItem('playerAvatar');
+      
+      if (storedAvatar) {
+        setPlayerAvatar(storedAvatar);
+      }
       
       if (storedResults && quizData) {
         const results = JSON.parse(storedResults);
@@ -61,6 +81,11 @@ export default function GameResultsPage() {
             // Average answer time is random between 3-15 seconds for demo purposes
             // In a real app, this would be calculated from actual answer times
             player.averageAnswerTime = Math.round((Math.random() * 12 + 3) * 10) / 10;
+          }
+          
+          // Ensure each player has a valid avatar
+          if (!player.avatar || !animalAvatars.find(a => a.id === player.avatar)) {
+            player.avatar = animalAvatars[Math.floor(Math.random() * animalAvatars.length)].id;
           }
         });
         
@@ -92,6 +117,11 @@ export default function GameResultsPage() {
       setLoading(false);
     }
   }, []);
+
+  // Helper function to get animal avatar info
+  const getAnimalAvatar = (avatarId: string) => {
+    return animalAvatars.find(a => a.id === avatarId) || animalAvatars[0];
+  };
 
   const handlePlayAgain = () => {
     router.push('/');
@@ -179,21 +209,28 @@ export default function GameResultsPage() {
                 >
                   {playerResults.map((player, index) => {
                     if (player.name === currentPlayer) {
+                      const animalInfo = getAnimalAvatar(player.avatar || playerAvatar);
                       return (
                         <Box key={index} sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: { xs: 'flex-start', sm: 'center' }, justifyContent: 'space-between', gap: 2 }}>
                           <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                            <Avatar
+                            <Box
                               sx={{
-                                bgcolor: 'primary.main',
-                                width: 50,
-                                height: 50,
+                                width: 56,
+                                height: 56,
                                 mr: 2,
                                 border: '2px solid',
                                 borderColor: getMedalColor(index),
+                                borderRadius: '50%',
+                                overflow: 'hidden',
+                                bgcolor: 'white'
                               }}
                             >
-                              {player.name.charAt(0)}
-                            </Avatar>
+                              <Animal
+                                name={animalInfo.name}
+                                color={animalInfo.color}
+                                size="56px"
+                              />
+                            </Box>
                             <Box>
                               <Typography variant="h6" component="div">{player.name}</Typography>
                               <Typography variant="body2" component="div">
@@ -263,66 +300,95 @@ export default function GameResultsPage() {
             </Typography>
             
             <List sx={{ bgcolor: 'background.paper', borderRadius: 2, mb: 3 }}>
-              {playerResults.map((player, index) => (
-                <React.Fragment key={index}>
-                  {index > 0 && <Divider variant="inset" component="li" />}
-                  <ListItem
-                    alignItems="flex-start"
-                    sx={{
-                      bgcolor: index < 3 ? `rgba(${index === 0 ? '255, 215, 0' : index === 1 ? '192, 192, 192' : '205, 127, 50'}, 0.1)` : 'transparent',
-                      py: 1.5,
-                    }}
-                  >
-                    <ListItemAvatar>
-                      <Avatar
-                        sx={{
-                          bgcolor: index < 3 ? 'primary.main' : 'grey.400',
-                          border: index < 3 ? '2px solid' : 'none',
-                          borderColor: getMedalColor(index),
-                          width: 45,
-                          height: 45,
-                        }}
-                      >
-                        {index < 3 ? (
-                          <TrophyIcon sx={{ color: '#fff' }} />
-                        ) : (
-                          <Typography component="span">{index + 1}</Typography>
-                        )}
-                      </Avatar>
-                    </ListItemAvatar>
-                    <ListItemText
-                      primary={
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <Typography variant="subtitle1" component="span" sx={{ fontWeight: player.name === currentPlayer ? 'bold' : 'regular' }}>
-                            {player.name}
-                            {player.name === currentPlayer && (
-                              <Chip size="small" label="You" sx={{ ml: 1, fontSize: '0.7rem', height: 20 }} color="primary" />
-                            )}
-                          </Typography>
-                          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-                            <Typography variant="h6" component="div" sx={{ fontWeight: 'bold', color: index < 3 ? 'primary.main' : 'text.primary' }}>
-                              {player.score} pts
-                            </Typography>
-                            {player.timeBonus && player.timeBonus > 0 && (
-                              <Typography variant="caption" component="span" sx={{ color: 'secondary.main', fontWeight: 'medium' }}>
-                                includes {player.timeBonus} speed bonus
-                              </Typography>
-                            )}
+              {playerResults.map((player, index) => {
+                const animalInfo = getAnimalAvatar(player.avatar || (player.name === currentPlayer ? playerAvatar : 'alligator'));
+                return (
+                  <React.Fragment key={index}>
+                    {index > 0 && <Divider variant="inset" component="li" />}
+                    <ListItem
+                      alignItems="flex-start"
+                      sx={{
+                        bgcolor: index < 3 ? `rgba(${index === 0 ? '255, 215, 0' : index === 1 ? '192, 192, 192' : '205, 127, 50'}, 0.1)` : 'transparent',
+                        py: 1.5,
+                      }}
+                    >
+                      <ListItemAvatar>
+                        <Box sx={{ position: 'relative' }}>
+                          <Box
+                            sx={{
+                              width: 48,
+                              height: 48,
+                              border: index < 3 ? '2px solid' : 'none',
+                              borderColor: getMedalColor(index),
+                              borderRadius: '50%',
+                              overflow: 'hidden',
+                              bgcolor: 'white'
+                            }}
+                          >
+                            <Animal
+                              name={animalInfo.name}
+                              color={animalInfo.color}
+                              size="48px"
+                            />
                           </Box>
+                          
+                          {index < 3 && (
+                            <Box
+                              sx={{
+                                position: 'absolute',
+                                bottom: -3,
+                                right: -3,
+                                width: 22,
+                                height: 22,
+                                bgcolor: index === 0 ? 'gold' : index === 1 ? 'silver' : '#CD7F32',
+                                borderRadius: '50%',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                border: '1px solid white'
+                              }}
+                            >
+                              <Typography variant="caption" component="span" sx={{ color: 'white', fontWeight: 'bold', fontSize: '0.7rem' }}>
+                                {index + 1}
+                              </Typography>
+                            </Box>
+                          )}
                         </Box>
-                      }
-                      secondary={
-                        <Typography variant="body2" component="span" sx={{ color: 'text.secondary' }}>
-                          Correct answers: {player.correctAnswers}/{player.totalQuestions}
-                          {player.averageAnswerTime && 
-                            ` • Avg. time: ${player.averageAnswerTime}s`
-                          }
-                        </Typography>
-                      }
-                    />
-                  </ListItem>
-                </React.Fragment>
-              ))}
+                      </ListItemAvatar>
+                      <ListItemText
+                        primary={
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <Typography variant="subtitle1" component="span" sx={{ fontWeight: player.name === currentPlayer ? 'bold' : 'regular' }}>
+                              {player.name}
+                              {player.name === currentPlayer && (
+                                <Chip size="small" label="You" sx={{ ml: 1, fontSize: '0.7rem', height: 20 }} color="primary" />
+                              )}
+                            </Typography>
+                            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                              <Typography variant="h6" component="div" sx={{ fontWeight: 'bold', color: index < 3 ? 'primary.main' : 'text.primary' }}>
+                                {player.score} pts
+                              </Typography>
+                              {player.timeBonus && player.timeBonus > 0 && (
+                                <Typography variant="caption" component="span" sx={{ color: 'secondary.main', fontWeight: 'medium' }}>
+                                  includes {player.timeBonus} speed bonus
+                                </Typography>
+                              )}
+                            </Box>
+                          </Box>
+                        }
+                        secondary={
+                          <Typography variant="body2" component="span" sx={{ color: 'text.secondary' }}>
+                            Correct answers: {player.correctAnswers}/{player.totalQuestions}
+                            {player.averageAnswerTime && 
+                              ` • Avg. time: ${player.averageAnswerTime}s`
+                            }
+                          </Typography>
+                        }
+                      />
+                    </ListItem>
+                  </React.Fragment>
+                );
+              })}
             </List>
 
             <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2, mt: 4 }}>

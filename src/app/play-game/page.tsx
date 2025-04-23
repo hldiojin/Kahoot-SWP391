@@ -23,6 +23,7 @@ import {
 import { useRouter, useSearchParams } from 'next/navigation';
 import PublicLayout from '../components/PublicLayout';
 import { motion } from 'framer-motion';
+import Animal from 'react-animals';
 
 interface GameData {
   id: number;
@@ -39,6 +40,18 @@ interface Answer {
   text: string;
   isCorrect: boolean;
 }
+
+// Add animal avatars for selection with valid animal names only
+const animalAvatars = [
+  { id: 'alligator', name: 'alligator', color: 'orange' },
+  { id: 'elephant', name: 'elephant', color: 'teal' },
+  { id: 'dolphin', name: 'dolphin', color: 'blue' },
+  { id: 'turtle', name: 'turtle', color: 'green' },
+  { id: 'penguin', name: 'penguin', color: 'purple' },
+  { id: 'beaver', name: 'beaver', color: 'red' },
+  { id: 'tiger', name: 'tiger', color: 'yellow' },
+  { id: 'fox', name: 'fox', color: 'orange' }
+];
 
 // Sample game data based on the game codes from my-sets page
 const sampleGames: Record<string, GameData> = {
@@ -125,6 +138,7 @@ export default function PlayGamePage() {
   const [isEditingName, setIsEditingName] = useState(false);
   const [nameError, setNameError] = useState('');
   const [showSnackbar, setShowSnackbar] = useState(false);
+  const [selectedAvatar, setSelectedAvatar] = useState<string>('alligator');
 
   useEffect(() => {
     // Simulate loading game data with the provided code
@@ -351,6 +365,11 @@ export default function PlayGamePage() {
     setShowSnackbar(true);
   };
 
+  const handleSelectAvatar = (avatarId: string) => {
+    setSelectedAvatar(avatarId);
+    localStorage.setItem('playerAvatar', avatarId);
+  };
+
   const handleStartGame = () => {
     if (!gameData || !code) return;
     
@@ -384,6 +403,7 @@ export default function PlayGamePage() {
       // Store the formatted quiz data in sessionStorage
       sessionStorage.setItem('quizPreviewData', JSON.stringify(formattedQuizData));
       sessionStorage.setItem('currentPlayer', playerName);
+      sessionStorage.setItem('playerAvatar', selectedAvatar);
       
       // Initialize empty results that will be populated during quiz
       const initialGameResults = [
@@ -393,7 +413,8 @@ export default function PlayGamePage() {
           correctAnswers: 0,
           totalQuestions: formattedQuizData.questions.length,
           timeBonus: 0,
-          averageAnswerTime: 0 // This will be calculated during gameplay
+          averageAnswerTime: 0, // This will be calculated during gameplay
+          avatar: selectedAvatar
         }
       ];
       
@@ -406,7 +427,8 @@ export default function PlayGamePage() {
             correctAnswers: Math.floor(Math.random() * formattedQuizData.questions.length),
             totalQuestions: formattedQuizData.questions.length,
             timeBonus: Math.floor(Math.random() * 150) + 50,
-            averageAnswerTime: Math.round((Math.random() * 8 + 3) * 10) / 10 // 3-11 seconds
+            averageAnswerTime: Math.round((Math.random() * 8 + 3) * 10) / 10, // 3-11 seconds
+            avatar: animalAvatars[Math.floor(Math.random() * animalAvatars.length)].id
           },
           {
             name: "Player 3",
@@ -414,7 +436,8 @@ export default function PlayGamePage() {
             correctAnswers: Math.floor(Math.random() * formattedQuizData.questions.length),
             totalQuestions: formattedQuizData.questions.length,
             timeBonus: Math.floor(Math.random() * 120) + 30,
-            averageAnswerTime: Math.round((Math.random() * 10 + 4) * 10) / 10 // 4-14 seconds
+            averageAnswerTime: Math.round((Math.random() * 10 + 4) * 10) / 10, // 4-14 seconds
+            avatar: animalAvatars[Math.floor(Math.random() * animalAvatars.length)].id
           },
           {
             name: "Player 4",
@@ -422,7 +445,8 @@ export default function PlayGamePage() {
             correctAnswers: Math.floor(Math.random() * formattedQuizData.questions.length),
             totalQuestions: formattedQuizData.questions.length,
             timeBonus: Math.floor(Math.random() * 100) + 20,
-            averageAnswerTime: Math.round((Math.random() * 12 + 5) * 10) / 10 // 5-17 seconds
+            averageAnswerTime: Math.round((Math.random() * 12 + 5) * 10) / 10, // 5-17 seconds
+            avatar: animalAvatars[Math.floor(Math.random() * animalAvatars.length)].id
           }
         );
       }
@@ -431,6 +455,7 @@ export default function PlayGamePage() {
       
       // Store player name for future use
       localStorage.setItem('playerName', playerName);
+      localStorage.setItem('playerAvatar', selectedAvatar);
       
       // Show feedback to the user
       setShowSnackbar(true);
@@ -498,7 +523,7 @@ export default function PlayGamePage() {
 
   return (
     <PublicLayout>
-      <Container maxWidth="md" sx={{ py: 6 }}>
+      <Container maxWidth="md" sx={{ py: 4 }}>
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -571,6 +596,88 @@ export default function PlayGamePage() {
               </Box>
             </Paper>
             
+            {/* Avatar selection section */}
+            <Paper 
+              elevation={2}
+              sx={{ 
+                p: 3, 
+                mb: 4, 
+                borderRadius: 3,
+                backgroundColor: 'rgba(255, 255, 255, 0.8)',
+                boxShadow: '0 8px 20px rgba(0,0,0,0.08)',
+              }}
+            >
+              <Typography variant="h6" component="div" sx={{ mb: 3, fontWeight: 'medium' }}>
+                Choose Your Avatar
+              </Typography>
+              
+              <Box sx={{ 
+                display: 'flex', 
+                flexWrap: 'wrap', 
+                justifyContent: 'center', 
+                gap: 2, 
+                mb: 3 
+              }}>
+                {animalAvatars.map((avatar) => (
+                  <Box 
+                    key={avatar.id}
+                    sx={{
+                      width: { xs: '25%', sm: '16.66%', md: '12.5%' },
+                      maxWidth: '80px',
+                      minWidth: '50px',
+                    }}
+                  >
+                    <Box 
+                      onClick={() => handleSelectAvatar(avatar.id)}
+                      sx={{ 
+                        cursor: 'pointer',
+                        transition: 'transform 0.2s',
+                        transform: selectedAvatar === avatar.id ? 'scale(1.1)' : 'scale(1)',
+                        position: 'relative',
+                        '&:hover': {
+                          transform: 'scale(1.1)',
+                        },
+                      }}
+                    >
+                      <Box 
+                        sx={{ 
+                          border: selectedAvatar === avatar.id ? '3px solid #2196f3' : '3px solid transparent',
+                          borderRadius: '50%',
+                          overflow: 'hidden',
+                          width: 64,
+                          height: 64,
+                        }}
+                      >
+                        <Animal 
+                          name={avatar.name} 
+                          color={avatar.color}
+                          size="64px"
+                        />
+                      </Box>
+                      {selectedAvatar === avatar.id && (
+                        <Box
+                          sx={{
+                            position: 'absolute',
+                            bottom: -10,
+                            left: '50%',
+                            transform: 'translateX(-50%)',
+                            bgcolor: 'primary.main',
+                            color: 'white',
+                            borderRadius: 10,
+                            px: 1,
+                            py: 0.2,
+                            fontSize: '0.7rem',
+                          }}
+                        >
+                          Selected
+                        </Box>
+                      )}
+                    </Box>
+                  </Box>
+                ))}
+              </Box>
+            </Paper>
+            
             {/* Player name section */}
             <Paper 
               elevation={2}
@@ -619,20 +726,22 @@ export default function PlayGamePage() {
               ) : (
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    <Avatar 
-                      sx={{ 
-                        bgcolor: 'primary.main', 
-                        mr: 2,
-                        width: 40,
-                        height: 40,
-                        background: 'linear-gradient(45deg, #2196F3 30%, #9C27B0 90%)',
-                      }}
-                    >
-                      {playerName ? playerName.charAt(0).toUpperCase() : 'G'}
-                    </Avatar>
-                    <Typography sx={{ fontSize: '1.1rem', fontWeight: nameError ? 'bold' : 'medium', color: nameError ? 'error.main' : 'text.primary' }}>
-                      {playerName || 'Guest Player'}
-                    </Typography>
+                    <Box sx={{ width: 48, height: 48, mr: 2, border: '2px solid #2196f3', borderRadius: '50%', overflow: 'hidden' }}>
+                      <Animal 
+                        name={(animalAvatars.find(a => a.id === selectedAvatar) || animalAvatars[0]).name}
+                        color={(animalAvatars.find(a => a.id === selectedAvatar) || animalAvatars[0]).color}
+                        size="48px"
+                      />
+                    </Box>
+                    <Box>
+                      <Typography sx={{ fontSize: '1.1rem', fontWeight: nameError ? 'bold' : 'medium', color: nameError ? 'error.main' : 'text.primary' }}>
+                        {playerName || 'Guest Player'}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {(animalAvatars.find(a => a.id === selectedAvatar)?.name || 'alligator').charAt(0).toUpperCase() + 
+                          (animalAvatars.find(a => a.id === selectedAvatar)?.name || 'alligator').slice(1)} Avatar
+                      </Typography>
+                    </Box>
                   </Box>
                   <IconButton size="small" onClick={() => setIsEditingName(true)} sx={{ bgcolor: 'rgba(0,0,0,0.05)' }}>
                     <EditIcon fontSize="small" />
@@ -678,7 +787,7 @@ export default function PlayGamePage() {
         open={showSnackbar}
         autoHideDuration={3000}
         onClose={() => setShowSnackbar(false)}
-        message="Name saved successfully!"
+        message="Name and avatar saved successfully!"
       />
     </PublicLayout>
   );
