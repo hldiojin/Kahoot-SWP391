@@ -377,12 +377,53 @@ export default function PlayGamePage() {
                         (q.answers ? q.answers.findIndex((a: Answer | any) => a.isCorrect) : 0),
           timeLimit: q.timeLimit || 20
         })),
-        createdBy: gameData.creator
+        createdBy: gameData.creator,
+        gameCode: code
       };
       
       // Store the formatted quiz data in sessionStorage
       sessionStorage.setItem('quizPreviewData', JSON.stringify(formattedQuizData));
       sessionStorage.setItem('currentPlayer', playerName);
+      
+      // Initialize empty results that will be populated during quiz
+      const initialGameResults = [
+        {
+          name: playerName,
+          score: 0,
+          correctAnswers: 0,
+          totalQuestions: formattedQuizData.questions.length,
+          timeBonus: 0
+        }
+      ];
+      
+      // Add demo players for testing (would be real players in multiplayer implementation)
+      if (process.env.NODE_ENV !== 'production') {
+        initialGameResults.push(
+          {
+            name: "Player 2",
+            score: Math.floor(Math.random() * 800) + 200,
+            correctAnswers: Math.floor(Math.random() * formattedQuizData.questions.length),
+            totalQuestions: formattedQuizData.questions.length,
+            timeBonus: Math.floor(Math.random() * 100)
+          },
+          {
+            name: "Player 3",
+            score: Math.floor(Math.random() * 700) + 100,
+            correctAnswers: Math.floor(Math.random() * formattedQuizData.questions.length),
+            totalQuestions: formattedQuizData.questions.length,
+            timeBonus: Math.floor(Math.random() * 80)
+          },
+          {
+            name: "Player 4",
+            score: Math.floor(Math.random() * 600) + 100,
+            correctAnswers: Math.floor(Math.random() * formattedQuizData.questions.length),
+            totalQuestions: formattedQuizData.questions.length,
+            timeBonus: Math.floor(Math.random() * 60)
+          }
+        );
+      }
+      
+      sessionStorage.setItem('gameResults', JSON.stringify(initialGameResults));
       
       // Store player name for future use
       localStorage.setItem('playerName', playerName);

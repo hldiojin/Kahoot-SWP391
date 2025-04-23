@@ -259,7 +259,42 @@ export default function PlayQuizPreview() {
       setSelectedOption(null);
       setIsAnswered(false);
     } else {
-      setShowResults(true);
+      // Quiz is finished - update game results and redirect to results page
+      try {
+        // Get existing game results from session storage
+        const resultsData = sessionStorage.getItem('gameResults');
+        if (resultsData) {
+          const gameResults = JSON.parse(resultsData);
+          
+          // Update the current player's score and stats
+          const currentPlayerResult = gameResults.find((player: any) => 
+            player.name === playerName
+          );
+          
+          if (currentPlayerResult) {
+            const correctAnswers = answers.filter(a => a.isCorrect).length;
+            
+            // Update the player result data
+            currentPlayerResult.score = score;
+            currentPlayerResult.correctAnswers = correctAnswers;
+            currentPlayerResult.totalQuestions = quizData.questions.length;
+            
+            // Save updated results back to session storage
+            sessionStorage.setItem('gameResults', JSON.stringify(gameResults));
+            
+            // Redirect to the results page
+            window.location.href = '/game-results';
+          } else {
+            // Fallback if player not found in results
+            setShowResults(true);
+          }
+        } else {
+          setShowResults(true);
+        }
+      } catch (error) {
+        console.error('Error updating game results:', error);
+        setShowResults(true);
+      }
     }
   };
 
@@ -268,7 +303,8 @@ export default function PlayQuizPreview() {
   };
 
   const closeWindow = () => {
-    window.close();
+    // Redirect to home instead of closing window
+    window.location.href = '/';
   };
 
   // Don't render until client-side and data is loaded
@@ -295,6 +331,34 @@ export default function PlayQuizPreview() {
   }
 
   if (showResults) {
+    // Update the game results before showing
+    try {
+      // Get existing game results from session storage
+      const resultsData = sessionStorage.getItem('gameResults');
+      if (resultsData) {
+        const gameResults = JSON.parse(resultsData);
+        
+        // Update the current player's score and stats
+        const currentPlayerResult = gameResults.find((player: any) => 
+          player.name === playerName
+        );
+        
+        if (currentPlayerResult) {
+          const correctAnswers = answers.filter(a => a.isCorrect).length;
+          
+          // Update the player result data
+          currentPlayerResult.score = score;
+          currentPlayerResult.correctAnswers = correctAnswers;
+          currentPlayerResult.totalQuestions = quizData.questions.length;
+          
+          // Save updated results back to session storage
+          sessionStorage.setItem('gameResults', JSON.stringify(gameResults));
+        }
+      }
+    } catch (error) {
+      console.error('Error updating game results:', error);
+    }
+    
     return (
       <PublicLayout>
         <Box sx={{ maxWidth: 800, mx: 'auto', py: 4 }}>
@@ -373,22 +437,21 @@ export default function PlayQuizPreview() {
             <Button
               variant="outlined"
               startIcon={<HomeIcon />}
-              onClick={closeWindow}
+              onClick={() => window.location.href = '/'}
               sx={{ borderRadius: 2 }}
             >
-              Close Preview
+              Go to Home
             </Button>
             
             <Button
               variant="contained"
-              startIcon={<RefreshIcon />}
-              onClick={restartGame}
+              onClick={() => window.location.href = '/game-results'}
               sx={{ 
                 borderRadius: 2,
                 background: 'linear-gradient(45deg, #2196F3 30%, #9C27B0 90%)',
               }}
             >
-              Play Again
+              See Leaderboard
             </Button>
           </Box>
         </Box>

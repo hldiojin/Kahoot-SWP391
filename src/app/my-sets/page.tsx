@@ -19,6 +19,11 @@ import {
   DialogContent,
   DialogContentText,
   DialogActions,
+  List,
+  ListItem,
+  ListItemIcon,
+  ListItemText,
+  Divider,
 } from '@mui/material';
 import {
   Search as SearchIcon,
@@ -100,6 +105,9 @@ export default function MySetsPage() {
   const [mySets, setMySets] = useState<any[]>([]);
   const [codeDialogOpen, setCodeDialogOpen] = useState(false);
   const [selectedGame, setSelectedGame] = useState<any>(null);
+  const [completedGames, setCompletedGames] = useState<any[]>([]);
+  const [resultsDialogOpen, setResultsDialogOpen] = useState(false);
+  const [gameResults, setGameResults] = useState<any[]>([]);
 
   // Load sets from localStorage when component mounts
   useEffect(() => {
@@ -109,6 +117,12 @@ export default function MySetsPage() {
     } else {
       // Use sample data if no stored sets found
       setMySets(sampleSets);
+    }
+
+    // Load completed games data
+    const storedCompletedGames = localStorage.getItem('completedGames');
+    if (storedCompletedGames) {
+      setCompletedGames(JSON.parse(storedCompletedGames));
     }
   }, []);
 
@@ -161,6 +175,17 @@ export default function MySetsPage() {
 
   const handleCloseCodeDialog = () => {
     setCodeDialogOpen(false);
+  };
+
+  const handleShowResults = (game: any) => {
+    handleMenuClose();
+    setGameResults(game.playerResults || []);
+    setSelectedGame(game);
+    setResultsDialogOpen(true);
+  };
+
+  const handleCloseResultsDialog = () => {
+    setResultsDialogOpen(false);
   };
 
   const filteredSets = mySets.filter(game => 
@@ -246,6 +271,7 @@ export default function MySetsPage() {
             <Tab label="All Sets" />
             <Tab label="Created by Me" />
             <Tab label="Shared with Me" />
+            <Tab label="Completed Games" />
           </Tabs>
         </Box>
 
@@ -359,6 +385,106 @@ export default function MySetsPage() {
             </Typography>
           </Box>
         </TabPanel>
+        
+        <TabPanel value={tabValue} index={3}>
+          {completedGames.length > 0 ? (
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+              {completedGames
+                .filter(game => 
+                  game.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                  (game.description && game.description.toLowerCase().includes(searchQuery.toLowerCase()))
+                )
+                .map((game) => (
+                <Box key={game.id} sx={{ width: { xs: '100%', sm: '45%', md: '30%' }, position: 'relative' }}>
+                  <Box sx={{ position: 'absolute', top: 10, right: 10, zIndex: 1 }}>
+                    <IconButton
+                      aria-label="show results"
+                      onClick={() => handleShowResults(game)}
+                      sx={{ bgcolor: 'rgba(255, 255, 255, 0.8)', '&:hover': { bgcolor: 'rgba(255, 255, 255, 0.9)' } }}
+                    >
+                      <MoreVertIcon />
+                    </IconButton>
+                  </Box>
+                  <Paper
+                    elevation={3}
+                    sx={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      height: '100%',
+                      borderRadius: 3,
+                      overflow: 'hidden',
+                      transition: 'transform 0.2s, box-shadow 0.2s',
+                      '&:hover': {
+                        transform: 'translateY(-4px)',
+                        boxShadow: 6,
+                      },
+                    }}
+                  >
+                    <Box
+                      sx={{
+                        height: 140,
+                        position: 'relative',
+                        backgroundImage: `linear-gradient(rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.6)), url(${game.coverImage})`,
+                        backgroundSize: 'cover',
+                        backgroundPosition: 'center',
+                        display: 'flex',
+                        alignItems: 'flex-end',
+                        p: 2,
+                      }}
+                    >
+                      <Box sx={{ width: '100%' }}>
+                        <Typography variant="h6" sx={{ color: 'white', fontWeight: 'bold' }}>
+                          {game.title}
+                        </Typography>
+                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                          <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.8)', mt: 0.5 }}>
+                            Completed: {new Date(game.dateCompleted).toLocaleDateString()}
+                          </Typography>
+                        </Box>
+                      </Box>
+                    </Box>
+
+                    <Box sx={{ p: 2, flexGrow: 1 }}>
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                        {game.description}
+                      </Typography>
+
+                      <Box sx={{ mt: 2 }}>
+                        <Typography variant="caption" sx={{ display: 'flex', alignItems: 'center', color: 'text.secondary' }}>
+                          <span style={{ fontWeight: 'bold', marginRight: '4px' }}>{game.playerResults?.length || 0}</span> players
+                        </Typography>
+                        <Typography variant="caption" sx={{ display: 'flex', alignItems: 'center', color: 'text.secondary' }}>
+                          <span style={{ fontWeight: 'bold', marginRight: '4px' }}>{game.questions?.length || 0}</span> questions
+                        </Typography>
+                      </Box>
+                    </Box>
+
+                    <Divider />
+
+                    <Box sx={{ p: 2, bgcolor: 'background.default' }}>
+                      <Button
+                        size="small"
+                        onClick={() => handleShowResults(game)}
+                        sx={{ textTransform: 'none', color: 'primary.main' }}
+                      >
+                        View Results
+                      </Button>
+                    </Box>
+                  </Paper>
+                </Box>
+              ))}
+            </Box>
+          ) : (
+            <Box sx={{ textAlign: 'center', py: 6 }}>
+              <Typography variant="h6" color="text.secondary">
+                No completed games yet
+              </Typography>
+              <Typography variant="body1" color="text.secondary" sx={{ mt: 1 }}>
+                Games played by students will appear here
+              </Typography>
+            </Box>
+          )}
+        </TabPanel>
       </Box>
 
       {/* Menu for game actions */}
@@ -445,6 +571,88 @@ export default function MySetsPage() {
         </DialogContent>
         <DialogActions sx={{ justifyContent: 'center', pb: 3 }}>
           <Button onClick={handleCloseCodeDialog} variant="contained">
+            Close
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Game Results Dialog */}
+      <Dialog
+        open={resultsDialogOpen}
+        onClose={handleCloseResultsDialog}
+        aria-labelledby="results-dialog-title"
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle id="results-dialog-title" component="div" sx={{ textAlign: 'center' }}>
+          <Typography variant="h5" fontWeight="bold">
+            Game Results: {selectedGame?.title}
+          </Typography>
+        </DialogTitle>
+        <DialogContent dividers>
+          <Box sx={{ py: 2 }}>
+            <Typography variant="subtitle1" sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>Completed: {selectedGame?.dateCompleted ? new Date(selectedGame.dateCompleted).toLocaleString() : 'Unknown'}</span>
+              <span>{gameResults.length} Players</span>
+            </Typography>
+            
+            <List>
+              {gameResults
+                .sort((a, b) => b.score - a.score)
+                .map((player, index) => (
+                <React.Fragment key={index}>
+                  {index > 0 && <Divider component="li" />}
+                  <ListItem
+                    sx={{
+                      py: 2,
+                      px: 3,
+                      bgcolor: index < 3 ? `rgba(${index === 0 ? '255, 215, 0' : index === 1 ? '192, 192, 192' : '205, 127, 50'}, 0.1)` : 'transparent',
+                      borderRadius: 1,
+                    }}
+                  >
+                    <ListItemIcon sx={{ minWidth: 40 }}>
+                      <Box 
+                        sx={{ 
+                          width: 32, 
+                          height: 32, 
+                          borderRadius: '50%',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          bgcolor: index < 3 ? 'primary.main' : 'grey.300',
+                          color: '#fff',
+                          fontWeight: 'bold'
+                        }}
+                      >
+                        {index + 1}
+                      </Box>
+                    </ListItemIcon>
+                    <ListItemText
+                      primary={
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <Typography variant="subtitle1" sx={{ fontWeight: index < 3 ? 'bold' : 'regular' }}>
+                            {player.name}
+                          </Typography>
+                          <Typography variant="h6" sx={{ fontWeight: 'bold', color: index < 3 ? 'primary.main' : 'text.primary' }}>
+                            {player.score} points
+                          </Typography>
+                        </Box>
+                      }
+                      secondary={
+                        <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                          Correct answers: {player.correctAnswers}/{player.totalQuestions} 
+                          {player.timeBonus ? ` • Time bonus: +${player.timeBonus}` : ''}
+                        </Typography>
+                      }
+                    />
+                  </ListItem>
+                </React.Fragment>
+              ))}
+            </List>
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ justifyContent: 'center', p: 3 }}>
+          <Button onClick={handleCloseResultsDialog} variant="contained">
             Close
           </Button>
         </DialogActions>
