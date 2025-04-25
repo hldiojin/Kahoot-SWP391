@@ -27,7 +27,7 @@ import { Visibility, VisibilityOff, ArrowBack } from '@mui/icons-material';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { useRouter } from 'next/navigation';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../../../context/AuthContext';
 
 // Motion components
 const MotionContainer = motion(Container);
