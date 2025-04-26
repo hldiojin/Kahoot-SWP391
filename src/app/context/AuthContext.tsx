@@ -1,188 +1,175 @@
 'use client';
 
-import React, { createContext, useState, useEffect, useContext } from 'react';
-import { useRouter } from 'next/navigation';
-import authService from '@/services/authService';
+import React, { createContext, useContext, useState, useEffect } from 'react';
 
-// Define user type
 interface User {
   id: string;
-  userName?: string;
-  username?: string;
-  email?: string;
-  role?: string;
-}
-
-// Define register data type
-interface RegisterData {
-  username: string;
   email: string;
-  password: string;
+  name?: string;
+  firstName?: string; 
+  lastName?: string;
+  role: 'teacher' | 'student' | 'admin';
+  createdAt: string;
+  quizzes?: any[];
+  isVerified: boolean;
 }
 
-// Define context type
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
-  login: (username: string, password: string) => Promise<{success: boolean; errorType?: string}>;
-  register: (data: RegisterData) => Promise<{success: boolean; errorType?: string}>;
+  login: (email: string, password: string) => Promise<void>;
   logout: () => void;
-  isAuthenticated: () => boolean;
+  signup: (email: string, password: string, firstName: string, lastName: string, role: 'teacher' | 'student') => Promise<void>;
 }
 
-// Create context with default values
-const AuthContext = createContext<AuthContextType>({
-  user: null,
-  isLoading: true,
-  login: async () => ({ success: false }),
-  register: async () => ({ success: false }),
-  logout: () => {},
-  isAuthenticated: () => false
-});
+// Create context
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
+// Hardcoded teacher account for development
+const hardcodedTeacher: User = {
+  id: "teacher123",
+  email: "teacher@example.com",
+  firstName: "Teacher",
+  lastName: "Demo",
+  name: "Teacher Demo",
+  role: "teacher",
+  createdAt: new Date().toISOString(),
+  quizzes: [],
+  isVerified: true
+};
+
+export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const router = useRouter();
 
-  // Check for existing user on mount - only run on client side
+  // Check for existing user session on mount
   useEffect(() => {
-    const getStoredUser = () => {
-      try {
-        const storedUser = localStorage.getItem('user');
-        if (storedUser) {
-          setUser(JSON.parse(storedUser));
-        }
-      } catch (error) {
-        console.error('Error restoring auth state:', error);
-        localStorage.removeItem('user');
+    // Set loading while checking authentication
+    setIsLoading(true);
+    
+    try {
+      // For development: automatically use hardcoded teacher account
+      setUser(hardcodedTeacher);
+      localStorage.setItem('currentUser', JSON.stringify(hardcodedTeacher));
+      localStorage.setItem('isAuthenticated', 'true');
+      
+      /* Uncomment this section when real authentication is needed
+      const storedUser = localStorage.getItem('currentUser');
+      const isAuthenticated = localStorage.getItem('isAuthenticated') === 'true';
+      
+      if (isAuthenticated && storedUser) {
+        setUser(JSON.parse(storedUser));
       }
-      setIsLoading(false);
-    };
-
-    if (typeof window !== 'undefined') {
-      getStoredUser();
-    } else {
+      */
+    } catch (error) {
+      console.error('Error checking authentication:', error);
+    } finally {
+      // Always finish loading
       setIsLoading(false);
     }
   }, []);
 
-  // Login function using the auth service
-  const login = async (userName: string, password: string) => {
+  const login = async (email: string, password: string) => {
     try {
-      // Input validation
-      if (!userName.trim()) {
-        return { success: false, errorType: 'username_required' };
-      }
+      setIsLoading(true);
       
-      if (!password) {
-        return { success: false, errorType: 'password_required' };
-      }
-      
-      // Call the actual API through authService
-      const response = await authService.login({ userName, password });
-      
-      // Set user state with the returned user data
-      setUser(response.user);
-      
-      // Save user data in localStorage
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('user', JSON.stringify(response.user));
-      }
-      
-      return { success: true };
-    } catch (error: any) {
-      // Handle specific error types
-      if (error.response) {
-        if (error.response.status === 401) {
-          return { success: false, errorType: 'invalid_credentials' };
-        } else if (error.response.status === 404) {
-          return { success: false, errorType: 'user_not_found' };
-        }
-      }
-      
-      // Generic error
-      return { success: false, errorType: 'server_error' };
+      // In a real app, this would be an API call
+      // For demo purposes, we'll just accept any credentials and use our hardcoded teacher
+      setUser(hardcodedTeacher);
+      localStorage.setItem('currentUser', JSON.stringify(hardcodedTeacher));
+      localStorage.setItem('isAuthenticated', 'true');
+    } catch (error) {
+      console.error('Login error:', error);
+      throw error;
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  // Register function using auth service
-  const register = async (data: RegisterData) => {
-    try {
-      // Input validation
-      if (!data.username.trim()) {
-        return { success: false, errorType: 'username_required' };
-      }
-      
-      if (!data.email.trim()) {
-        return { success: false, errorType: 'email_required' };
-      }
-      
-      if (!data.password) {
-        return { success: false, errorType: 'password_required' };
-      }
-      
-      // Call the actual API through authService
-      const response = await authService.register(data);
-      
-      // Set user state with the returned user data
-      setUser(response.user);
-      
-      // Save user data in localStorage
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('user', JSON.stringify(response.user));
-      }
-      
-      return { success: true };
-    } catch (error: any) {
-      // Handle specific error types
-      if (error.response) {
-        if (error.response.status === 400) {
-          if (error.response.data?.message?.includes('email')) {
-            return { success: false, errorType: 'email_exists' };
-          } else if (error.response.data?.message?.includes('username')) {
-            return { success: false, errorType: 'username_exists' };
-          }
-        }
-      }
-      
-      // Generic error
-      return { success: false, errorType: 'server_error' };
-    }
-  };
-
-  // Logout function
   const logout = () => {
-    authService.logout();
     setUser(null);
+    localStorage.removeItem('currentUser');
+    localStorage.removeItem('isAuthenticated');
     
-    router.push('/');
+    // In a real app, we might also invalidate tokens on the server, etc.
   };
 
-  // Check authentication status
-  const isAuthenticated = () => {
-    return authService.isAuthenticated();
+  const signup = async (email: string, password: string, firstName: string, lastName: string, role: 'teacher' | 'student') => {
+    try {
+      setIsLoading(true);
+      
+      // In a real app, this would be an API call
+      // For demo purposes, we'll just create a mock account
+      const newUser: User = {
+        id: 'user_' + Date.now().toString(),
+        email,
+        firstName,
+        lastName,
+        name: `${firstName} ${lastName}`,
+        role,
+        createdAt: new Date().toISOString(),
+        quizzes: [],
+        isVerified: true
+      };
+      
+      setUser(newUser);
+      localStorage.setItem('currentUser', JSON.stringify(newUser));
+      localStorage.setItem('isAuthenticated', 'true');
+    } catch (error) {
+      console.error('Signup error:', error);
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  return (
-    <AuthContext.Provider value={{ 
-      user, 
-      isLoading, 
-      login, 
-      register,
-      logout,
-      isAuthenticated 
-    }}>
-      {children}
-    </AuthContext.Provider>
-  );
+  const value = {
+    user,
+    isLoading,
+    login,
+    logout,
+    signup
+  };
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
-// Custom hook to use the auth context
-export const useAuth = () => {
+export const useAuth = (): AuthContextType => {
   const context = useContext(AuthContext);
-  if (!context) {
+  if (context === undefined) {
     throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
+};
+
+// HOC to protect routes
+export const withAuth = (Component: React.ComponentType) => {
+  return function WithAuth(props: any) {
+    const { user, isLoading } = useAuth();
+    const [isClient, setIsClient] = useState(false);
+    
+    useEffect(() => {
+      setIsClient(true);
+    }, []);
+    
+    // Only render component if authenticated and on client
+    if (!isClient || isLoading) {
+      return null; // Return nothing during SSR or loading
+    }
+    
+    // Skip authentication check for development
+    return <Component {...props} />;
+    
+    /* Enable this when real auth is needed
+    if (!user) {
+      if (isClient) {
+        // Only redirect on client side
+        window.location.href = '/login';
+      }
+      return null;
+    }
+    
+    return <Component {...props} />;
+    */
+  };
 };

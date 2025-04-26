@@ -1,109 +1,96 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Box, Typography, Paper, Tabs, Tab, Divider, Button, Avatar, Chip } from '@mui/material';
+import { Box, Typography, Paper, Tabs, Tab, Divider, Button, Avatar, Chip, Grid } from '@mui/material';
 import { useRouter } from 'next/navigation';
-import { useAuth } from '../context/AuthContext';
+import { useAuth, withAuth } from '../context/AuthContext';
 import MainLayout from '../components/MainLayout';
 import GameCard from '../components/GameCard';
 import { Add as AddIcon, TrendingUp as TrendingIcon, AccessTime as RecentIcon } from '@mui/icons-material';
 
+// Sample games data for the dashboard
 const sampleGames = [
   {
     id: '1',
-    title: 'Math Challenge',
-    description: 'Test your math skills with addition, subtraction, multiplication, and division problems.',
-    imageUrl: 'https://source.unsplash.com/random/300x200?math',
-    questionsCount: 20,
-    playsCount: 1245,
-    creator: 'John Doe'
+    title: 'Math Fundamentals',
+    description: 'Basic mathematics quiz covering arithmetic, algebra, and geometry',
+    imageUrl: 'https://img.freepik.com/free-vector/realistic-math-chalkboard-background_23-2148163817.jpg',
+    questionsCount: 15,
+    playsCount: 250,
+    creator: 'Teacher Demo'
   },
   {
     id: '2',
     title: 'Science Quiz',
-    description: 'Explore the world of science with questions about biology, chemistry, and physics.',
-    imageUrl: 'https://source.unsplash.com/random/300x200?science',
-    questionsCount: 15,
-    playsCount: 987,
-    creator: 'Jane Smith'
+    description: 'Fun science questions about physics, chemistry, and biology',
+    imageUrl: 'https://img.freepik.com/free-vector/hand-drawn-science-education-background_23-2148499325.jpg',
+    questionsCount: 20,
+    playsCount: 180,
+    creator: 'Teacher Demo'
   },
   {
     id: '3',
-    title: 'History Test',
-    description: 'Journey through time with questions about major historical events and figures.',
-    imageUrl: 'https://source.unsplash.com/random/300x200?history',
+    title: 'World Geography',
+    description: 'Test your knowledge about countries, capitals, and landmarks',
+    imageUrl: 'https://img.freepik.com/free-vector/hand-drawn-geography-background_23-2148201628.jpg',
     questionsCount: 25,
-    playsCount: 756,
-    creator: 'Alex Johnson'
+    playsCount: 320,
+    creator: 'Teacher Demo'
   },
   {
     id: '4',
-    title: 'Geography Quiz',
-    description: 'Test your knowledge of countries, capitals, and geographical features.',
-    imageUrl: 'https://source.unsplash.com/random/300x200?geography',
+    title: 'Literature Classics',
+    description: 'Questions about famous novels, authors, and literary works',
+    imageUrl: 'https://img.freepik.com/free-photo/pile-books-with-copy-space_23-2148898747.jpg',
     questionsCount: 18,
-    playsCount: 632,
-    creator: 'Sarah Williams'
+    playsCount: 120,
+    creator: 'Teacher Demo'
   }
 ];
 
+// Extra suggested games
 const suggestedGames = [
   {
     id: '5',
-    title: 'Literature Classics',
-    description: 'Test your knowledge of famous authors and their works.',
-    imageUrl: 'https://source.unsplash.com/random/300x200?books',
-    questionsCount: 22,
-    playsCount: 1832,
-    creator: 'Michael Brown'
+    title: 'Computer Science',
+    description: 'Coding, algorithms, and computer science concepts for all levels',
+    imageUrl: 'https://img.freepik.com/free-vector/hand-drawn-flat-design-stack-overflow-background_23-2149219038.jpg',
+    questionsCount: 30,
+    playsCount: 210,
+    creator: 'Community'
   },
   {
     id: '6',
-    title: 'Computer Science',
-    description: 'Coding, algorithms, and computer science concepts for all levels.',
-    imageUrl: 'https://source.unsplash.com/random/300x200?programming',
-    questionsCount: 30,
-    playsCount: 2154,
-    creator: 'Emily Davis'
+    title: 'Art History',
+    description: 'Explore famous artworks, artists, and artistic movements through history',
+    imageUrl: 'https://img.freepik.com/free-vector/hand-painted-watercolor-banksy-graffiti-background_23-2149629192.jpg',
+    questionsCount: 22,
+    playsCount: 175,
+    creator: 'Community'
   },
 ];
 
-export default function Dashboard() {
+function Dashboard() {
   const router = useRouter();
   const [tabValue, setTabValue] = useState(0);
-  const [mounted, setMounted] = useState(false);
-  // Use this state to make sure we only access auth after client rendering
-  const [userData, setUserData] = useState<any>(null);
-  const [isClient, setIsClient] = useState(false);
   const { user, isLoading } = useAuth();
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    // This will only run on the client
-    setIsClient(true);
-    
-    // Set mounted flag for UI rendering
+    // Set mounted after client-side hydration to prevent errors
     setMounted(true);
-    
-    // Set user data after mounting to prevent hydration mismatch
-    if (!isLoading) {
-      setUserData(user);
-      if (!user) {
-        router.push('/login');
-      }
-    }
-  }, [user, isLoading, router]);
+  }, []);
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
     setTabValue(newValue);
   };
-
-  // Return a loading state or null during server-side rendering and initial client mount
-  if (!isClient || isLoading || !mounted) {
-    return null;
-  }
   
-  // Return null if no user is found after client-side checks
-  if (!userData) {
+  const handleCreateGame = () => {
+    router.push('/create-game');
+  };
+
+  // Prevent rendering until client-side hydration is complete
+  if (!mounted) {
     return null;
   }
 
@@ -121,36 +108,34 @@ export default function Dashboard() {
                 background: 'linear-gradient(45deg, #2196F3 30%, #9C27B0 90%)'
               }}
             >
-              {userData?.firstName?.charAt(0) || ''}{userData?.lastName?.charAt(0) || ''}
+              {user?.firstName?.charAt(0) || 'T'}{user?.lastName?.charAt(0) || 'D'}
             </Avatar>
             <Box>
               <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
-                Welcome back, {userData?.firstName || 'User'}!
+                Welcome back, {user?.firstName || 'Teacher'}!
               </Typography>
               <Chip 
-                label={userData?.role === 'teacher' ? 'Teacher' : 'Student'} 
-                color={userData?.role === 'teacher' ? 'primary' : 'secondary'} 
+                label="Teacher" 
+                color="primary" 
                 size="small" 
                 sx={{ mt: 0.5 }}
               />
             </Box>
           </Box>
-          {(userData?.role === 'teacher' || userData?.role === 'admin') && (
-            <Button
-              variant="contained"
-              startIcon={<AddIcon />}
-              onClick={() => router.push('/create-game')}  
-              sx={{
-                background: 'linear-gradient(45deg, #2196F3 30%, #9C27B0 90%)',
-                color: 'white',
-                fontWeight: 'bold',
-                borderRadius: 2,
-                px: 3
-              }}
-            >
-              Create New Set
-            </Button>
-          )}
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={handleCreateGame}
+            sx={{
+              background: 'linear-gradient(45deg, #2196F3 30%, #9C27B0 90%)',
+              color: 'white',
+              fontWeight: 'bold',
+              borderRadius: 2,
+              px: 3
+            }}
+          >
+            Create New Quiz
+          </Button>
         </Box>
 
         {/* Quick stats paper */}
@@ -168,23 +153,23 @@ export default function Dashboard() {
           }}
         >
           <Box sx={{ textAlign: 'center', flex: 1, minWidth: 150 }}>
-            <Typography variant="h6" color="text.secondary">Sets Created</Typography>
+            <Typography variant="h6" color="text.secondary">Quizzes Created</Typography>
             <Typography variant="h3" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
-              {userData?.role === 'teacher' ? '12' : '5'}
+              {sampleGames.length}
             </Typography>
           </Box>
           <Divider orientation="vertical" flexItem sx={{ display: { xs: 'none', sm: 'block' } }} />
           <Box sx={{ textAlign: 'center', flex: 1, minWidth: 150 }}>
             <Typography variant="h6" color="text.secondary">Games Played</Typography>
             <Typography variant="h3" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
-              {userData?.role === 'teacher' ? '28' : '43'}
+              28
             </Typography>
           </Box>
           <Divider orientation="vertical" flexItem sx={{ display: { xs: 'none', sm: 'block' } }} />
           <Box sx={{ textAlign: 'center', flex: 1, minWidth: 150 }}>
-            <Typography variant="h6" color="text.secondary">Favorites</Typography>
+            <Typography variant="h6" color="text.secondary">Student Participants</Typography>
             <Typography variant="h3" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
-              {userData?.role === 'teacher' ? '8' : '15'}
+              156
             </Typography>
           </Box>
         </Paper>
@@ -202,17 +187,17 @@ export default function Dashboard() {
               }
             }}
           >
-            <Tab icon={<RecentIcon />} label="Your Recent Sets" iconPosition="start" />
-            <Tab icon={<TrendingIcon />} label="Recommended for You" iconPosition="start" />
+            <Tab icon={<RecentIcon />} label="Your Recent Quizzes" iconPosition="start" />
+            <Tab icon={<TrendingIcon />} label="Community Quizzes" iconPosition="start" />
           </Tabs>
         </Box>
 
         {/* Game cards based on selected tab */}
         <Box>
           {tabValue === 0 ? (
-            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)', lg: 'repeat(4, 1fr)' }, gap: 3 }}>
+            <Grid container spacing={3}>
               {sampleGames.map((game) => (
-                <Box key={game.id}>
+                <Grid key={game.id} item xs={12} sm={6} md={4} lg={3}>
                   <GameCard
                     title={game.title}
                     description={game.description}
@@ -221,13 +206,13 @@ export default function Dashboard() {
                     playsCount={game.playsCount}
                     creator={game.creator}
                   />
-                </Box>
+                </Grid>
               ))}
-            </Box>
+            </Grid>
           ) : (
-            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)', lg: 'repeat(4, 1fr)' }, gap: 3 }}>
+            <Grid container spacing={3}>
               {suggestedGames.concat(sampleGames.slice(0, 2)).map((game) => (
-                <Box key={`suggested-${game.id}`}>
+                <Grid key={`suggested-${game.id}`} item xs={12} sm={6} md={4} lg={3}>
                   <GameCard
                     title={game.title}
                     description={game.description}
@@ -236,12 +221,15 @@ export default function Dashboard() {
                     playsCount={game.playsCount}
                     creator={game.creator}
                   />
-                </Box>
+                </Grid>
               ))}
-            </Box>
+            </Grid>
           )}
         </Box>
       </Box>
     </MainLayout>
   );
 }
+
+// Wrap component with auth HOC
+export default withAuth(Dashboard);

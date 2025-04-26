@@ -13,17 +13,23 @@ import {
   ListItemAvatar,
   ListItemText,
   Divider,
-  Chip
+  Chip,
+  Tab,
+  Tabs
 } from '@mui/material';
 import { 
   EmojiEvents as TrophyIcon,
   ArrowBack as ArrowBackIcon,
-  Home as HomeIcon
+  Home as HomeIcon,
+  Groups as GroupsIcon,
+  Person as PersonIcon,
+  Refresh as RefreshIcon
 } from '@mui/icons-material';
 import { useRouter } from 'next/navigation';
 import PublicLayout from '../components/PublicLayout';
 import { motion } from 'framer-motion';
 import dynamic from 'next/dynamic';
+import Confetti from 'react-confetti';
 
 // Dynamically import Animal component with SSR disabled
 const Animal = dynamic(() => import('react-animals'), { ssr: false });
@@ -36,6 +42,14 @@ interface PlayerScore {
   timeBonus?: number;
   averageAnswerTime?: number;
   avatar?: string;
+  group?: string; // Add group property
+}
+
+interface GroupScore {
+  name: string;
+  score: number;
+  memberCount: number;
+  members: PlayerScore[];
 }
 
 // Array of valid animal avatars and colors
@@ -50,15 +64,78 @@ const animalAvatars = [
   { id: 'fox', name: 'fox', color: 'orange' }
 ];
 
+// Array of predefined group names for demo
+const groupNames = ["Team Awesome", "Brainiacs", "Quiz Masters", "Knowledge Seekers"];
+
+// Utility function to calculate group scores from player scores
+const calculateGroupScores = (playerResults: PlayerScore[]): GroupScore[] => {
+  // Group players by group name
+  const groupMap = new Map<string, PlayerScore[]>();
+  
+  // Assign players to random groups if not already assigned
+  const playersWithGroups = playerResults.map(player => {
+    if (!player.group) {
+      const randomGroup = groupNames[Math.floor(Math.random() * groupNames.length)];
+      return { ...player, group: randomGroup };
+    }
+    return player;
+  });
+  
+  // Group players
+  playersWithGroups.forEach(player => {
+    const group = player.group || "Ungrouped";
+    if (!groupMap.has(group)) {
+      groupMap.set(group, []);
+    }
+    groupMap.get(group)!.push(player);
+  });
+  
+  // Calculate scores for each group
+  const groupScores: GroupScore[] = [];
+  groupMap.forEach((members, name) => {
+    const totalScore = members.reduce((sum, player) => sum + player.score, 0);
+    groupScores.push({
+      name,
+      score: totalScore,
+      memberCount: members.length,
+      members
+    });
+  });
+  
+  // Sort groups by score (highest first)
+  return groupScores.sort((a, b) => b.score - a.score);
+};
+
+// Function to get random avatar if needed
+const getRandomAvatar = () => {
+  return animalAvatars[Math.floor(Math.random() * animalAvatars.length)].id;
+};
+
+// Helper function to get animal avatar info
+const getAnimalAvatar = (avatarId: string) => {
+  return animalAvatars.find(a => a.id === avatarId) || animalAvatars[0];
+};
+
 export default function GameResultsPage() {
   const router = useRouter();
   const [playerResults, setPlayerResults] = useState<PlayerScore[]>([]);
+  const [groupResults, setGroupResults] = useState<GroupScore[]>([]);
   const [gameTitle, setGameTitle] = useState('');
   const [currentPlayer, setCurrentPlayer] = useState('');
   const [loading, setLoading] = useState(true);
   const [playerAvatar, setPlayerAvatar] = useState('alligator');
+  const [showConfetti, setShowConfetti] = useState(true);
+  const [viewMode, setViewMode] = useState<'player' | 'group'>('player');
+  const [gameMode, setGameMode] = useState<'solo' | 'team'>('solo');
+  const [windowDimensions, setWindowDimensions] = useState({ width: 0, height: 0 });
 
   useEffect(() => {
+    // Set window dimensions for confetti
+    setWindowDimensions({
+      width: window.innerWidth,
+      height: window.innerHeight
+    });
+
     // Get data from sessionStorage
     try {
       const storedResults = sessionStorage.getItem('gameResults');
@@ -74,15 +151,33 @@ export default function GameResultsPage() {
         const results = JSON.parse(storedResults);
         const quiz = JSON.parse(quizData);
         
+        // Get game mode from quiz data or default to solo
+        const mode = quiz.gameMode || 'solo';
+        setGameMode(mode);
+        
+        // Set initial view mode based on game mode
+        setViewMode(mode === 'team' ? 'group' : 'player');
+        
+        // For team mode, ensure players have groups assigned
+        // For solo mode, we'll still calculate groups but they're optional to view
+        const resultsWithGroups = results.map((player: PlayerScore) => {
+          if (mode === 'team' && !player.group) {
+            return {
+              ...player,
+              group: groupNames[Math.floor(Math.random() * groupNames.length)]
+            };
+          }
+          return player;
+        });
+        
         // Sort results by score (highest first)
-        const sortedResults = [...results].sort((a, b) => b.score - a.score);
+        const sortedResults = [...resultsWithGroups].sort((a, b) => b.score - a.score);
         
         // Calculate speed metrics for displaying
         sortedResults.forEach(player => {
           // Set a default average answer time if not provided
           if (!player.averageAnswerTime) {
             // Average answer time is random between 3-15 seconds for demo purposes
-            // In a real app, this would be calculated from actual answer times
             player.averageAnswerTime = Math.round((Math.random() * 12 + 3) * 10) / 10;
           }
           
@@ -93,8 +188,18 @@ export default function GameResultsPage() {
         });
         
         setPlayerResults(sortedResults);
+        
+        // Calculate group scores
+        const groups = calculateGroupScores(sortedResults);
+        setGroupResults(groups);
+        
         setGameTitle(quiz.title);
         setCurrentPlayer(playerName || '');
+        
+        // Hide confetti after 5 seconds
+        setTimeout(() => {
+          setShowConfetti(false);
+        }, 5000);
         
         // Save results to localStorage for teacher to see
         const gameId = quiz.id || Date.now();
@@ -102,10 +207,12 @@ export default function GameResultsPage() {
           id: gameId,
           title: quiz.title,
           description: quiz.description || '',
+          gameMode: mode,
           coverImage: quiz.coverImage || quiz.imageUrl || '',
           completed: true,
           dateCompleted: new Date().toISOString(),
           playerResults: sortedResults,
+          groupResults: groups,
           questions: quiz.questions
         };
         
@@ -121,12 +228,11 @@ export default function GameResultsPage() {
     }
   }, []);
 
-  // Helper function to get animal avatar info
-  const getAnimalAvatar = (avatarId: string) => {
-    return animalAvatars.find(a => a.id === avatarId) || animalAvatars[0];
+  const handlePlayAgain = () => {
+    router.push('/play-quiz-preview');
   };
 
-  const handlePlayAgain = () => {
+  const handleNewGame = () => {
     router.push('/');
   };
 
@@ -142,6 +248,10 @@ export default function GameResultsPage() {
   const getPlayerRank = (playerName: string) => {
     const index = playerResults.findIndex(player => player.name === playerName);
     return index + 1;
+  };
+
+  const handleViewModeChange = (event: React.SyntheticEvent, newValue: 'player' | 'group') => {
+    setViewMode(newValue);
   };
 
   if (loading) {
@@ -173,6 +283,14 @@ export default function GameResultsPage() {
 
   return (
     <PublicLayout>
+      {showConfetti && (
+        <Confetti
+          width={windowDimensions.width}
+          height={windowDimensions.height}
+          recycle={false}
+          numberOfPieces={300}
+        />
+      )}
       <Container maxWidth="md" sx={{ py: 6 }}>
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -194,9 +312,42 @@ export default function GameResultsPage() {
             <Typography variant="h6" sx={{ mb: 3, textAlign: 'center' }}>
               {gameTitle}
             </Typography>
+            
+            {/* Game Mode Indicator */}
+            <Box sx={{ display: 'flex', justifyContent: 'center', mb: 3 }}>
+              <Chip
+                icon={gameMode === 'solo' ? <PersonIcon /> : <GroupsIcon />}
+                label={gameMode === 'solo' ? "Solo Mode" : "Team Mode"}
+                color="primary"
+                variant="outlined"
+              />
+            </Box>
+
+            {/* View Mode Tabs - Only show in team mode or if user specifically switches */}
+            {(gameMode === 'team' || viewMode === 'group') && (
+              <Box sx={{ width: '100%', mb: 3 }}>
+                <Tabs
+                  value={viewMode}
+                  onChange={handleViewModeChange}
+                  centered
+                  sx={{ mb: 2 }}
+                >
+                  <Tab 
+                    icon={<PersonIcon />} 
+                    label="Player Scores" 
+                    value="player"
+                  />
+                  <Tab 
+                    icon={<GroupsIcon />} 
+                    label="Team Scores" 
+                    value="group"
+                  />
+                </Tabs>
+              </Box>
+            )}
 
             {/* Current player's result highlight */}
-            {currentPlayer && (
+            {currentPlayer && viewMode === 'player' && (
               <Box sx={{ mb: 4 }}>
                 <Typography variant="subtitle1" component="div" sx={{ mb: 2, textAlign: 'center' }}>
                   Your Result
@@ -242,6 +393,9 @@ export default function GameResultsPage() {
                                 {player.averageAnswerTime && (
                                   <> • Avg. time: <strong>{player.averageAnswerTime}s</strong></>
                                 )}
+                                {player.group && gameMode === 'team' && (
+                                  <> • Team: <strong>{player.group}</strong></>
+                                )}
                               </Typography>
                             </Box>
                           </Box>
@@ -249,17 +403,9 @@ export default function GameResultsPage() {
                             <Typography variant="h5" component="div" color="primary" sx={{ fontWeight: 'bold' }}>
                               {player.score}
                             </Typography>
-                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: { xs: 'flex-start', sm: 'flex-end' }, gap: 1 }}>
-                              <Typography variant="body2" component="span">points</Typography>
-                              {player.timeBonus && (
-                                <Chip 
-                                  size="small" 
-                                  label={`+${player.timeBonus} speed bonus`}
-                                  color="secondary"
-                                  sx={{ height: 20, fontSize: '0.7rem' }}
-                                />
-                              )}
-                            </Box>
+                            <Typography variant="body2" component="div" color="text.secondary">
+                              points
+                            </Typography>
                           </Box>
                         </Box>
                       );
@@ -270,58 +416,109 @@ export default function GameResultsPage() {
               </Box>
             )}
 
-            {/* Explanation of scoring */}
-            <Paper
-              elevation={2}
-              sx={{
-                p: 2,
-                mb: 3,
-                borderRadius: 2,
-                backgroundColor: 'rgba(255, 255, 255, 0.7)',
-                borderLeft: '4px solid',
-                borderColor: 'info.main',
-              }}
-            >
-              <Typography variant="subtitle2" component="div" color="info.main" fontWeight="medium">
-                Scoring System
-              </Typography>
-              <Typography variant="body2" component="div" sx={{ mt: 1 }}>
-                • Base points: 100 points per correct answer
-              </Typography>
-              <Typography variant="body2" component="div">
-                • Speed bonus: Up to 150 additional points based on how quickly you answer
-              </Typography>
-              <Typography variant="body2" component="div">
-                • Fastest answers receive the highest bonuses!
-              </Typography>
-            </Paper>
+            {/* Current team's result highlight for team mode */}
+            {currentPlayer && gameMode === 'team' && viewMode === 'group' && (
+              <Box sx={{ mb: 4 }}>
+                <Typography variant="subtitle1" component="div" sx={{ mb: 2, textAlign: 'center' }}>
+                  Your Team
+                </Typography>
+                <Paper
+                  elevation={2}
+                  sx={{
+                    p: 3,
+                    borderRadius: 2,
+                    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                    border: '1px solid rgba(0, 0, 0, 0.12)',
+                  }}
+                >
+                  {groupResults.map((group, index) => {
+                    // Find if current player is in this group
+                    const currentPlayerInGroup = group.members.find(member => member.name === currentPlayer);
+                    if (currentPlayerInGroup) {
+                      return (
+                        <Box key={index} sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: { xs: 'flex-start', sm: 'center' }, justifyContent: 'space-between', gap: 2 }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                            <Avatar
+                              sx={{
+                                bgcolor: getMedalColor(index) !== 'transparent' ? getMedalColor(index) : 'primary.main',
+                                width: 56,
+                                height: 56,
+                                mr: 2
+                              }}
+                            >
+                              <GroupsIcon />
+                            </Avatar>
+                            <Box>
+                              <Typography variant="h6" component="div">{group.name}</Typography>
+                              <Typography variant="body2" component="div">
+                                Rank: <strong>#{index + 1}</strong> • 
+                                Members: <strong>{group.memberCount}</strong>
+                              </Typography>
+                            </Box>
+                          </Box>
+                          <Box sx={{ textAlign: { xs: 'left', sm: 'right' }, pl: { xs: 7, sm: 0 } }}>
+                            <Typography variant="h5" component="div" color="primary" sx={{ fontWeight: 'bold' }}>
+                              {group.score}
+                            </Typography>
+                            <Typography variant="body2" component="div" color="text.secondary">
+                              team points
+                            </Typography>
+                          </Box>
+                        </Box>
+                      );
+                    }
+                    return null;
+                  })}
+                </Paper>
+              </Box>
+            )}
 
-            {/* Leaderboard */}
-            <Typography variant="h5" sx={{ mb: 2, display: 'flex', alignItems: 'center' }}>
-              <TrophyIcon sx={{ mr: 1, color: 'primary.main' }} />
-              Leaderboard
+            {/* Leaderboard section */}
+            <Typography variant="h5" sx={{ mt: 4, mb: 2, display: 'flex', alignItems: 'center' }}>
+              <TrophyIcon sx={{ mr: 1 }} />
+              {viewMode === 'player' ? 'Player Leaderboard' : 'Team Leaderboard'}
             </Typography>
-            
-            <List sx={{ bgcolor: 'background.paper', borderRadius: 2, mb: 3 }}>
-              {playerResults.map((player, index) => {
-                const animalInfo = getAnimalAvatar(player.avatar || (player.name === currentPlayer ? playerAvatar : 'alligator'));
-                return (
-                  <React.Fragment key={index}>
-                    {index > 0 && <Divider variant="inset" component="li" />}
-                    <ListItem
-                      alignItems="flex-start"
-                      sx={{
-                        bgcolor: index < 3 ? `rgba(${index === 0 ? '255, 215, 0' : index === 1 ? '192, 192, 192' : '205, 127, 50'}, 0.1)` : 'transparent',
-                        py: 1.5,
-                      }}
-                    >
-                      <ListItemAvatar>
-                        <Box sx={{ position: 'relative' }}>
+
+            {viewMode === 'player' ? (
+              <List sx={{ bgcolor: 'background.paper', borderRadius: 2 }}>
+                {playerResults.map((player, index) => {
+                  const animalInfo = getAnimalAvatar(player.avatar || getRandomAvatar());
+                  return (
+                    <React.Fragment key={index}>
+                      {index > 0 && <Divider variant="inset" component="li" />}
+                      <ListItem
+                        alignItems="center"
+                        sx={{
+                          py: 1.5,
+                          backgroundColor: player.name === currentPlayer ? 'rgba(25, 118, 210, 0.08)' : 'transparent',
+                          borderLeft: player.name === currentPlayer ? '4px solid #1976d2' : 'none',
+                        }}
+                      >
+                        <Box 
+                          sx={{ 
+                            minWidth: 32, 
+                            mr: 2, 
+                            display: 'flex', 
+                            justifyContent: 'center',
+                            alignItems: 'center'
+                          }}
+                        >
+                          <Typography 
+                            variant="h6" 
+                            sx={{ 
+                              fontWeight: index < 3 ? 'bold' : 'normal',
+                              color: index < 3 ? 'primary.main' : 'text.primary'
+                            }}
+                          >
+                            {index + 1}
+                          </Typography>
+                        </Box>
+                        <ListItemAvatar>
                           <Box
                             sx={{
-                              width: 48,
-                              height: 48,
-                              border: index < 3 ? '2px solid' : 'none',
+                              width: 40,
+                              height: 40,
+                              border: '2px solid',
                               borderColor: getMedalColor(index),
                               borderRadius: '50%',
                               overflow: 'hidden',
@@ -331,92 +528,174 @@ export default function GameResultsPage() {
                             <Animal
                               name={animalInfo.name}
                               color={animalInfo.color}
-                              size="48px"
+                              size="40px"
                             />
                           </Box>
-                          
-                          {index < 3 && (
-                            <Box
-                              sx={{
-                                position: 'absolute',
-                                bottom: -3,
-                                right: -3,
-                                width: 22,
-                                height: 22,
-                                bgcolor: index === 0 ? 'gold' : index === 1 ? 'silver' : '#CD7F32',
-                                borderRadius: '50%',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                border: '1px solid white'
-                              }}
-                            >
-                              <Typography variant="caption" component="span" sx={{ color: 'white', fontWeight: 'bold', fontSize: '0.7rem' }}>
-                                {index + 1}
+                        </ListItemAvatar>
+                        <ListItemText
+                          primary={
+                            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                              <Typography component="span" variant="body1" sx={{ fontWeight: index < 3 ? 'bold' : 'normal' }}>
+                                {player.name}
                               </Typography>
+                              {player.group && gameMode === 'team' && (
+                                <Chip
+                                  size="small"
+                                  label={player.group}
+                                  sx={{ ml: 1, fontSize: '0.7rem' }}
+                                />
+                              )}
                             </Box>
-                          )}
-                        </Box>
+                          }
+                          secondary={
+                            <React.Fragment>
+                              <Typography component="span" variant="body2" color="text.primary">
+                                {player.correctAnswers}/{player.totalQuestions} correct
+                              </Typography>
+                              {player.averageAnswerTime && (
+                                <Typography component="span" variant="body2" color="text.secondary" sx={{ ml: 1 }}>
+                                  • {player.averageAnswerTime}s avg
+                                </Typography>
+                              )}
+                            </React.Fragment>
+                          }
+                        />
+                        <Typography variant="h6" color="primary" sx={{ fontWeight: 'bold', ml: 2 }}>
+                          {player.score}
+                        </Typography>
+                      </ListItem>
+                    </React.Fragment>
+                  );
+                })}
+              </List>
+            ) : (
+              <List sx={{ bgcolor: 'background.paper', borderRadius: 2 }}>
+                {groupResults.map((group, index) => (
+                  <React.Fragment key={index}>
+                    {index > 0 && <Divider component="li" />}
+                    <ListItem
+                      alignItems="center"
+                      sx={{
+                        py: 1.5,
+                        backgroundColor: group.members.some(m => m.name === currentPlayer) ? 'rgba(25, 118, 210, 0.08)' : 'transparent',
+                        borderLeft: group.members.some(m => m.name === currentPlayer) ? '4px solid #1976d2' : 'none',
+                      }}
+                    >
+                      <Box 
+                        sx={{ 
+                          minWidth: 32, 
+                          mr: 2, 
+                          display: 'flex', 
+                          justifyContent: 'center',
+                          alignItems: 'center'
+                        }}
+                      >
+                        <Typography 
+                          variant="h6" 
+                          sx={{ 
+                            fontWeight: index < 3 ? 'bold' : 'normal',
+                            color: index < 3 ? 'primary.main' : 'text.primary'
+                          }}
+                        >
+                          {index + 1}
+                        </Typography>
+                      </Box>
+                      <ListItemAvatar>
+                        <Avatar
+                          sx={{
+                            bgcolor: getMedalColor(index) !== 'transparent' ? getMedalColor(index) : 'primary.main',
+                            width: 40,
+                            height: 40,
+                          }}
+                        >
+                          <GroupsIcon />
+                        </Avatar>
                       </ListItemAvatar>
                       <ListItemText
                         primary={
-                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <Typography variant="subtitle1" component="span" sx={{ fontWeight: player.name === currentPlayer ? 'bold' : 'regular' }}>
-                              {player.name}
-                              {player.name === currentPlayer && (
-                                <Chip size="small" label="You" sx={{ ml: 1, fontSize: '0.7rem', height: 20 }} color="primary" />
-                              )}
-                            </Typography>
-                            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-                              <Typography variant="h6" component="div" sx={{ fontWeight: 'bold', color: index < 3 ? 'primary.main' : 'text.primary' }}>
-                                {player.score} pts
-                              </Typography>
-                              {player.timeBonus && player.timeBonus > 0 && (
-                                <Typography variant="caption" component="span" sx={{ color: 'secondary.main', fontWeight: 'medium' }}>
-                                  includes {player.timeBonus} speed bonus
-                                </Typography>
-                              )}
-                            </Box>
-                          </Box>
+                          <Typography component="span" variant="body1" sx={{ fontWeight: index < 3 ? 'bold' : 'normal' }}>
+                            {group.name}
+                          </Typography>
                         }
                         secondary={
-                          <Typography variant="body2" component="span" sx={{ color: 'text.secondary' }}>
-                            Correct answers: {player.correctAnswers}/{player.totalQuestions}
-                            {player.averageAnswerTime && 
-                              ` • Avg. time: ${player.averageAnswerTime}s`
-                            }
+                          <Typography component="span" variant="body2" color="text.primary">
+                            {group.memberCount} members
                           </Typography>
                         }
                       />
+                      <Typography variant="h6" color="primary" sx={{ fontWeight: 'bold', ml: 2 }}>
+                        {group.score}
+                      </Typography>
                     </ListItem>
+                    
+                    {/* Group members (collapsible in future version) */}
+                    <Box sx={{ pl: 9, pr: 3, pb: 2, bgcolor: 'rgba(0,0,0,0.02)' }}>
+                      {group.members.slice(0, 3).map((member, midx) => (
+                        <Box 
+                          key={midx}
+                          sx={{ 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            justifyContent: 'space-between',
+                            py: 0.5,
+                            borderBottom: midx < group.members.slice(0, 3).length - 1 ? '1px solid rgba(0,0,0,0.05)' : 'none'
+                          }}
+                        >
+                          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                            <Box
+                              sx={{
+                                width: 24,
+                                height: 24,
+                                mr: 1,
+                                borderRadius: '50%',
+                                overflow: 'hidden',
+                                bgcolor: 'white'
+                              }}
+                            >
+                              <Animal
+                                name={getAnimalAvatar(member.avatar || getRandomAvatar()).name}
+                                color={getAnimalAvatar(member.avatar || getRandomAvatar()).color}
+                                size="24px"
+                              />
+                            </Box>
+                            <Typography variant="body2">
+                              {member.name}
+                            </Typography>
+                          </Box>
+                          <Typography variant="body2" color="primary.main" sx={{ fontWeight: 'medium' }}>
+                            {member.score} pts
+                          </Typography>
+                        </Box>
+                      ))}
+                      {group.members.length > 3 && (
+                        <Typography variant="body2" color="text.secondary" sx={{ mt: 1, textAlign: 'center' }}>
+                          +{group.members.length - 3} more members
+                        </Typography>
+                      )}
+                    </Box>
                   </React.Fragment>
-                );
-              })}
-            </List>
+                ))}
+              </List>
+            )}
 
-            <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2, mt: 4 }}>
-              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                <Button
-                  variant="outlined"
-                  startIcon={<ArrowBackIcon />}
-                  onClick={() => router.push('/')}
-                  sx={{ borderRadius: 2 }}
-                >
-                  Exit
-                </Button>
-              </motion.div>
-              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                <Button
-                  variant="contained"
-                  onClick={handlePlayAgain}
-                  sx={{ 
-                    borderRadius: 2,
-                    background: 'linear-gradient(45deg, #2196F3 30%, #9C27B0 90%)',
-                  }}
-                >
-                  Play Another Game
-                </Button>
-              </motion.div>
+            {/* Action buttons */}
+            <Box sx={{ mt: 4, display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, justifyContent: 'center', gap: 2 }}>
+              <Button
+                variant="contained"
+                startIcon={<RefreshIcon />}
+                onClick={handlePlayAgain}
+                sx={{ borderRadius: 2 }}
+              >
+                Play Again
+              </Button>
+              <Button
+                variant="outlined"
+                startIcon={<HomeIcon />}
+                onClick={handleNewGame}
+                sx={{ borderRadius: 2 }}
+              >
+                New Game
+              </Button>
             </Box>
           </Paper>
         </motion.div>

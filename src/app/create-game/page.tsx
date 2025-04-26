@@ -30,7 +30,9 @@ import {
   Dialog,
   DialogTitle,
   DialogContent,
-  DialogActions
+  DialogActions,
+  ToggleButton,
+  ToggleButtonGroup
 } from '@mui/material';
 import { 
   Add as AddIcon, 
@@ -52,7 +54,9 @@ import {
   ArrowDownward as ArrowDownIcon,
   PlayArrow as PlayIcon,
   QuestionMark as QuestionIcon,
-  ContentCopy as ContentCopy
+  ContentCopy as ContentCopy,
+  Person as PersonIcon,
+  Groups as GroupsIcon
 } from '@mui/icons-material';
 import MainLayout from '../components/MainLayout';
 import { useAuth } from '../context/AuthContext';
@@ -89,6 +93,7 @@ const CreateGamePage = () => {
   const [quizDescription, setQuizDescription] = useState('');
   const [quizCategory, setQuizCategory] = useState('');
   const [isPublic, setIsPublic] = useState(true);
+  const [gameMode, setGameMode] = useState<'solo' | 'team'>('solo');
   const [coverImage, setCoverImage] = useState<string | null>(null);
   const [questions, setQuestions] = useState<Question[]>([{
     id: '1',
@@ -267,6 +272,16 @@ const CreateGamePage = () => {
     setActiveStep((prevStep) => prevStep - 1);
   };
 
+  // Function to handle game mode change
+  const handleGameModeChange = (
+    event: React.MouseEvent<HTMLElement>,
+    newMode: 'solo' | 'team' | null,
+  ) => {
+    if (newMode !== null) {
+      setGameMode(newMode);
+    }
+  };
+
   // Function to submit the quiz
   const submitQuiz = () => {
     // Generate a unique 6-digit game code
@@ -283,6 +298,7 @@ const CreateGamePage = () => {
       title: quizTitle || 'Untitled Quiz',
       description: quizDescription || '',
       gameCode: generatedGameCode,
+      gameMode: gameMode,
       questions: questions.map(q => ({
         id: q.id,
         question: q.text || 'Question',
@@ -338,6 +354,7 @@ const CreateGamePage = () => {
         coverImage: quizData.coverImage,
         category: quizData.category,
         isPublic: quizData.isPublic,
+        gameMode: quizData.gameMode,
         questions: quizData.questions.map(q => ({
           id: q.id,
           question: q.question,
@@ -381,6 +398,7 @@ const CreateGamePage = () => {
       id: 'preview-' + Date.now(),
       title: quizTitle || 'Untitled Quiz',
       description: quizDescription || 'Preview of your quiz',
+      gameMode: gameMode,
       questions: questions.map(q => ({
         id: q.id,
         question: q.text || 'Question',
@@ -516,6 +534,52 @@ const CreateGamePage = () => {
                         </MenuItem>
                       </Select>
                     </FormControl>
+                  </Box>
+                  
+                  {/* Game Mode Selection */}
+                  <Box sx={{ mb: 3 }}>
+                    <Typography variant="subtitle1" gutterBottom>
+                      Game Mode
+                    </Typography>
+                    <ToggleButtonGroup
+                      value={gameMode}
+                      exclusive
+                      onChange={handleGameModeChange}
+                      aria-label="game mode"
+                      fullWidth
+                      sx={{ 
+                        '& .MuiToggleButton-root': {
+                          py: 1.5,
+                          borderRadius: 2,
+                          border: '1px solid',
+                          borderColor: 'divider'
+                        },
+                        '& .MuiToggleButton-root.Mui-selected': {
+                          backgroundColor: theme => alpha(theme.palette.primary.main, 0.1),
+                          borderColor: theme => theme.palette.primary.main,
+                          fontWeight: 'bold'
+                        }
+                      }}
+                    >
+                      <ToggleButton value="solo" aria-label="solo mode">
+                        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
+                          <PersonIcon />
+                          <Typography variant="body2">Solo Mode</Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            Every player competes individually
+                          </Typography>
+                        </Box>
+                      </ToggleButton>
+                      <ToggleButton value="team" aria-label="team mode">
+                        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
+                          <GroupsIcon />
+                          <Typography variant="body2">Team Mode</Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            Players are grouped into teams
+                          </Typography>
+                        </Box>
+                      </ToggleButton>
+                    </ToggleButtonGroup>
                   </Box>
                 </Box>
 
@@ -931,6 +995,12 @@ const CreateGamePage = () => {
                       label={isPublic ? "Public" : "Private"} 
                       size="small" 
                       color={isPublic ? "info" : "default"}
+                    />
+                    <Chip 
+                      icon={gameMode === 'solo' ? <PersonIcon fontSize="small" /> : <GroupsIcon fontSize="small" />}
+                      label={gameMode === 'solo' ? "Solo Mode" : "Team Mode"} 
+                      size="small" 
+                      color="secondary"
                     />
                     <Chip 
                       icon={<QuestionIcon fontSize="small" />}

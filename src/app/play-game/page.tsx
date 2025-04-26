@@ -13,12 +13,19 @@ import {
   InputAdornment,
   IconButton,
   Snackbar,
-  Avatar
+  Avatar,
+  FormControl,
+  Select,
+  MenuItem,
+  InputLabel,
+  Chip,
+  SelectChangeEvent
 } from '@mui/material';
 import { 
   PlayArrow as PlayIcon,
   Person as PersonIcon,
-  Edit as EditIcon
+  Edit as EditIcon,
+  Groups as GroupsIcon
 } from '@mui/icons-material';
 import { useRouter, useSearchParams } from 'next/navigation';
 import PublicLayout from '../components/PublicLayout';
@@ -36,6 +43,7 @@ interface GameData {
   questions: any[];
   creator: string;
   category?: string;  // Make category optional for formatting purposes
+  gameMode?: 'solo' | 'team'; // Add gameMode property
 }
 
 // Add interface for answer type
@@ -55,6 +63,9 @@ const animalAvatars = [
   { id: 'tiger', name: 'tiger', color: 'yellow' },
   { id: 'fox', name: 'fox', color: 'orange' }
 ];
+
+// Array of predefined group names
+const teamNames = ["Team Awesome", "Brainiacs", "Quiz Masters", "Knowledge Seekers", "Brain Busters", "Trivia Titans"];
 
 // Sample game data based on the game codes from my-sets page
 const sampleGames: Record<string, GameData> = {
@@ -142,6 +153,9 @@ export default function PlayGamePage() {
   const [nameError, setNameError] = useState('');
   const [showSnackbar, setShowSnackbar] = useState(false);
   const [selectedAvatar, setSelectedAvatar] = useState<string>('alligator');
+  const [gameMode, setGameMode] = useState<'solo' | 'team'>('solo');
+  const [selectedTeam, setSelectedTeam] = useState<string>(teamNames[0]);
+  const [snackbarMessage, setSnackbarMessage] = useState('Name and avatar saved successfully!');
 
   useEffect(() => {
     // Simulate loading game data with the provided code
@@ -166,6 +180,12 @@ export default function PlayGamePage() {
           try {
             console.log(`Found game ${code} in sessionStorage`);
             const gameData = JSON.parse(specificGame);
+            
+            // Check for game mode
+            if (gameData.gameMode) {
+              setGameMode(gameData.gameMode);
+            }
+            
             setGameData({
               id: gameData.id || Date.now(),
               title: gameData.title,
@@ -173,13 +193,20 @@ export default function PlayGamePage() {
               imageUrl: gameData.coverImage,
               questions: gameData.questions,
               creator: gameData.createdBy || gameData.creator,
-              category: gameData.category
+              category: gameData.category,
+              gameMode: gameData.gameMode || 'solo'
             });
             
             // For demo, retrieve player name from local storage if available
             const storedName = localStorage.getItem('playerName');
             if (storedName) {
               setPlayerName(storedName);
+            }
+            
+            // Retrieve team name if available
+            const storedTeam = localStorage.getItem('playerTeam');
+            if (storedTeam) {
+              setSelectedTeam(storedTeam);
             }
             
             setLoading(false);
@@ -193,6 +220,11 @@ export default function PlayGamePage() {
         const sampleGame = sampleGames[code];
         if (sampleGame) {
           console.log(`Found sample game with code ${code}`);
+          
+          // Add gameMode to sample game (assuming solo by default)
+          sampleGame.gameMode = sampleGame.gameMode || 'solo';
+          setGameMode(sampleGame.gameMode);
+          
           setGameData(sampleGame);
           
           // Prepare for quiz preview
@@ -200,6 +232,7 @@ export default function PlayGamePage() {
             title: sampleGame.title,
             description: sampleGame.description,
             coverImage: sampleGame.imageUrl,
+            gameMode: sampleGame.gameMode,
             questions: sampleGame.questions
           }));
           
@@ -207,6 +240,12 @@ export default function PlayGamePage() {
           const storedName = localStorage.getItem('playerName');
           if (storedName) {
             setPlayerName(storedName);
+          }
+          
+          // Retrieve team name if available
+          const storedTeam = localStorage.getItem('playerTeam');
+          if (storedTeam) {
+            setSelectedTeam(storedTeam);
           }
           
           setLoading(false);
@@ -220,6 +259,11 @@ export default function PlayGamePage() {
             console.log(`Found game with code ${code} in localStorage gamesByCode`);
             const gameData = gamesByCode[code];
             
+            // Check for game mode
+            if (gameData.gameMode) {
+              setGameMode(gameData.gameMode);
+            }
+            
             // Also save to sessionStorage for consistent access
             sessionStorage.setItem(specificGameKey, JSON.stringify(gameData));
             
@@ -230,13 +274,20 @@ export default function PlayGamePage() {
               imageUrl: gameData.coverImage,
               questions: gameData.questions,
               creator: gameData.createdBy || gameData.creator,
-              category: gameData.category
+              category: gameData.category,
+              gameMode: gameData.gameMode || 'solo'
             });
             
             // For demo, retrieve player name from local storage if available
             const storedName = localStorage.getItem('playerName');
             if (storedName) {
               setPlayerName(storedName);
+            }
+            
+            // Retrieve team name if available
+            const storedTeam = localStorage.getItem('playerTeam');
+            if (storedTeam) {
+              setSelectedTeam(storedTeam);
             }
             
             setLoading(false);
@@ -253,6 +304,11 @@ export default function PlayGamePage() {
           if (foundSet) {
             console.log(`Found game with code ${code} in mySets`);
             
+            // Check for game mode
+            if (foundSet.gameMode) {
+              setGameMode(foundSet.gameMode);
+            }
+            
             // Also save to sessionStorage for consistent access
             sessionStorage.setItem(specificGameKey, JSON.stringify(foundSet));
             
@@ -263,13 +319,20 @@ export default function PlayGamePage() {
               imageUrl: foundSet.coverImage,
               questions: foundSet.questions,
               creator: foundSet.createdBy || foundSet.creator,
-              category: foundSet.category
+              category: foundSet.category,
+              gameMode: foundSet.gameMode || 'solo'
             });
             
             // For demo, retrieve player name from local storage if available
             const storedName = localStorage.getItem('playerName');
             if (storedName) {
               setPlayerName(storedName);
+            }
+            
+            // Retrieve team name if available
+            const storedTeam = localStorage.getItem('playerTeam');
+            if (storedTeam) {
+              setSelectedTeam(storedTeam);
             }
             
             setLoading(false);
@@ -286,6 +349,12 @@ export default function PlayGamePage() {
             if (quizPreviewData) {
               console.log(`Using quizPreviewData for demo code ${code}`);
               const gameData = JSON.parse(quizPreviewData);
+              
+              // Check for game mode
+              if (gameData.gameMode) {
+                setGameMode(gameData.gameMode);
+              }
+              
               setGameData({
                 id: Date.now(),
                 title: gameData.title || `Demo Quiz (${code})`,
@@ -293,12 +362,19 @@ export default function PlayGamePage() {
                 imageUrl: gameData.coverImage || 'https://source.unsplash.com/random/300x200?quiz',
                 questions: gameData.questions || [],
                 creator: gameData.createdBy || 'Demo Creator',
-                category: gameData.category || 'General'
+                category: gameData.category || 'General',
+                gameMode: gameData.gameMode || 'solo'
               });
               
               const storedName = localStorage.getItem('playerName');
               if (storedName) {
                 setPlayerName(storedName);
+              }
+              
+              // Retrieve team name if available
+              const storedTeam = localStorage.getItem('playerTeam');
+              if (storedTeam) {
+                setSelectedTeam(storedTeam);
               }
               
               setLoading(false);
@@ -315,6 +391,7 @@ export default function PlayGamePage() {
             title: `Demo Quiz (${code})`,
             description: 'This is a demo quiz for testing purposes',
             imageUrl: 'https://source.unsplash.com/random/300x200?quiz,game',
+            gameMode: 'solo',
             questions: [
               {
                 id: '1',
@@ -365,12 +442,23 @@ export default function PlayGamePage() {
     
     localStorage.setItem('playerName', playerName);
     setIsEditingName(false);
+    setSnackbarMessage('Name saved successfully!');
     setShowSnackbar(true);
   };
 
   const handleSelectAvatar = (avatarId: string) => {
     setSelectedAvatar(avatarId);
     localStorage.setItem('playerAvatar', avatarId);
+    setSnackbarMessage('Avatar selected!');
+    setShowSnackbar(true);
+  };
+  
+  const handleTeamChange = (event: SelectChangeEvent<string>) => {
+    const team = event.target.value as string;
+    setSelectedTeam(team);
+    localStorage.setItem('playerTeam', team);
+    setSnackbarMessage('Team selection saved!');
+    setShowSnackbar(true);
   };
 
   const handleStartGame = () => {
@@ -379,6 +467,13 @@ export default function PlayGamePage() {
     if (!playerName.trim()) {
       setIsEditingName(true);
       setNameError('Please enter your name to continue');
+      return;
+    }
+    
+    // In team mode, verify team selection
+    if (gameMode === 'team' && !selectedTeam) {
+      setSnackbarMessage('Please select a team before starting');
+      setShowSnackbar(true);
       return;
     }
     
@@ -391,6 +486,7 @@ export default function PlayGamePage() {
         coverImage: gameData.imageUrl,
         category: gameData.category || 'General',
         isPublic: true,
+        gameMode: gameMode,
         questions: gameData.questions.map(q => ({
           id: q.id || `q-${Math.random().toString(36).substr(2, 9)}`,
           question: q.question || q.text || '',
@@ -417,50 +513,108 @@ export default function PlayGamePage() {
           totalQuestions: formattedQuizData.questions.length,
           timeBonus: 0,
           averageAnswerTime: 0, // This will be calculated during gameplay
-          avatar: selectedAvatar
+          avatar: selectedAvatar,
+          group: gameMode === 'team' ? selectedTeam : undefined // Add team info if in team mode
         }
       ];
       
       // Add demo players for testing (would be real players in multiplayer implementation)
       if (process.env.NODE_ENV !== 'production') {
-        initialGameResults.push(
-          {
-            name: "Player 2",
-            score: Math.floor(Math.random() * 800) + 200,
-            correctAnswers: Math.floor(Math.random() * formattedQuizData.questions.length),
-            totalQuestions: formattedQuizData.questions.length,
-            timeBonus: Math.floor(Math.random() * 150) + 50,
-            averageAnswerTime: Math.round((Math.random() * 8 + 3) * 10) / 10, // 3-11 seconds
-            avatar: animalAvatars[Math.floor(Math.random() * animalAvatars.length)].id
-          },
-          {
-            name: "Player 3",
-            score: Math.floor(Math.random() * 700) + 100,
-            correctAnswers: Math.floor(Math.random() * formattedQuizData.questions.length),
-            totalQuestions: formattedQuizData.questions.length,
-            timeBonus: Math.floor(Math.random() * 120) + 30,
-            averageAnswerTime: Math.round((Math.random() * 10 + 4) * 10) / 10, // 4-14 seconds
-            avatar: animalAvatars[Math.floor(Math.random() * animalAvatars.length)].id
-          },
-          {
-            name: "Player 4",
-            score: Math.floor(Math.random() * 600) + 100,
-            correctAnswers: Math.floor(Math.random() * formattedQuizData.questions.length),
-            totalQuestions: formattedQuizData.questions.length,
-            timeBonus: Math.floor(Math.random() * 100) + 20,
-            averageAnswerTime: Math.round((Math.random() * 12 + 5) * 10) / 10, // 5-17 seconds
-            avatar: animalAvatars[Math.floor(Math.random() * animalAvatars.length)].id
-          }
-        );
+        // In team mode, add some players to each team for demo
+        if (gameMode === 'team') {
+          // Create a mapping of players to teams
+          const demoTeams = [...teamNames]; // Copy team names
+          
+          initialGameResults.push(
+            {
+              name: "Player 2",
+              score: Math.floor(Math.random() * 800) + 200,
+              correctAnswers: Math.floor(Math.random() * formattedQuizData.questions.length),
+              totalQuestions: formattedQuizData.questions.length,
+              timeBonus: Math.floor(Math.random() * 150) + 50,
+              averageAnswerTime: Math.round((Math.random() * 8 + 3) * 10) / 10, // 3-11 seconds
+              avatar: animalAvatars[Math.floor(Math.random() * animalAvatars.length)].id,
+              group: selectedTeam // Add to current player's team
+            },
+            {
+              name: "Player 3",
+              score: Math.floor(Math.random() * 700) + 100,
+              correctAnswers: Math.floor(Math.random() * formattedQuizData.questions.length),
+              totalQuestions: formattedQuizData.questions.length,
+              timeBonus: Math.floor(Math.random() * 120) + 30,
+              averageAnswerTime: Math.round((Math.random() * 10 + 4) * 10) / 10, // 4-14 seconds
+              avatar: animalAvatars[Math.floor(Math.random() * animalAvatars.length)].id,
+              group: demoTeams.find(t => t !== selectedTeam) || demoTeams[0]
+            },
+            {
+              name: "Player 4",
+              score: Math.floor(Math.random() * 600) + 100,
+              correctAnswers: Math.floor(Math.random() * formattedQuizData.questions.length),
+              totalQuestions: formattedQuizData.questions.length,
+              timeBonus: Math.floor(Math.random() * 100) + 20,
+              averageAnswerTime: Math.round((Math.random() * 12 + 5) * 10) / 10, // 5-17 seconds
+              avatar: animalAvatars[Math.floor(Math.random() * animalAvatars.length)].id,
+              group: demoTeams.find(t => t !== selectedTeam) || demoTeams[1]
+            },
+            {
+              name: "Player 5",
+              score: Math.floor(Math.random() * 750) + 150,
+              correctAnswers: Math.floor(Math.random() * formattedQuizData.questions.length),
+              totalQuestions: formattedQuizData.questions.length,
+              timeBonus: Math.floor(Math.random() * 130) + 40,
+              averageAnswerTime: Math.round((Math.random() * 9 + 3) * 10) / 10,
+              avatar: animalAvatars[Math.floor(Math.random() * animalAvatars.length)].id,
+              group: demoTeams.find(t => t !== selectedTeam) || demoTeams[2]
+            }
+          );
+        } else {
+          // For solo mode, just add random players
+          initialGameResults.push(
+            {
+              name: "Player 2",
+              score: Math.floor(Math.random() * 800) + 200,
+              correctAnswers: Math.floor(Math.random() * formattedQuizData.questions.length),
+              totalQuestions: formattedQuizData.questions.length,
+              timeBonus: Math.floor(Math.random() * 150) + 50,
+              averageAnswerTime: Math.round((Math.random() * 8 + 3) * 10) / 10, // 3-11 seconds
+              avatar: animalAvatars[Math.floor(Math.random() * animalAvatars.length)].id,
+              group: undefined
+            },
+            {
+              name: "Player 3",
+              score: Math.floor(Math.random() * 700) + 100,
+              correctAnswers: Math.floor(Math.random() * formattedQuizData.questions.length),
+              totalQuestions: formattedQuizData.questions.length,
+              timeBonus: Math.floor(Math.random() * 120) + 30,
+              averageAnswerTime: Math.round((Math.random() * 10 + 4) * 10) / 10, // 4-14 seconds
+              avatar: animalAvatars[Math.floor(Math.random() * animalAvatars.length)].id,
+              group: undefined
+            },
+            {
+              name: "Player 4",
+              score: Math.floor(Math.random() * 600) + 100,
+              correctAnswers: Math.floor(Math.random() * formattedQuizData.questions.length),
+              totalQuestions: formattedQuizData.questions.length,
+              timeBonus: Math.floor(Math.random() * 100) + 20,
+              averageAnswerTime: Math.round((Math.random() * 12 + 5) * 10) / 10, // 5-17 seconds
+              avatar: animalAvatars[Math.floor(Math.random() * animalAvatars.length)].id,
+              group: undefined
+            }
+          );
+        }
       }
       
       sessionStorage.setItem('gameResults', JSON.stringify(initialGameResults));
       
-      // Store player name for future use
+      // Store player info for future use
       localStorage.setItem('playerName', playerName);
       localStorage.setItem('playerAvatar', selectedAvatar);
+      if (gameMode === 'team') {
+        localStorage.setItem('playerTeam', selectedTeam);
+      }
       
       // Show feedback to the user
+      setSnackbarMessage('Starting game...');
       setShowSnackbar(true);
       
       // Navigate to the quiz page after a short delay
@@ -546,9 +700,18 @@ export default function PlayGamePage() {
               {gameData.title}
             </Typography>
             
-            <Typography variant="subtitle1" sx={{ mb: 3 }}>
+            <Typography variant="subtitle1" sx={{ mb: 1 }}>
               Created by: {gameData.creator}
             </Typography>
+
+            {/* Game mode indicator */}
+            <Chip 
+              icon={gameMode === 'solo' ? <PersonIcon /> : <GroupsIcon />}
+              label={gameMode === 'solo' ? "Solo Mode" : "Team Mode"}
+              color="primary"
+              variant="outlined"
+              sx={{ mb: 3 }}
+            />
             
             <Box
               component="img"
@@ -593,11 +756,58 @@ export default function PlayGamePage() {
                 <Typography variant="body2" component="div" sx={{ mb: 1 }}>
                   <strong>• Speed bonus:</strong> Up to 150 extra points based on how quickly you answer
                 </Typography>
+                {gameMode === 'team' && (
+                  <Typography variant="body2" component="div" sx={{ mb: 1 }}>
+                    <strong>• Team score:</strong> All team members' scores are combined for team ranking
+                  </Typography>
+                )}
                 <Typography variant="body2" component="div" color="primary.main" fontWeight="medium">
                   Answer faster to earn more points!
                 </Typography>
               </Box>
             </Paper>
+            
+            {/* Team Selection for Team Mode */}
+            {gameMode === 'team' && (
+              <Paper 
+                elevation={2}
+                sx={{ 
+                  p: 3, 
+                  mb: 4, 
+                  borderRadius: 3,
+                  backgroundColor: 'rgba(255, 255, 255, 0.8)',
+                  boxShadow: '0 8px 20px rgba(0,0,0,0.08)',
+                }}
+              >
+                <Typography variant="h6" component="div" sx={{ mb: 3, fontWeight: 'medium', display: 'flex', alignItems: 'center' }}>
+                  <GroupsIcon sx={{ color: 'primary.main', mr: 1 }} />
+                  Select Your Team
+                </Typography>
+                
+                <FormControl fullWidth variant="outlined" sx={{ mb: 2 }}>
+                  <InputLabel id="team-select-label">Team</InputLabel>
+                  <Select<string>
+                    labelId="team-select-label"
+                    value={selectedTeam}
+                    onChange={(event: SelectChangeEvent<string>) => handleTeamChange(event)}
+                    label="Team"
+                  >
+                    {teamNames.map((team) => (
+                      <MenuItem key={team} value={team}>
+                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                          <GroupsIcon sx={{ color: 'primary.main', mr: 1, fontSize: 20 }} />
+                          {team}
+                        </Box>
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+                
+                <Typography variant="body2" color="text.secondary">
+                  You'll be competing together with other members of your team!
+                </Typography>
+              </Paper>
+            )}
             
             {/* Avatar selection section */}
             <Paper 
@@ -740,10 +950,23 @@ export default function PlayGamePage() {
                       <Typography sx={{ fontSize: '1.1rem', fontWeight: nameError ? 'bold' : 'medium', color: nameError ? 'error.main' : 'text.primary' }}>
                         {playerName || 'Guest Player'}
                       </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {(animalAvatars.find(a => a.id === selectedAvatar)?.name || 'alligator').charAt(0).toUpperCase() + 
-                          (animalAvatars.find(a => a.id === selectedAvatar)?.name || 'alligator').slice(1)} Avatar
-                      </Typography>
+                      <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
+                        <Typography variant="caption" color="text.secondary">
+                          {(animalAvatars.find(a => a.id === selectedAvatar)?.name || 'alligator').charAt(0).toUpperCase() + 
+                            (animalAvatars.find(a => a.id === selectedAvatar)?.name || 'alligator').slice(1)} Avatar
+                        </Typography>
+                        
+                        {gameMode === 'team' && (
+                          <Chip
+                            label={selectedTeam}
+                            size="small"
+                            color="primary"
+                            variant="outlined"
+                            icon={<GroupsIcon fontSize="small" />}
+                            sx={{ height: 20, '& .MuiChip-label': { fontSize: '0.7rem', px: 1 } }}
+                          />
+                        )}
+                      </Box>
                     </Box>
                   </Box>
                   <IconButton size="small" onClick={() => setIsEditingName(true)} sx={{ bgcolor: 'rgba(0,0,0,0.05)' }}>
@@ -790,7 +1013,7 @@ export default function PlayGamePage() {
         open={showSnackbar}
         autoHideDuration={3000}
         onClose={() => setShowSnackbar(false)}
-        message="Name and avatar saved successfully!"
+        message={snackbarMessage}
       />
     </PublicLayout>
   );
