@@ -435,11 +435,23 @@ export default function ProfilePage() {
                 mt: 2,
                 mb: 3,
                 backgroundColor: alpha(theme.palette.primary.light, 0.08),
-                borderRadius: 2
+                borderRadius: 2,
+                border: `1px solid ${alpha(theme.palette.primary.main, 0.1)}`,
               }}>
-                <Stack spacing={2}>
+                <Stack spacing={2.5}>
                   <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    <BadgeIcon sx={{ color: theme.palette.text.secondary, mr: 1.5 }} />
+                    <Box sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      width: 36,
+                      height: 36,
+                      borderRadius: '50%',
+                      backgroundColor: alpha(theme.palette.warning.main, 0.1),
+                      mr: 2
+                    }}>
+                      <BadgeIcon sx={{ color: theme.palette.warning.main }} />
+                    </Box>
                     <Typography variant="body1">
                       <Typography component="span" sx={{ fontWeight: 'bold', mr: 1 }}>ID:</Typography>
                       <Typography component="span" sx={{ color: theme.palette.text.secondary }}>{userData.id}</Typography>
@@ -447,7 +459,18 @@ export default function ProfilePage() {
                   </Box>
                   
                   <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    <LocationIcon sx={{ color: theme.palette.text.secondary, mr: 1.5 }} />
+                    <Box sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      width: 36,
+                      height: 36,
+                      borderRadius: '50%',
+                      backgroundColor: alpha(theme.palette.error.main, 0.1),
+                      mr: 2
+                    }}>
+                      <LocationIcon sx={{ color: theme.palette.error.main }} />
+                    </Box>
                     <Typography variant="body1">
                       <Typography component="span" sx={{ fontWeight: 'bold', mr: 1 }}>Location:</Typography>
                       <Typography component="span" sx={{ color: theme.palette.text.secondary }}>{userData.location}</Typography>
@@ -455,7 +478,18 @@ export default function ProfilePage() {
                   </Box>
                   
                   <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    <CakeIcon sx={{ color: theme.palette.text.secondary, mr: 1.5 }} />
+                    <Box sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      width: 36,
+                      height: 36,
+                      borderRadius: '50%',
+                      backgroundColor: alpha(theme.palette.success.main, 0.1),
+                      mr: 2
+                    }}>
+                      <CakeIcon sx={{ color: theme.palette.success.main }} />
+                    </Box>
                     <Typography variant="body1">
                       <Typography component="span" sx={{ fontWeight: 'bold', mr: 1 }}>Joined:</Typography>
                       <Typography component="span" sx={{ color: theme.palette.text.secondary }}>{userData.joinDate}</Typography>
@@ -510,14 +544,38 @@ export default function ProfilePage() {
                       variant={editMode ? "outlined" : "filled"}
                       InputProps={{
                         readOnly: !editMode,
+                        startAdornment: (
+                          <Box sx={{ 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            mr: 1.5,
+                            color: theme.palette.text.secondary,
+                            height: '100%',
+                            alignSelf: 'center',
+                          }}>
+                            <PersonIcon sx={{ 
+                              color: theme.palette.info.main,
+                              opacity: 0.8,
+                              my: 'auto',
+                            }} />
+                          </Box>
+                        ),
                       }}
                       sx={{ 
                         '& .MuiFilledInput-root': {
                           borderRadius: 2,
-                          backgroundColor: alpha(theme.palette.background.paper, 0.8)
+                          backgroundColor: alpha(theme.palette.background.paper, 0.8),
+                          transition: 'all 0.3s',
+                          '&:hover': {
+                            backgroundColor: alpha(theme.palette.background.paper, 0.95),
+                          },
                         },
                         '& .MuiOutlinedInput-root': {
                           borderRadius: 2
+                        },
+                        '& .MuiInputAdornment-root': {
+                          alignItems: 'center',
+                          height: '100%',
                         }
                       }}
                     />
@@ -532,14 +590,38 @@ export default function ProfilePage() {
                       variant={editMode ? "outlined" : "filled"}
                       InputProps={{
                         readOnly: !editMode,
+                        startAdornment: (
+                          <Box sx={{ 
+                            display: 'flex', 
+                            alignItems: 'center',
+                            mr: 1.5,
+                            color: theme.palette.text.secondary,
+                            height: '100%',
+                            alignSelf: 'center',
+                          }}>
+                            <BadgeIcon sx={{ 
+                              color: theme.palette.info.main,
+                              opacity: 0.8,
+                              my: 'auto',
+                            }} />
+                          </Box>
+                        ),
                       }}
                       sx={{ 
                         '& .MuiFilledInput-root': {
                           borderRadius: 2,
-                          backgroundColor: alpha(theme.palette.background.paper, 0.8)
+                          backgroundColor: alpha(theme.palette.background.paper, 0.8),
+                          transition: 'all 0.3s',
+                          '&:hover': {
+                            backgroundColor: alpha(theme.palette.background.paper, 0.95),
+                          }
                         },
                         '& .MuiOutlinedInput-root': {
                           borderRadius: 2
+                        },
+                        '& .MuiInputAdornment-root': {
+                          alignItems: 'center',
+                          height: '100%',
                         }
                       }}
                     />
@@ -556,13 +638,34 @@ export default function ProfilePage() {
                     InputProps={{
                       readOnly: true,
                       startAdornment: (
-                        <EmailIcon color="action" sx={{ mr: 1 }} />
+                        <Box sx={{ 
+                          display: 'flex', 
+                          alignItems: 'center',
+                          mr: 1.5,
+                          color: theme.palette.text.secondary,
+                          height: '100%',
+                          alignSelf: 'center',
+                        }}>
+                          <EmailIcon sx={{ 
+                            color: theme.palette.primary.main,
+                            opacity: 0.8,
+                            my: 'auto',
+                          }} />
+                        </Box>
                       ),
                     }}
                     sx={{ 
                       '& .MuiFilledInput-root': {
                         borderRadius: 2,
-                        backgroundColor: alpha(theme.palette.background.paper, 0.8)
+                        backgroundColor: alpha(theme.palette.background.paper, 0.8),
+                        transition: 'all 0.3s',
+                        '&:hover': {
+                          backgroundColor: alpha(theme.palette.background.paper, 0.95),
+                        }
+                      },
+                      '& .MuiInputAdornment-root': {
+                        alignItems: 'center',
+                        height: '100%',
                       }
                     }}
                   />
@@ -578,16 +681,37 @@ export default function ProfilePage() {
                     InputProps={{
                       readOnly: !editMode,
                       startAdornment: (
-                        <SchoolIcon color="action" sx={{ mr: 1 }} />
+                        <Box sx={{ 
+                          display: 'flex', 
+                          alignItems: 'center',
+                          mr: 1.5,
+                          color: theme.palette.text.secondary,
+                          height: '100%',
+                          alignSelf: 'center',
+                        }}>
+                          <SchoolIcon sx={{ 
+                            color: theme.palette.secondary.main,
+                            opacity: 0.8,
+                            my: 'auto',
+                          }} />
+                        </Box>
                       ),
                     }}
                     sx={{ 
                       '& .MuiFilledInput-root': {
                         borderRadius: 2,
-                        backgroundColor: alpha(theme.palette.background.paper, 0.8)
+                        backgroundColor: alpha(theme.palette.background.paper, 0.8),
+                        transition: 'all 0.3s',
+                        '&:hover': {
+                          backgroundColor: alpha(theme.palette.background.paper, 0.95),
+                        }
                       },
                       '& .MuiOutlinedInput-root': {
                         borderRadius: 2
+                      },
+                      '& .MuiInputAdornment-root': {
+                        alignItems: 'center',
+                        height: '100%',
                       }
                     }}
                   />
@@ -603,16 +727,37 @@ export default function ProfilePage() {
                     InputProps={{
                       readOnly: !editMode,
                       startAdornment: (
-                        <LocationIcon color="action" sx={{ mr: 1 }} />
+                        <Box sx={{ 
+                          display: 'flex', 
+                          alignItems: 'center',
+                          mr: 1.5,
+                          color: theme.palette.text.secondary,
+                          height: '100%',
+                          alignSelf: 'center',
+                        }}>
+                          <LocationIcon sx={{ 
+                            color: theme.palette.error.main,
+                            opacity: 0.8,
+                            my: 'auto',
+                          }} />
+                        </Box>
                       ),
                     }}
                     sx={{ 
                       '& .MuiFilledInput-root': {
                         borderRadius: 2,
-                        backgroundColor: alpha(theme.palette.background.paper, 0.8)
+                        backgroundColor: alpha(theme.palette.background.paper, 0.8),
+                        transition: 'all 0.3s',
+                        '&:hover': {
+                          backgroundColor: alpha(theme.palette.background.paper, 0.95),
+                        }
                       },
                       '& .MuiOutlinedInput-root': {
                         borderRadius: 2
+                      },
+                      '& .MuiInputAdornment-root': {
+                        alignItems: 'center',
+                        height: '100%',
                       }
                     }}
                   />
@@ -629,14 +774,37 @@ export default function ProfilePage() {
                     rows={4}
                     InputProps={{
                       readOnly: !editMode,
+                      startAdornment: editMode ? null : (
+                        <Box sx={{ 
+                          display: 'flex', 
+                          alignItems: 'flex-start', // Giữ flex-start vì đây là trường multiline
+                          mr: 1.5,
+                          mt: 1.2, // Điều chỉnh vị trí bắt đầu của icon trên multiline field
+                          color: theme.palette.text.secondary,
+                        }}>
+                          <PersonIcon sx={{ 
+                            color: theme.palette.success.main,
+                            opacity: 0.8,
+                          }} />
+                        </Box>
+                      ),
                     }}
                     sx={{ 
                       '& .MuiFilledInput-root': {
                         borderRadius: 2,
-                        backgroundColor: alpha(theme.palette.background.paper, 0.8)
+                        backgroundColor: alpha(theme.palette.background.paper, 0.8),
+                        transition: 'all 0.3s',
+                        '&:hover': {
+                          backgroundColor: alpha(theme.palette.background.paper, 0.95),
+                        }
                       },
                       '& .MuiOutlinedInput-root': {
                         borderRadius: 2
+                      },
+                      '& .MuiInputAdornment-root': {
+                        // Đối với trường multiline, chỉ căn chỉnh theo chiều ngang
+                        alignItems: 'flex-start',
+                        height: 'auto',
                       }
                     }}
                   />
