@@ -2,10 +2,12 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import axios from 'axios';
+import authService from '@/services/authService';
 
 interface User {
   id: string;
   role: string;
+  username?: string; // Thêm trường username
   name?: string;
   email?: string;
   firstName?: string;
@@ -17,6 +19,7 @@ interface AuthContextType {
   isLoading: boolean;
   login: (email: string, password: string) => Promise<any>;
   logout: () => void;
+  register: (username: string, email: string, password: string) => Promise<any>;
   checkAuth: () => Promise<boolean>;
 }
 
@@ -26,9 +29,12 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 // API URL
 const API_URL = 'https://kahootclone-f7hkd0hwafgbfrfa.southeastasia-01.azurewebsites.net';
 
+// In the AuthProvider component
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  // Add client-side indicator
+  const [isMounted, setIsMounted] = useState(false);
   const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false); // Change initial value to false
 
   // Helper function to decode JWT
   const decodeToken = (token: string) => {
@@ -48,36 +54,57 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return null;
     }
   };
-  
-  // Check for existing user session on mount
+
+  // Check for existing user session on mount - only client side
   useEffect(() => {
-    // Set loading while checking authentication
-    setIsLoading(true);
+    setIsMounted(true);
     
-    try {
-      const token = localStorage.getItem('token');
-      
-      if (token) {
-        // Set the authorization header
+    // Move the auth check to useEffect to run only on client
+    const initialAuthCheck = async () => {
+      setIsLoading(true);
+      try {
+        // Check for token in localStorage (only available on client)
+        const token = localStorage.getItem('token');
+        
+        if (!token) {
+          setIsLoading(false);
+          return;
+        }
+        
+        // Set authorization header
         axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
         
-        // Decode token to get user info
+        // Decode and check token
         const decodedToken = decodeToken(token);
         
-        if (decodedToken) {
-          setUser({
-            id: decodedToken.nameid,
-            role: decodedToken.role,
-          });
+        if (!decodedToken) {
+          localStorage.removeItem('token');
+          setIsLoading(false);
+          return;
         }
+        
+        // Check if token has expired
+        const currentTime = Math.floor(Date.now() / 1000);
+        if (decodedToken.exp && decodedToken.exp < currentTime) {
+          localStorage.removeItem('token');
+          delete axios.defaults.headers.common['Authorization'];
+          setIsLoading(false);
+          return;
+        }
+        
+        // Token is valid, update user
+        setUser({
+          id: decodedToken.nameid,
+          role: decodedToken.role,
+        });
+      } catch (error) {
+        console.error('Error during initial auth check:', error);
+      } finally {
+        setIsLoading(false);
       }
-    } catch (error) {
-      console.error('Error checking authentication:', error);
-      localStorage.removeItem('token');
-    } finally {
-      // Always finish loading
-      setIsLoading(false);
-    }
+    };
+    
+    initialAuthCheck();
   }, []);
 
   const login = async (email: string, password: string) => {
@@ -129,10 +156,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const logout = () => {
-    setUser(null);
-    localStorage.removeItem('token');
-    delete axios.defaults.headers.common['Authorization'];
+  const logout = async () => {
+    try {
+      // Gọi API logout thông qua authService
+      await authService.logout();
+    } catch (error) {
+      console.error('Error during logout:', error);
+    } finally {
+      // Luôn đảm bảo xóa dữ liệu người dùng cục bộ
+      setUser(null);
+      localStorage.removeItem('token');
+      delete axios.defaults.headers.common['Authorization'];
+    }
+  };
+
+  const register = async (username: string, email: string, password: string) => {
+    try {
+      setIsLoading(true);
+      const response = await authService.register({ username, email, password });
+      return { 
+        success: response.status === 1,
+        message: response.message,
+        data: response.data
+      };
+    } catch (error: any) {
+      console.error('Registration error:', error);
+      
+      if (error.response?.data?.message) {
+        return { success: false, message: error.response.data.message };
+      }
+      
+      return { success: false, message: 'An error occurred during registration' };
+    } finally {
+      setIsLoading(false);
+    }
   };
   
   // Function to check if user is authenticated and token is valid
@@ -182,15 +239,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const value = {
+  // Only provide the context value if client-side
+  const contextValue = {
     user,
     isLoading,
     login,
     logout,
+    register,
     checkAuth
   };
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={contextValue}>
+      {children}
+    </AuthContext.Provider>
+  );
 };
 
 export const useAuth = (): AuthContextType => {

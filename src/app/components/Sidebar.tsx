@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '../context/AuthContext';
 import {
   Box,
@@ -16,8 +16,12 @@ import {
   Typography,
   Button,
   Paper,
+  Divider,
+  Tooltip,
+  Avatar,
   useTheme,
   useMediaQuery,
+  CircularProgress,
 } from '@mui/material';
 import {
   Home as HomeIcon,
@@ -29,7 +33,9 @@ import {
   ChevronRight as ChevronRightIcon,
   Add as AddIcon,
   Person as ProfileIcon,
+  Logout as LogoutIcon,
 } from '@mui/icons-material';
+import authService from '@/services/authService';
 
 const drawerWidth = 280;
 const collapsedWidth = 80;
@@ -37,15 +43,34 @@ const collapsedWidth = 80;
 const Sidebar = () => {
   const [isOpen, setIsOpen] = useState(true);
   const [mounted, setMounted] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [userProfile, setUserProfile] = useState<any>(null);
+
   const pathname = usePathname();
   const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
-  const { user } = useAuth();
+  const router = useRouter();
+  const { user, logout } = useAuth();
 
-  // Only set mounted state after component mounts to prevent hydration mismatch
+  // First useEffect - set mounted state
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Second useEffect - fetch user profile
+  useEffect(() => {
+    if (mounted && user?.id) {
+      const fetchUserProfile = async () => {
+        try {
+          const profile = await authService.getCurrentUserProfile();
+          setUserProfile(profile);
+        } catch (error) {
+          console.error('Failed to fetch user profile:', error);
+        }
+      };
+
+      fetchUserProfile();
+    }
+  }, [mounted, user?.id]);
 
   const menuItems = [
     { name: 'Home', path: '/dashboard', icon: HomeIcon },
@@ -56,7 +81,26 @@ const Sidebar = () => {
     { name: 'My Profile', path: '/profile', icon: ProfileIcon },
   ];
 
-  // Don't render content until component has mounted on the client
+  const handleLogout = async () => {
+    try {
+      setIsLoggingOut(true);
+
+      // Chỉ sử dụng hàm logout từ context
+      if (logout) {
+        await logout();
+      }
+
+      router.push('/login');
+    } catch (error) {
+      console.error('Error during logout:', error);
+      // Nếu lỗi, vẫn chuyển đến trang login vì token đã bị xóa
+      router.push('/login');
+    } finally {
+      setIsLoggingOut(false);
+    }
+  };
+
+  // If not mounted yet, return null or a minimal placeholder
   if (!mounted) {
     return null;
   }
@@ -71,6 +115,7 @@ const Sidebar = () => {
         background: 'linear-gradient(to bottom, #1a1a1a, #2d2d2d)',
       }}
     >
+      {/* Rest of the drawer content remains the same */}
       <Box
         sx={{
           display: 'flex',
@@ -168,6 +213,104 @@ const Sidebar = () => {
           </Paper>
         </Box>
       )}
+
+      {/* User profile section with logout button */}
+      <Box 
+        sx={{ 
+          mt: 'auto',
+          borderTop: '1px solid rgba(255, 255, 255, 0.12)',
+          py: 2,
+          px: isOpen ? 2 : 1
+        }}
+      >
+        {isOpen ? (
+          <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+            <Avatar 
+              sx={{ 
+                width: 40, 
+                height: 40, 
+                mr: 2,
+                bgcolor: 'primary.main',
+                background: 'linear-gradient(45deg, #2196F3 30%, #9C27B0 90%)',
+              }}
+            >
+              {(userProfile?.username?.charAt(0) || 
+                user?.name?.charAt(0) || 
+                user?.id?.toString().charAt(0) || 
+                'U').toUpperCase()}
+            </Avatar>
+            <Box sx={{ minWidth: 0, flex: 1 }}>
+              <Typography 
+                variant="subtitle1" 
+                sx={{ 
+                  color: 'white', 
+                  fontWeight: 'medium',
+                  textOverflow: 'ellipsis',
+                  overflow: 'hidden',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                {userProfile?.username || user?.name || 'User'}
+              </Typography>
+              <Typography 
+                variant="body2" 
+                sx={{ 
+                  color: 'rgba(255, 255, 255, 0.7)',
+                  textOverflow: 'ellipsis',
+                  overflow: 'hidden',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                {(user?.role ? user.role.charAt(0).toUpperCase() + user.role.slice(1) : 'User')}
+              </Typography>
+            </Box>
+          </Box>
+        ) : (
+          <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>
+            <Tooltip title={userProfile?.username || user?.name || 'User'} placement="right">
+              <Avatar 
+                sx={{ 
+                  width: 40, 
+                  height: 40,
+                  bgcolor: 'primary.main',
+                  background: 'linear-gradient(45deg, #2196F3 30%, #9C27B0 90%)',
+                }}
+              >
+                {(userProfile?.username?.charAt(0) || 
+                  user?.name?.charAt(0) || 
+                  user?.id?.toString().charAt(0) || 
+                  'U').toUpperCase()}
+              </Avatar>
+            </Tooltip>
+          </Box>
+        )}
+
+        {/* Logout button with loading state */}
+        <Button
+          variant="contained"
+          fullWidth
+          startIcon={isLoggingOut ? null : <LogoutIcon />}
+          onClick={handleLogout}
+          disabled={isLoggingOut}
+          sx={{
+            borderRadius: 2,
+            bgcolor: 'rgba(255, 255, 255, 0.12)',
+            color: 'white',
+            justifyContent: isOpen ? 'flex-start' : 'center',
+            py: 1,
+            '&:hover': {
+              bgcolor: 'rgba(255, 255, 255, 0.2)',
+            },
+            transition: 'all 0.3s ease',
+          }}
+        >
+          {isLoggingOut ? (
+            <CircularProgress size={24} color="inherit" />
+          ) : (
+            isOpen && 'Logout'
+          )}
+        </Button>
+      </Box>
     </Box>
   );
 

@@ -1,12 +1,33 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Box, Typography, Paper, Tabs, Tab, Divider, Button, Avatar, Chip, Grid } from '@mui/material';
+import { 
+  Box, 
+  Typography, 
+  Paper, 
+  Tabs, 
+  Tab, 
+  Divider, 
+  Button, 
+  Avatar, 
+  Chip, 
+  Stack,
+  Card,
+  CardContent,
+  alpha,
+  Grow,
+  useTheme,
+  Fade 
+} from '@mui/material';
 import { useRouter } from 'next/navigation';
 import { useAuth, withAuth } from '../context/AuthContext';
 import MainLayout from '../components/MainLayout';
-import GameCard from '../components/GameCard';
-import { Add as AddIcon, TrendingUp as TrendingIcon, AccessTime as RecentIcon } from '@mui/icons-material';
+import { 
+  Add as AddIcon, 
+  TrendingUp as TrendingIcon, 
+  AccessTime as RecentIcon 
+} from '@mui/icons-material';
+import authService from '@/services/authService';
 
 // Sample games data for the dashboard
 const sampleGames = [
@@ -71,15 +92,59 @@ const suggestedGames = [
 ];
 
 function Dashboard() {
+  const theme = useTheme();
   const router = useRouter();
   const [tabValue, setTabValue] = useState(0);
   const { user, isLoading } = useAuth();
   const [mounted, setMounted] = useState(false);
+  const [profileData, setProfileData] = useState({
+    id: 0,
+    username: '',
+    firstName: '',
+    lastName: '',
+    email: '',
+    role: ''
+  });
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     // Set mounted after client-side hydration to prevent errors
     setMounted(true);
   }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
+
+    const fetchUserProfile = async () => {
+      try {
+        const userData = await authService.getCurrentUserProfile();
+        
+        // Parse name parts if needed
+        const nameParts = userData.username ? userData.username.split(' ') : [''];
+        const firstName = nameParts[0] || '';
+        const lastName = nameParts.slice(1).join(' ') || '';
+        
+        setProfileData({
+          id: userData.id,
+          username: userData.username,
+          firstName: firstName,
+          lastName: lastName,
+          email: userData.email,
+          role: user?.role || 'User'
+        });
+      } catch (error) {
+        console.error('Failed to fetch user profile:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (authService.isAuthenticated()) {
+      fetchUserProfile();
+    } else {
+      setLoading(false);
+    }
+  }, [mounted, user]);
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
     setTabValue(newValue);
@@ -98,24 +163,25 @@ function Dashboard() {
     <MainLayout>
       <Box sx={{ mb: 4 }}>
         {/* Welcome section with user info */}
-        <Box sx={{ display: 'flex', alignItems: 'center', mb: 3, justifyContent: 'space-between' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', mb: 3, justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
           <Box sx={{ display: 'flex', alignItems: 'center' }}>
             <Avatar 
               sx={{ 
                 width: 64, 
                 height: 64, 
                 mr: 2,
-                background: 'linear-gradient(45deg, #2196F3 30%, #9C27B0 90%)'
+                background: 'linear-gradient(45deg, #2196F3 30%, #9C27B0 90%)',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
               }}
             >
-              {user?.firstName?.charAt(0) || 'T'}{user?.lastName?.charAt(0) || 'D'}
+              {profileData.firstName?.charAt(0) || ''}{profileData.lastName?.charAt(0) || ''}
             </Avatar>
             <Box>
               <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
-                Welcome back, {user?.firstName || 'Teacher'}!
+                Welcome back, {profileData.username || 'User'}!
               </Typography>
               <Chip 
-                label="Teacher" 
+                label={profileData.role?.charAt(0).toUpperCase() + profileData.role?.slice(1) || 'User'} 
                 color="primary" 
                 size="small" 
                 sx={{ mt: 0.5 }}
@@ -130,8 +196,15 @@ function Dashboard() {
               background: 'linear-gradient(45deg, #2196F3 30%, #9C27B0 90%)',
               color: 'white',
               fontWeight: 'bold',
-              borderRadius: 2,
-              px: 3
+              borderRadius: 8,
+              px: 3,
+              py: 1,
+              boxShadow: '0 4px 20px rgba(0,0,0,0.1)',
+              transition: 'all 0.3s',
+              '&:hover': {
+                transform: 'translateY(-2px)',
+                boxShadow: '0 6px 25px rgba(0,0,0,0.18)',
+              }
             }}
           >
             Create New Quiz
@@ -143,13 +216,14 @@ function Dashboard() {
           elevation={2} 
           sx={{ 
             p: 3, 
-            borderRadius: 2, 
+            borderRadius: 4, 
             mb: 4, 
             background: 'linear-gradient(to right, #E0EAFC, #CFDEF3)',
             display: 'flex',
             flexWrap: 'wrap',
             justifyContent: 'space-around',
-            gap: 2
+            gap: 2,
+            boxShadow: '0 10px 30px rgba(0,0,0,0.05)'
           }}
         >
           <Box sx={{ textAlign: 'center', flex: 1, minWidth: 150 }}>
@@ -183,7 +257,12 @@ function Dashboard() {
             sx={{
               '& .MuiTab-root': {
                 fontWeight: 'bold',
-                py: 2
+                py: 2,
+                transition: 'all 0.3s',
+                borderRadius: '8px 8px 0 0',
+              },
+              '& .Mui-selected': {
+                backgroundColor: alpha(theme.palette.primary.main, 0.05),
               }
             }}
           >
@@ -192,38 +271,217 @@ function Dashboard() {
           </Tabs>
         </Box>
 
-        {/* Game cards based on selected tab */}
+        {/* Game cards based on selected tab - using Masonry-like layout */}
         <Box>
           {tabValue === 0 ? (
-            <Grid container spacing={3}>
-              {sampleGames.map((game) => (
-                <Grid item xs={12} sm={6} md={4} lg={3} key={game.id}>
-                  <GameCard
-                    title={game.title}
-                    description={game.description}
-                    imageUrl={game.imageUrl}
-                    questionsCount={game.questionsCount}
-                    playsCount={game.playsCount}
-                    creator={game.creator}
-                  />
-                </Grid>
+            <Box 
+              sx={{ 
+                display: 'flex', 
+                flexWrap: 'wrap',
+                gap: 3,
+              }}
+            >
+              {sampleGames.map((game, index) => (
+                <Grow 
+                  key={game.id}
+                  in={true}
+                  style={{ transformOrigin: '0 0 0' }}
+                  timeout={300 + index * 100}
+                >
+                  <Box
+                    sx={{
+                      flexBasis: { xs: '100%', sm: 'calc(50% - 12px)', md: 'calc(33.333% - 16px)', lg: 'calc(25% - 18px)' },
+                      minWidth: 260,
+                      flexGrow: 1,
+                    }}
+                  >
+                    <Card
+                      sx={{
+                        height: '100%',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        borderRadius: 3,
+                        transition: 'all 0.3s ease',
+                        '&:hover': {
+                          transform: 'translateY(-8px)',
+                          boxShadow: '0 16px 40px rgba(0,0,0,0.12)'
+                        }
+                      }}
+                    >
+                      <Box
+                        sx={{
+                          position: 'relative',
+                          paddingTop: '60%',
+                          backgroundImage: `url(${game.imageUrl})`,
+                          backgroundSize: 'cover',
+                          backgroundPosition: 'center',
+                          borderTopLeftRadius: 12,
+                          borderTopRightRadius: 12,
+                          '&::before': {
+                            content: '""',
+                            position: 'absolute',
+                            top: 0,
+                            left: 0,
+                            width: '100%',
+                            height: '100%',
+                            backgroundColor: 'rgba(0,0,0,0.2)',
+                            borderTopLeftRadius: 12,
+                            borderTopRightRadius: 12,
+                          }
+                        }}
+                      >
+                        <Box
+                          sx={{
+                            position: 'absolute',
+                            top: 16,
+                            right: 16,
+                            backgroundColor: alpha(theme.palette.background.paper, 0.9),
+                            borderRadius: 4,
+                            px: 1.5,
+                            py: 0.5,
+                            display: 'flex',
+                            alignItems: 'center'
+                          }}
+                        >
+                          <Typography variant="body2" fontWeight="bold" color="primary">
+                            {game.questionsCount} Questions
+                          </Typography>
+                        </Box>
+                      </Box>
+                      
+                      <CardContent sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', p: 3 }}>
+                        <Box>
+                          <Typography variant="h6" component="h3" gutterBottom fontWeight="bold" sx={{ mb: 1 }}>
+                            {game.title}
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                            {game.description}
+                          </Typography>
+                        </Box>
+                        
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 2 }}>
+                          <Chip 
+                            size="small"
+                            label={`${game.playsCount} Plays`}
+                            sx={{ 
+                              fontWeight: 500,
+                              backgroundColor: alpha(theme.palette.success.main, 0.1),
+                              color: theme.palette.success.dark
+                            }} 
+                          />
+                          <Typography variant="caption" color="text.secondary">
+                            by {game.creator}
+                          </Typography>
+                        </Box>
+                      </CardContent>
+                    </Card>
+                  </Box>
+                </Grow>
               ))}
-            </Grid>
+            </Box>
           ) : (
-            <Grid container spacing={3}>
-              {suggestedGames.concat(sampleGames.slice(0, 2)).map((game) => (
-                <Grid item xs={12} sm={6} md={4} lg={3} key={`suggested-${game.id}`}>
-                  <GameCard
-                    title={game.title}
-                    description={game.description}
-                    imageUrl={game.imageUrl}
-                    questionsCount={game.questionsCount}
-                    playsCount={game.playsCount}
-                    creator={game.creator}
-                  />
-                </Grid>
+            <Box 
+              sx={{ 
+                display: 'flex', 
+                flexWrap: 'wrap',
+                gap: 3,
+              }}
+            >
+              {suggestedGames.concat(sampleGames.slice(0, 2)).map((game, index) => (
+                <Fade 
+                  key={`suggested-${game.id}`}
+                  in={true}
+                  timeout={500 + index * 100}
+                >
+                  <Box
+                    sx={{
+                      flexBasis: { xs: '100%', sm: 'calc(50% - 12px)', md: 'calc(33.333% - 16px)', lg: 'calc(25% - 18px)' },
+                      minWidth: 260,
+                      flexGrow: 1,
+                    }}
+                  >
+                    <Card
+                      sx={{
+                        height: '100%',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        borderRadius: 3,
+                        overflow: 'hidden',
+                        position: 'relative',
+                        transition: 'all 0.3s ease',
+                        '&:hover': {
+                          transform: 'translateY(-8px)',
+                          boxShadow: '0 16px 40px rgba(0,0,0,0.12)'
+                        }
+                      }}
+                    >
+                      <Box
+                        sx={{
+                          position: 'relative',
+                          paddingTop: '60%',
+                          backgroundImage: `url(${game.imageUrl})`,
+                          backgroundSize: 'cover',
+                          backgroundPosition: 'center',
+                          '&::before': {
+                            content: '""',
+                            position: 'absolute',
+                            top: 0,
+                            left: 0,
+                            width: '100%',
+                            height: '100%',
+                            backgroundColor: 'rgba(0,0,0,0.2)',
+                          }
+                        }}
+                      >
+                        <Box
+                          sx={{
+                            position: 'absolute',
+                            top: 16,
+                            right: 16,
+                            backgroundColor: alpha(theme.palette.background.paper, 0.9),
+                            borderRadius: 4,
+                            px: 1.5,
+                            py: 0.5,
+                            display: 'flex',
+                            alignItems: 'center'
+                          }}
+                        >
+                          <Typography variant="body2" fontWeight="bold" color="primary">
+                            {game.questionsCount} Questions
+                          </Typography>
+                        </Box>
+                      </Box>
+                      
+                      <CardContent sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', p: 3 }}>
+                        <Box>
+                          <Typography variant="h6" component="h3" gutterBottom fontWeight="bold" sx={{ mb: 1 }}>
+                            {game.title}
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                            {game.description}
+                          </Typography>
+                        </Box>
+                        
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 2 }}>
+                          <Chip 
+                            size="small"
+                            label={`${game.playsCount} Plays`}
+                            sx={{ 
+                              fontWeight: 500,
+                              backgroundColor: alpha(theme.palette.success.main, 0.1),
+                              color: theme.palette.success.dark
+                            }} 
+                          />
+                          <Typography variant="caption" color="text.secondary">
+                            by {game.creator}
+                          </Typography>
+                        </Box>
+                      </CardContent>
+                    </Card>
+                  </Box>
+                </Fade>
               ))}
-            </Grid>
+            </Box>
           )}
         </Box>
       </Box>

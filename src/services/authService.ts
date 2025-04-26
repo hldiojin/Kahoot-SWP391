@@ -7,7 +7,7 @@ interface LoginCredentials {
 }
 
 interface LoginResponse {
-  data: string; // JWT token
+  data: string; 
   message: string;
   status: any;
 }
@@ -26,6 +26,12 @@ interface RegisterResponse {
     email: string;
     password: string;
   };
+}
+
+interface UserProfile {
+  id: number;
+  username: string;
+  email: string;
 }
 
 const authService = {
@@ -75,13 +81,45 @@ const authService = {
   },
 
   /**
-   * Logout user by removing token
+   * Logout user by calling API and removing token
+   * @returns Promise with logout response
    */
-  logout: (): void => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    // Also remove the Authorization header
-    delete axios.defaults.headers.common['Authorization'];
+  logout: async (): Promise<{status: number, message: string, data: any}> => {
+    try {
+      // Lưu token hiện tại để xóa khỏi header
+      const token = localStorage.getItem('token');
+      
+      // Xóa token và thông tin người dùng từ local storage
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      
+      // Xóa authorization header
+      delete axios.defaults.headers.common['Authorization'];
+      
+      // Nếu không có token, không cần gọi API
+      if (!token) {
+        return { status: 1, message: "Logged out successfully (no token).", data: null };
+      }
+      
+      // Thêm lại token vào header tạm thời để gọi API logout
+      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      
+      // Gọi API logout
+      const response = await axiosInstance.post('/api/auth/logout');
+      
+      // Đảm bảo xóa header authorization sau khi gọi API
+      delete axios.defaults.headers.common['Authorization'];
+      
+      return response.data;
+    } catch (error) {
+      console.error('Logout error:', error);
+      
+      // Đảm bảo xóa header authorization khi có lỗi
+      delete axios.defaults.headers.common['Authorization'];
+      
+      // Trả về thông báo lỗi nhưng vẫn coi như đã đăng xuất
+      return { status: 0, message: "Logout failed, but local session cleared.", data: null };
+    }
   },
 
   /**
@@ -138,6 +176,20 @@ const authService = {
       id: payload.nameid,
       role: payload.role
     };
+  },
+
+  /**
+   * Get current user profile
+   * @returns Promise with user profile data
+   */
+  getCurrentUserProfile: async (): Promise<UserProfile> => {
+    try {
+      const response = await axiosInstance.get('/api/auth/me');
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching user profile:', error);
+      throw error;
+    }
   }
 };
 
