@@ -1,16 +1,15 @@
 import axiosInstance from '@/api/axiosInstance';
+import axios from 'axios';
 
 interface LoginCredentials {
-  userName: string;
+  email: string;
   password: string;
 }
 
 interface LoginResponse {
-  token: string;
-  user: {
-    id: string;
-    userName: string;
-  };
+  data: string; // JWT token
+  message: string;
+  status: any;
 }
 
 interface RegisterCredentials {
@@ -20,17 +19,18 @@ interface RegisterCredentials {
 }
 
 interface RegisterResponse {
-  token: string;
-  user: {
-    id: string;
+  status: number;
+  message: string;
+  data: {
     username: string;
     email: string;
+    password: string;
   };
 }
 
 const authService = {
   /**
-   * Login user with username and password
+   * Login user with email and password
    * @param credentials User login credentials
    * @returns Promise with login response
    */
@@ -39,8 +39,12 @@ const authService = {
       const response = await axiosInstance.post('/api/auth/login', credentials);
       
       // Store the token in localStorage for future requests
-      if (response.data.token) {
-        localStorage.setItem('token', response.data.token);
+      if (response.data && response.data.data) {
+        const token = response.data.data;
+        localStorage.setItem('token', token);
+        
+        // Set the default Authorization header for future requests
+        axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
       }
       
       return response.data;
@@ -58,13 +62,14 @@ const authService = {
     try {
       const response = await axiosInstance.post('/api/auth/register', credentials);
       
-      // Store the token in localStorage for future requests if login is automatic
-      if (response.data.token) {
-        localStorage.setItem('token', response.data.token);
+      // Success is determined by the status field
+      if (response.data && response.data.status === 1) {
+        console.log('Registration successful:', response.data);
       }
       
       return response.data;
     } catch (error) {
+      console.error('Registration error:', error);
       throw error;
     }
   },
@@ -75,6 +80,8 @@ const authService = {
   logout: (): void => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
+    // Also remove the Authorization header
+    delete axios.defaults.headers.common['Authorization'];
   },
 
   /**
@@ -84,6 +91,54 @@ const authService = {
   isAuthenticated: (): boolean => {
     return !!localStorage.getItem('token');
   },
+
+  /**
+   * Get the current JWT token
+   * @returns The JWT token or null if not logged in
+   */
+  getToken: (): string | null => {
+    return localStorage.getItem('token');
+  },
+
+  /**
+   * Get the JWT payload data
+   * @returns Decoded JWT payload or null
+   */
+  getTokenPayload: () => {
+    const token = localStorage.getItem('token');
+    if (!token) return null;
+    
+    try {
+      // JWT format: header.payload.signature
+      const base64Url = token.split('.')[1];
+      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+      const jsonPayload = decodeURIComponent(
+        atob(base64)
+          .split('')
+          .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+          .join('')
+      );
+      
+      return JSON.parse(jsonPayload);
+    } catch (e) {
+      console.error('Error decoding token:', e);
+      return null;
+    }
+  },
+
+  /**
+   * Get user information from the JWT token
+   */
+  getCurrentUser: () => {
+    const payload = authService.getTokenPayload();
+    if (!payload) return null;
+    
+    // Based on your token structure, extract user information
+    return {
+      id: payload.nameid,
+      role: payload.role
+    };
+  }
 };
 
 export default authService;

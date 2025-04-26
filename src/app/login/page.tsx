@@ -20,7 +20,7 @@ import { Visibility, VisibilityOff, ArrowBack } from '@mui/icons-material';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { useRouter } from 'next/navigation';
-import { useAuth } from '../../../context/AuthContext';
+import axios from 'axios';
 
 // Motion components - make sure these are only used on the client
 const MotionContainer = motion(Container);
@@ -94,6 +94,9 @@ const buttonVariants = {
   tap: { scale: 0.95, transition: { duration: 0.2 } }
 };
 
+// API URL
+const API_URL = 'https://kahootclone-f7hkd0hwafgbfrfa.southeastasia-01.azurewebsites.net';
+
 export default function LoginPage() {
   // State for client-side rendering only
   const [mounted, setMounted] = useState(false);
@@ -106,16 +109,16 @@ export default function LoginPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccessMessage, setShowSuccessMessage] = useState(false);
 
-  const { login, user } = useAuth();
   const router = useRouter();
 
-  // Redirect if already logged in
+  // Check if user is already logged in
   useEffect(() => {
-    if (user) {
+    const token = localStorage.getItem('token');
+    if (token) {
       router.push('/dashboard');
     }
     setMounted(true);
-  }, [user, router]);
+  }, [router]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -137,33 +140,80 @@ export default function LoginPage() {
         return;
       }
       
-      const result = await login(formData.email, formData.password);
+      // Log request data for debugging
+      console.log('Sending login request with:', {
+        url: `${API_URL}/api/auth/login`,
+        body: {
+          email: formData.email,
+          password: formData.password
+        }
+      });
       
-      if (result.success) {
-        setShowSuccessMessage(true);
-        // Redirect handled by the auth effect above
-      } else {
-        // Show appropriate error message based on error type
-        switch (result.errorType) {
-          case 'email_required':
-            setError('Email is required');
-            break;
-          case 'password_required':
-            setError('Password is required');
-            break;
-          case 'invalid_email':
-            setError('No account found with this email');
-            break;
-          case 'invalid_password':
-            setError('Incorrect password');
-            break;
-          default:
+      // Call the API with the exact request format
+      try {
+        const response = await axios.post(`${API_URL}/api/auth/login`, {
+          email: formData.email,
+          password: formData.password
+        }, {
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          }
+        });
+        
+        console.log('API Response:', response.data);
+        
+        // Check if the response is successful (status: 1)
+        if (response.data && response.data.status === 1 && response.data.data) {
+          // The token is directly in the data field
+          const token = response.data.data;
+          
+          // Save token to localStorage
+          localStorage.setItem('token', token);
+          
+          // Set the default Authorization header for future requests
+          axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+          
+          setShowSuccessMessage(true);
+          
+          // Redirect after successful login
+          setTimeout(() => {
+            router.push('/dashboard');
+          }, 1500);
+        } else {
+          // Handle unsuccessful response with status != 1
+          setError(response.data.message || 'Login failed');
+        }
+      } catch (err: any) {
+        console.error('Login error:', err);
+        
+        if (err.response) {
+          // Log detailed error info
+          console.error('Error status:', err.response.status);
+          console.error('Error headers:', err.response.headers);
+          console.error('Error data:', err.response.data);
+          
+          // Handle different error responses
+          const errorData = err.response.data;
+          console.log('Error response data:', errorData);
+          
+          if (errorData && errorData.message) {
+            setError(errorData.message);
+          } else if (err.response.status === 400) {
+            setError('Invalid credentials. Please check your email and password.');
+          } else if (err.response.status === 401) {
             setError('Invalid email or password');
+          } else {
+            setError('Login failed. Please try again.');
+          }
+        } else if (err.request) {
+          console.error('No response received:', err.request);
+          setError('No response from server. Please check your internet connection.');
+        } else {
+          console.error('Error message:', err.message);
+          setError('An error occurred during login');
         }
       }
-    } catch (err) {
-      setError('An error occurred during login');
-      console.error(err);
     } finally {
       setIsSubmitting(false);
     }
@@ -178,8 +228,8 @@ export default function LoginPage() {
     <Alert severity="info" sx={{ mb: 2, width: '100%' }}>
       <Typography variant="body2">
         <strong>Demo credentials:</strong><br />
-        Teacher: john@example.com / password123<br />
-        Student: jane@example.com / password123
+        Email: lamhoangdanh01@gmail.com<br />
+        Password: 18012003
       </Typography>
     </Alert>
   );

@@ -1,68 +1,79 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import axios from 'axios';
 
 interface User {
   id: string;
-  email: string;
+  role: string;
   name?: string;
-  firstName?: string; 
+  email?: string;
+  firstName?: string;
   lastName?: string;
-  role: 'teacher' | 'student' | 'admin';
-  createdAt: string;
-  quizzes?: any[];
-  isVerified: boolean;
 }
 
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<any>;
   logout: () => void;
-  signup: (email: string, password: string, firstName: string, lastName: string, role: 'teacher' | 'student') => Promise<void>;
+  checkAuth: () => Promise<boolean>;
 }
 
 // Create context
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Hardcoded teacher account for development
-const hardcodedTeacher: User = {
-  id: "teacher123",
-  email: "teacher@example.com",
-  firstName: "Teacher",
-  lastName: "Demo",
-  name: "Teacher Demo",
-  role: "teacher",
-  createdAt: new Date().toISOString(),
-  quizzes: [],
-  isVerified: true
-};
+// API URL
+const API_URL = 'https://kahootclone-f7hkd0hwafgbfrfa.southeastasia-01.azurewebsites.net';
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Helper function to decode JWT
+  const decodeToken = (token: string) => {
+    try {
+      const base64Url = token.split('.')[1];
+      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+      const jsonPayload = decodeURIComponent(
+        atob(base64)
+          .split('')
+          .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+          .join('')
+      );
+      
+      return JSON.parse(jsonPayload);
+    } catch (e) {
+      console.error('Error decoding token:', e);
+      return null;
+    }
+  };
+  
   // Check for existing user session on mount
   useEffect(() => {
     // Set loading while checking authentication
     setIsLoading(true);
     
     try {
-      // For development: automatically use hardcoded teacher account
-      setUser(hardcodedTeacher);
-      localStorage.setItem('currentUser', JSON.stringify(hardcodedTeacher));
-      localStorage.setItem('isAuthenticated', 'true');
+      const token = localStorage.getItem('token');
       
-      /* Uncomment this section when real authentication is needed
-      const storedUser = localStorage.getItem('currentUser');
-      const isAuthenticated = localStorage.getItem('isAuthenticated') === 'true';
-      
-      if (isAuthenticated && storedUser) {
-        setUser(JSON.parse(storedUser));
+      if (token) {
+        // Set the authorization header
+        axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+        
+        // Decode token to get user info
+        const decodedToken = decodeToken(token);
+        
+        if (decodedToken) {
+          setUser({
+            id: decodedToken.nameid,
+            role: decodedToken.role,
+          });
+        }
       }
-      */
     } catch (error) {
       console.error('Error checking authentication:', error);
+      localStorage.removeItem('token');
     } finally {
       // Always finish loading
       setIsLoading(false);
@@ -73,14 +84,46 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       setIsLoading(true);
       
-      // In a real app, this would be an API call
-      // For demo purposes, we'll just accept any credentials and use our hardcoded teacher
-      setUser(hardcodedTeacher);
-      localStorage.setItem('currentUser', JSON.stringify(hardcodedTeacher));
-      localStorage.setItem('isAuthenticated', 'true');
-    } catch (error) {
+      // Call the API directly
+      const response = await axios.post(`${API_URL}/api/auth/login`, {
+        email,
+        password
+      });
+      
+      console.log('Login response:', response.data);
+      
+      if (response.data && response.data.status === 1 && response.data.data) {
+        const token = response.data.data;
+        
+        // Save token to localStorage
+        localStorage.setItem('token', token);
+        
+        // Set the authorization header
+        axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+        
+        // Decode token to get user info
+        const decodedToken = decodeToken(token);
+        
+        if (decodedToken) {
+          const userData = {
+            id: decodedToken.nameid,
+            role: decodedToken.role,
+          };
+          
+          setUser(userData);
+          return { success: true, user: userData };
+        }
+      }
+      
+      return { success: false, message: response.data?.message || 'Login failed' };
+    } catch (error: any) {
       console.error('Login error:', error);
-      throw error;
+      
+      if (error.response?.data?.message) {
+        return { success: false, message: error.response.data.message };
+      }
+      
+      return { success: false, message: 'An error occurred during login' };
     } finally {
       setIsLoading(false);
     }
@@ -88,38 +131,54 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = () => {
     setUser(null);
-    localStorage.removeItem('currentUser');
-    localStorage.removeItem('isAuthenticated');
-    
-    // In a real app, we might also invalidate tokens on the server, etc.
+    localStorage.removeItem('token');
+    delete axios.defaults.headers.common['Authorization'];
   };
-
-  const signup = async (email: string, password: string, firstName: string, lastName: string, role: 'teacher' | 'student') => {
+  
+  // Function to check if user is authenticated and token is valid
+  const checkAuth = async () => {
     try {
-      setIsLoading(true);
+      const token = localStorage.getItem('token');
       
-      // In a real app, this would be an API call
-      // For demo purposes, we'll just create a mock account
-      const newUser: User = {
-        id: 'user_' + Date.now().toString(),
-        email,
-        firstName,
-        lastName,
-        name: `${firstName} ${lastName}`,
-        role,
-        createdAt: new Date().toISOString(),
-        quizzes: [],
-        isVerified: true
-      };
+      if (!token) {
+        return false;
+      }
       
-      setUser(newUser);
-      localStorage.setItem('currentUser', JSON.stringify(newUser));
-      localStorage.setItem('isAuthenticated', 'true');
+      // Set the authorization header
+      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      
+      // You can add a call to a validation endpoint here if available
+      // const response = await axios.get(`${API_URL}/api/auth/validate`);
+      
+      // For now, just check if token can be decoded
+      const decodedToken = decodeToken(token);
+      
+      if (!decodedToken) {
+        return false;
+      }
+      
+      // Check if token has expired
+      const currentTime = Math.floor(Date.now() / 1000);
+      if (decodedToken.exp && decodedToken.exp < currentTime) {
+        // Token has expired
+        localStorage.removeItem('token');
+        delete axios.defaults.headers.common['Authorization'];
+        setUser(null);
+        return false;
+      }
+      
+      // Update user info from token if needed
+      if (!user) {
+        setUser({
+          id: decodedToken.nameid,
+          role: decodedToken.role,
+        });
+      }
+      
+      return true;
     } catch (error) {
-      console.error('Signup error:', error);
-      throw error;
-    } finally {
-      setIsLoading(false);
+      console.error('Error checking authentication:', error);
+      return false;
     }
   };
 
@@ -128,7 +187,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     isLoading,
     login,
     logout,
-    signup
+    checkAuth
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -145,31 +204,36 @@ export const useAuth = (): AuthContextType => {
 // HOC to protect routes
 export const withAuth = (Component: React.ComponentType) => {
   return function WithAuth(props: any) {
-    const { user, isLoading } = useAuth();
+    const { user, isLoading, checkAuth } = useAuth();
     const [isClient, setIsClient] = useState(false);
+    const [isAuthenticated, setIsAuthenticated] = useState(false);
+    const [authChecked, setAuthChecked] = useState(false);
     
     useEffect(() => {
       setIsClient(true);
-    }, []);
+      
+      const validateAuth = async () => {
+        const isValid = await checkAuth();
+        setIsAuthenticated(isValid);
+        setAuthChecked(true);
+      };
+      
+      validateAuth();
+    }, [checkAuth]);
     
-    // Only render component if authenticated and on client
-    if (!isClient || isLoading) {
-      return null; // Return nothing during SSR or loading
+    // If on server or loading, show loading state
+    if (!isClient || isLoading || !authChecked) {
+      return <div>Loading...</div>;
     }
     
-    // Skip authentication check for development
-    return <Component {...props} />;
-    
-    /* Enable this when real auth is needed
-    if (!user) {
-      if (isClient) {
-        // Only redirect on client side
-        window.location.href = '/login';
-      }
+    // If not authenticated, redirect to login
+    if (!isAuthenticated) {
+      // Use window.location for hard redirect to ensure auth state is cleared
+      window.location.href = '/login';
       return null;
     }
     
+    // User is authenticated, render the component
     return <Component {...props} />;
-    */
   };
 };

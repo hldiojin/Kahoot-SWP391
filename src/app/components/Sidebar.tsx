@@ -28,6 +28,7 @@ import {
   ChevronLeft as ChevronLeftIcon,
   ChevronRight as ChevronRightIcon,
   Add as AddIcon,
+  Person as ProfileIcon,
 } from '@mui/icons-material';
 
 const drawerWidth = 280;
@@ -52,6 +53,7 @@ const Sidebar = () => {
     { name: 'My Sets', path: '/my-sets', icon: BookIcon },
     { name: 'Favorites', path: '/favorites', icon: StarIcon },
     { name: 'History', path: '/history', icon: HistoryIcon },
+    { name: 'My Profile', path: '/profile', icon: ProfileIcon },
   ];
 
   // Don't render content until component has mounted on the client

@@ -197,7 +197,7 @@ function Dashboard() {
           {tabValue === 0 ? (
             <Grid container spacing={3}>
               {sampleGames.map((game) => (
-                <Grid key={game.id} item xs={12} sm={6} md={4} lg={3}>
+                <Grid item xs={12} sm={6} md={4} lg={3} key={game.id}>
                   <GameCard
                     title={game.title}
                     description={game.description}
@@ -212,7 +212,7 @@ function Dashboard() {
           ) : (
             <Grid container spacing={3}>
               {suggestedGames.concat(sampleGames.slice(0, 2)).map((game) => (
-                <Grid key={`suggested-${game.id}`} item xs={12} sm={6} md={4} lg={3}>
+                <Grid item xs={12} sm={6} md={4} lg={3} key={`suggested-${game.id}`}>
                   <GameCard
                     title={game.title}
                     description={game.description}
