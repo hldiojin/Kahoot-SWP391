@@ -29,7 +29,7 @@ import { useRouter } from 'next/navigation';
 import PublicLayout from '../components/PublicLayout';
 import { motion } from 'framer-motion';
 import dynamic from 'next/dynamic';
-import Confetti from 'react-confetti';
+import ReactConfetti from 'react-confetti';
 
 // Dynamically import Animal component with SSR disabled
 const Animal = dynamic(() => import('react-animals'), { ssr: false });
@@ -284,7 +284,7 @@ export default function GameResultsPage() {
   return (
     <PublicLayout>
       {showConfetti && (
-        <Confetti
+        <ReactConfetti
           width={windowDimensions.width}
           height={windowDimensions.height}
           recycle={false}

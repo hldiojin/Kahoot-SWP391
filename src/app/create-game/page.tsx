@@ -32,7 +32,10 @@ import {
   DialogContent,
   DialogActions,
   ToggleButton,
-  ToggleButtonGroup
+  ToggleButtonGroup,
+  CircularProgress,
+  Snackbar,
+  Alert
 } from '@mui/material';
 import { 
   Add as AddIcon, 
@@ -61,6 +64,9 @@ import {
 import MainLayout from '../components/MainLayout';
 import { useAuth } from '../context/AuthContext';
 import { useRouter } from 'next/navigation';
+import quizService from '@/services/quizService';
+import questionService from '@/services/questionService';
+import authService from '@/services/authService';
 
 // Interface for Question object
 interface Question {
@@ -112,12 +118,23 @@ const CreateGamePage = () => {
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [successDialogOpen, setSuccessDialogOpen] = useState(false);
   const [gameCode, setGameCode] = useState('');
+  
+  // New state variables for API operations
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [addingQuestion, setAddingQuestion] = useState(false);
+  const [notification, setNotification] = useState({
+    open: false,
+    message: '',
+    type: 'info' as 'success' | 'error' | 'info' | 'warning'
+  });
+  const [createdQuizId, setCreatedQuizId] = useState<number | null>(null);
 
   // Steps for the quiz creation process
   const steps = ['Quiz Info', 'Add Questions', 'Preview & Finish'];
 
   // Function to add a new question
-  const addQuestion = () => {
+  const addQuestion = async () => {
+    // Create the new question locally first
     const newQuestion: Question = {
       id: (questions.length + 1).toString(),
       text: '',
@@ -132,8 +149,60 @@ const CreateGamePage = () => {
       ],
       questionType: 'multiple-choice',
     };
+    
+    // Add to local state immediately for UI
     setQuestions([...questions, newQuestion]);
     setCurrentQuestionIndex(questions.length);
+    
+    // If we have a created quiz ID from submit, also add to the API
+    if (createdQuizId) {
+      try {
+        setAddingQuestion(true);
+        
+        // Format the question for the API
+        const questionApiData = questionService.formatQuestionForApi(
+          newQuestion,
+          createdQuizId,
+          questions.length + 1 // Arrange property - 1-indexed position
+        );
+        
+        // Call API to create question
+        const response = await questionService.createQuestion(questionApiData);
+        
+        if (response.status === 201 || response.status === 200) {
+          console.log("Question created successfully:", response);
+          
+          // Update the local question with the server-assigned ID
+          if (response.data && response.data.id) {
+            const updatedQuestions = [...questions, newQuestion];
+            updatedQuestions[updatedQuestions.length - 1].id = response.data.id.toString();
+            setQuestions(updatedQuestions);
+          }
+          
+          setNotification({
+            open: true,
+            message: "Question added successfully!",
+            type: "success"
+          });
+        } else {
+          console.error("Failed to create question:", response);
+          setNotification({
+            open: true,
+            message: `Failed to save question: ${response.message}`,
+            type: "error"
+          });
+        }
+      } catch (error) {
+        console.error("Error creating question:", error);
+        setNotification({
+          open: true,
+          message: `Error adding question: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          type: "error"
+        });
+      } finally {
+        setAddingQuestion(false);
+      }
+    }
   };
 
   // Function to delete a question
@@ -283,93 +352,196 @@ const CreateGamePage = () => {
   };
 
   // Function to submit the quiz
-  const submitQuiz = () => {
-    // Generate a unique 6-digit game code
-    const generateGameCode = () => {
-      return Math.floor(100000 + Math.random() * 900000).toString();
-    };
-
-    const generatedGameCode = generateGameCode();
-    setGameCode(generatedGameCode);
-    
-    // Create the game data object
-    const quizData = {
-      id: 'quiz-' + Date.now(),
-      title: quizTitle || 'Untitled Quiz',
-      description: quizDescription || '',
-      gameCode: generatedGameCode,
-      gameMode: gameMode,
-      questions: questions.map(q => ({
-        id: q.id,
-        question: q.text || 'Question',
-        options: q.answers.map(a => a.text || 'Option'),
-        correctAnswer: q.answers.findIndex(a => a.isCorrect) || 0,
-        timeLimit: q.timeLimit || 20,
-        points: q.points || 100
-      })),
-      category: quizCategory || 'Uncategorized',
-      isPublic: isPublic,
-      coverImage: coverImage || 'https://source.unsplash.com/random/300x200?quiz',
-      createdBy: user?.firstName + ' ' + user?.lastName || 'User',
-      createdAt: new Date().toISOString(),
-      playsCount: 0
-    };
-
-    console.log("Created new game with code:", generatedGameCode, quizData);
-
-    // Save to localStorage for persistence
+  const submitQuiz = async () => {
     try {
-      // 1. Save to mySets for the My Sets page
-      const existingSets = JSON.parse(localStorage.getItem('mySets') || '[]');
-      existingSets.push(quizData);
-      localStorage.setItem('mySets', JSON.stringify(existingSets));
+      setIsSubmitting(true);
       
-      // 2. Also save to gamesByCode in localStorage for easier access
-      const gamesByCode = JSON.parse(localStorage.getItem('gamesByCode') || '{}');
-      gamesByCode[generatedGameCode] = quizData;
-      localStorage.setItem('gamesByCode', JSON.stringify(gamesByCode));
-    } catch (error) {
-      console.error("Error saving to localStorage:", error);
-    }
-    
-    // Save to sessionStorage for immediate play
-    try {
-      // 1. Save the current game code for reference
-      sessionStorage.setItem('currentGameCode', generatedGameCode);
+      // Generate a unique 6-digit game code
+      const generatedQuizCode = quizService.generateQuizCode();
+      setGameCode(generatedQuizCode.toString());
       
-      // 2. Save this specific game by its code
-      sessionStorage.setItem(`game_${generatedGameCode}`, JSON.stringify(quizData));
+      // Get current user information
+      const currentUser = authService.getCurrentUser();
+      if (!currentUser || !currentUser.id) {
+        console.error("User ID not available");
+        setNotification({
+          open: true,
+          message: "User ID not available. Please log in again.",
+          type: "error"
+        });
+        return;
+      }
+
+      // Create the game data object for API
+      const quizApiData = {
+        id: 0, // Set to 0 for new quiz
+        title: quizTitle || 'Untitled Quiz',
+        quizCode: generatedQuizCode,
+        description: quizDescription || '',
+        createdBy: parseInt(currentUser.id),
+        categoryId: quizCategory ? getCategoryId(quizCategory) : 1, // Default to Education (1) if no category
+        isPublic: isPublic,
+        thumbnailUrl: coverImage || 'https://img.freepik.com/free-vector/quiz-neon-sign_1262-15536.jpg',
+        createdAt: new Date().toISOString()
+      };
+
+      // Call API to create quiz
+      const response = await quizService.createQuiz(quizApiData);
+      console.log("Quiz created successfully:", response);
       
-      // 3. Save a complete list of all available game codes
-      const allCodes = JSON.parse(sessionStorage.getItem('availableGameCodes') || '[]');
-      if (!allCodes.includes(generatedGameCode)) {
-        allCodes.push(generatedGameCode);
-        sessionStorage.setItem('availableGameCodes', JSON.stringify(allCodes));
+      if (response.status === 201 || response.status === 200) {
+        // Store the created quiz ID for adding questions later
+        if (response.data && response.data.id) {
+          setCreatedQuizId(response.data.id);
+          
+          // Now save all questions to the API
+          const savedQuestions = await Promise.all(
+            questions.map(async (question, index) => {
+              try {
+                const questionApiData = questionService.formatQuestionForApi(
+                  question,
+                  response.data.id,
+                  index + 1 // 1-indexed position
+                );
+                
+                const questionResponse = await questionService.createQuestion(questionApiData);
+                return {
+                  ...question,
+                  serverResponse: questionResponse,
+                  serverError: null
+                };
+              } catch (error) {
+                console.error(`Error saving question ${index + 1}:`, error);
+                return {
+                  ...question,
+                  serverResponse: null,
+                  serverError: error
+                };
+              }
+            })
+          );
+          
+          // Check if any questions failed to save
+          const failedQuestions = savedQuestions.filter(q => q.serverError);
+          if (failedQuestions.length > 0) {
+            setNotification({
+              open: true,
+              message: `Quiz created but ${failedQuestions.length} question(s) failed to save. You may need to add them again.`,
+              type: "warning"
+            });
+          } else {
+            setNotification({
+              open: true,
+              message: "Quiz and all questions saved successfully!",
+              type: "success"
+            });
+          }
+        }
+      }
+
+      // Create the local game data object for state management
+      const quizData = {
+        id: response.data?.id || 'quiz-' + Date.now(),
+        title: quizTitle || 'Untitled Quiz',
+        description: quizDescription || '',
+        gameCode: generatedQuizCode.toString(),
+        gameMode: gameMode,
+        questions: questions.map(q => ({
+          id: q.id,
+          question: q.text || 'Question',
+          options: q.answers.map(a => a.text || 'Option'),
+          correctAnswer: q.answers.findIndex(a => a.isCorrect) || 0,
+          timeLimit: q.timeLimit || 20,
+          points: q.points || 100
+        })),
+        category: quizCategory || 'Uncategorized',
+        isPublic: isPublic,
+        coverImage: coverImage || 'https://img.freepik.com/free-vector/quiz-neon-sign_1262-15536.jpg',
+        createdBy: user?.firstName + ' ' + user?.lastName || 'User',
+        createdAt: new Date().toISOString(),
+        playsCount: 0
+      };
+
+      // Save to localStorage for persistence
+      try {
+        // 1. Save to mySets for the My Sets page
+        const existingSets = JSON.parse(localStorage.getItem('mySets') || '[]');
+        existingSets.push(quizData);
+        localStorage.setItem('mySets', JSON.stringify(existingSets));
+        
+        // 2. Also save to gamesByCode in localStorage for easier access
+        const gamesByCode = JSON.parse(localStorage.getItem('gamesByCode') || '{}');
+        gamesByCode[generatedQuizCode.toString()] = quizData;
+        localStorage.setItem('gamesByCode', JSON.stringify(gamesByCode));
+      } catch (error) {
+        console.error("Error saving to localStorage:", error);
       }
       
-      // 4. Save the formatted quiz for immediate play
-      const playableQuiz = {
-        title: quizData.title,
-        description: quizData.description,
-        coverImage: quizData.coverImage,
-        category: quizData.category,
-        isPublic: quizData.isPublic,
-        gameMode: quizData.gameMode,
-        questions: quizData.questions.map(q => ({
-          id: q.id,
-          question: q.question,
-          options: q.options,
-          correctAnswer: q.correctAnswer,
-          timeLimit: q.timeLimit
-        }))
-      };
-      sessionStorage.setItem('quizPreviewData', JSON.stringify(playableQuiz));
-    } catch (error) {
-      console.error("Error saving to sessionStorage:", error);
-    }
+      // Save to sessionStorage for immediate play
+      try {
+        // 1. Save the current game code for reference
+        sessionStorage.setItem('currentGameCode', generatedQuizCode.toString());
+        
+        // 2. Save this specific game by its code
+        sessionStorage.setItem(`game_${generatedQuizCode}`, JSON.stringify(quizData));
+        
+        // 3. Save a complete list of all available game codes
+        const allCodes = JSON.parse(sessionStorage.getItem('availableGameCodes') || '[]');
+        if (!allCodes.includes(generatedQuizCode.toString())) {
+          allCodes.push(generatedQuizCode.toString());
+          sessionStorage.setItem('availableGameCodes', JSON.stringify(allCodes));
+        }
+        
+        // 4. Save the formatted quiz for immediate play
+        const playableQuiz = {
+          title: quizData.title,
+          description: quizData.description,
+          coverImage: quizData.coverImage,
+          category: quizData.category,
+          isPublic: quizData.isPublic,
+          gameMode: quizData.gameMode,
+          questions: quizData.questions.map(q => ({
+            id: q.id,
+            question: q.question,
+            options: q.options,
+            correctAnswer: q.correctAnswer,
+            timeLimit: q.timeLimit
+          }))
+        };
+        sessionStorage.setItem('quizPreviewData', JSON.stringify(playableQuiz));
+      } catch (error) {
+        console.error("Error saving to sessionStorage:", error);
+      }
 
-    // Open success dialog with the game code
-    setSuccessDialogOpen(true);
+      // Open success dialog with the game code
+      setSuccessDialogOpen(true);
+    } catch (error) {
+      console.error("Error creating quiz:", error);
+      setNotification({
+        open: true,
+        message: `Failed to create quiz: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        type: "error"
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Helper function to map category string to category ID
+  const getCategoryId = (category: string): number => {
+    const categoryMap: { [key: string]: number } = {
+      'education': 1,
+      'science': 2,
+      'math': 3,
+      'language': 4,
+      'geography': 5,
+      'history': 6,
+      'art': 7,
+      'music': 8,
+      'sports': 9,
+      'other': 10
+    };
+    return categoryMap[category] || 0;
   };
 
   // Add copy to clipboard function
@@ -417,6 +589,11 @@ const CreateGamePage = () => {
     // Save to sessionStorage before opening preview
     sessionStorage.setItem('quizPreviewData', JSON.stringify(quizData));
     window.open('/play-quiz-preview', '_blank');
+  };
+
+  // Function to handle notification close
+  const handleNotificationClose = () => {
+    setNotification({ ...notification, open: false });
   };
 
   // Render the current step content
@@ -628,9 +805,10 @@ const CreateGamePage = () => {
                 </Typography>
                 <Button
                   variant="contained"
-                  startIcon={<AddIcon />}
+                  startIcon={addingQuestion ? <CircularProgress size={20} color="inherit" /> : <AddIcon />}
                   onClick={addQuestion}
                   color="primary"
+                  disabled={addingQuestion}
                   sx={{ 
                     borderRadius: 8, 
                     px: 3,
@@ -638,7 +816,7 @@ const CreateGamePage = () => {
                     background: 'linear-gradient(45deg, #2196F3 30%, #21CBF3 90%)'
                   }}
                 >
-                  Add Question
+                  {addingQuestion ? 'Adding...' : 'Add Question'}
                 </Button>
               </Box>
               
@@ -938,9 +1116,10 @@ const CreateGamePage = () => {
                     variant="outlined"
                     color="primary"
                     onClick={addQuestion}
-                    startIcon={<AddIcon />}
+                    startIcon={addingQuestion ? <CircularProgress size={16} color="primary" /> : <AddIcon />}
+                    disabled={addingQuestion}
                   >
-                    Add another question
+                    {addingQuestion ? 'Adding...' : 'Add another question'}
                   </Button>
                 </Box>
               </Paper>
@@ -1203,45 +1382,6 @@ const CreateGamePage = () => {
     }
   };
 
-  if (!user || (user.role !== 'teacher' && user.role !== 'admin')) {
-    return (
-      <MainLayout>
-        <Box sx={{ 
-          display: 'flex', 
-          flexDirection: 'column',
-          justifyContent: 'center', 
-          alignItems: 'center', 
-          height: '80vh',
-          gap: 3
-        }}>
-          <Paper 
-            elevation={3}
-            sx={{ 
-              p: 4, 
-              borderRadius: 3, 
-              textAlign: 'center',
-              maxWidth: 500
-            }}
-          >
-            <PrivateIcon sx={{ fontSize: 60, color: 'text.secondary', mb: 2 }} />
-            <Typography variant="h5" gutterBottom>
-              Teacher Access Required
-            </Typography>
-            <Typography variant="body1" color="text.secondary" paragraph>
-              You need teacher privileges to create games. Please contact an administrator if you believe you should have access.
-            </Typography>
-            <Button 
-              variant="contained" 
-              onClick={() => router.push('/dashboard')}
-            >
-              Return to Dashboard
-            </Button>
-          </Paper>
-        </Box>
-      </MainLayout>
-    );
-  }
-
   return (
     <MainLayout>
       <Container>
@@ -1280,15 +1420,16 @@ const CreateGamePage = () => {
               <Button 
                 variant="contained"
                 color="secondary"
-                startIcon={activeStep === steps.length - 1 ? <SaveIcon /> : null}
+                startIcon={activeStep === steps.length - 1 ? (isSubmitting ? <CircularProgress size={20} color="inherit" /> : <SaveIcon />) : null}
                 endIcon={activeStep === steps.length - 1 ? null : <ForwardIcon />}
                 onClick={activeStep === steps.length - 1 ? submitQuiz : handleNext}
+                disabled={isSubmitting}
                 sx={{ 
                   borderRadius: 8,
                   px: 3
                 }}
               >
-                {activeStep === steps.length - 1 ? 'Save Quiz' : 'Continue'}
+                {activeStep === steps.length - 1 ? (isSubmitting ? 'Saving...' : 'Save Quiz') : 'Continue'}
               </Button>
             </Box>
           </Paper>
@@ -1315,7 +1456,7 @@ const CreateGamePage = () => {
           <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 4 }}>
             <Button
               color="inherit"
-              disabled={activeStep === 0}
+              disabled={activeStep === 0 || isSubmitting}
               onClick={handleBack}
               startIcon={<BackIcon />}
               variant="outlined"
@@ -1331,6 +1472,7 @@ const CreateGamePage = () => {
               variant="contained"
               onClick={activeStep === steps.length - 1 ? submitQuiz : handleNext}
               endIcon={activeStep === steps.length - 1 ? <SaveIcon /> : <ForwardIcon />}
+              disabled={isSubmitting}
               sx={{ 
                 borderRadius: 8, 
                 px: 4,
@@ -1340,7 +1482,7 @@ const CreateGamePage = () => {
                 boxShadow: '0 4px 10px rgba(0, 0, 0, 0.15)'
               }}
             >
-              {activeStep === steps.length - 1 ? 'Finish & Save' : 'Next Step'}
+              {activeStep === steps.length - 1 ? (isSubmitting ? 'Saving...' : 'Finish & Save') : 'Next Step'}
             </Button>
           </Box>
         </Box>
@@ -1427,6 +1569,23 @@ const CreateGamePage = () => {
           </Button>
         </DialogActions>
       </Dialog>
+      
+      {/* Notification Snackbar */}
+      <Snackbar 
+        open={notification.open} 
+        autoHideDuration={6000}
+        onClose={handleNotificationClose}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert 
+          onClose={handleNotificationClose} 
+          severity={notification.type}
+          variant="filled"
+          sx={{ width: '100%' }}
+        >
+          {notification.message}
+        </Alert>
+      </Snackbar>
     </MainLayout>
   );
 };

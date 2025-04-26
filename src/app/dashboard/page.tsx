@@ -17,7 +17,10 @@ import {
   alpha,
   Grow,
   useTheme,
-  Fade 
+  Fade,
+  CircularProgress,
+  Snackbar,
+  Alert
 } from '@mui/material';
 import { useRouter } from 'next/navigation';
 import { useAuth, withAuth } from '../context/AuthContext';
@@ -28,6 +31,7 @@ import {
   AccessTime as RecentIcon 
 } from '@mui/icons-material';
 import authService from '@/services/authService';
+import quizService from '@/services/quizService';
 
 // Sample games data for the dashboard
 const sampleGames = [
@@ -106,6 +110,10 @@ function Dashboard() {
     role: ''
   });
   const [loading, setLoading] = useState(true);
+  const [creatingQuiz, setCreatingQuiz] = useState(false);
+  const [notificationOpen, setNotificationOpen] = useState(false);
+  const [notificationMessage, setNotificationMessage] = useState('');
+  const [notificationType, setNotificationType] = useState<'success' | 'error'>('success');
 
   useEffect(() => {
     // Set mounted after client-side hydration to prevent errors
@@ -150,8 +158,62 @@ function Dashboard() {
     setTabValue(newValue);
   };
   
-  const handleCreateGame = () => {
-    router.push('/create-game');
+  const handleCreateGame = async () => {
+    try {
+      setCreatingQuiz(true);
+      
+      // Get current user information
+      const currentUser = authService.getCurrentUser();
+      if (!currentUser || !currentUser.id) {
+        console.error("User ID not available");
+        setNotificationMessage("User identification failed. Please try logging in again.");
+        setNotificationType("error");
+        setNotificationOpen(true);
+        return;
+      }
+
+      // Generate a random quiz code
+      const generatedQuizCode = quizService.generateQuizCode();
+
+      // Create a default quiz
+      const defaultQuizData = {
+        id: 0,
+        title: `New Quiz ${new Date().toLocaleDateString()}`,
+        quizCode: generatedQuizCode,
+        description: "My new interactive quiz",
+        createdBy: parseInt(currentUser.id),
+        categoryId: 1, // Default to Education category
+        isPublic: true,
+        thumbnailUrl: "https://img.freepik.com/free-vector/quiz-neon-sign_1262-15536.jpg",
+        createdAt: new Date().toISOString()
+      };
+
+      // Call API to create quiz
+      const response = await quizService.createQuiz(defaultQuizData);
+      console.log("Default quiz created successfully:", response);
+
+      // Show success notification
+      setNotificationMessage("Quiz created successfully! Redirecting to editor...");
+      setNotificationType("success");
+      setNotificationOpen(true);
+
+      // After a short delay, redirect to the quiz editor
+      setTimeout(() => {
+        router.push('/create-game');
+      }, 1500);
+      
+    } catch (error) {
+      console.error("Error creating quiz:", error);
+      setNotificationMessage("Failed to create quiz. Please try again.");
+      setNotificationType("error");
+      setNotificationOpen(true);
+    } finally {
+      setCreatingQuiz(false);
+    }
+  };
+
+  const handleCloseNotification = () => {
+    setNotificationOpen(false);
   };
 
   // Prevent rendering until client-side hydration is complete
@@ -190,8 +252,9 @@ function Dashboard() {
           </Box>
           <Button
             variant="contained"
-            startIcon={<AddIcon />}
+            startIcon={creatingQuiz ? <CircularProgress size={20} color="inherit" /> : <AddIcon />}
             onClick={handleCreateGame}
+            disabled={creatingQuiz}
             sx={{
               background: 'linear-gradient(45deg, #2196F3 30%, #9C27B0 90%)',
               color: 'white',
@@ -485,6 +548,23 @@ function Dashboard() {
           )}
         </Box>
       </Box>
+
+      {/* Notification snackbar */}
+      <Snackbar
+        open={notificationOpen}
+        autoHideDuration={6000}
+        onClose={handleCloseNotification}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert 
+          onClose={handleCloseNotification} 
+          severity={notificationType} 
+          variant="filled"
+          sx={{ width: '100%' }}
+        >
+          {notificationMessage}
+        </Alert>
+      </Snackbar>
     </MainLayout>
   );
 }
