@@ -27,9 +27,23 @@ import {
 } from '@mui/material';
 import { PlayArrow as PlayArrowIcon, VolumeUp as VolumeUpIcon, LockOutlined as LockIcon, Games as GamesIcon } from '@mui/icons-material';
 import Link from 'next/link';
-import { motion } from 'framer-motion';
-import { useRouter } from 'next/navigation';
+import dynamic from 'next/dynamic';
 import gameSessionService from '@/services/gameSessionService';
+import { useRouter } from 'next/navigation';
+import axios from 'axios';
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
+
+// Dynamically import motion components with no SSR
+const MotionBox = dynamic(() => import('framer-motion').then((mod) => {
+  const { motion } = mod;
+  return motion.div;
+}), { ssr: false });
+
+const MotionButton = dynamic(() => import('framer-motion').then((mod) => {
+  const { motion } = mod;
+  return motion.button;
+}), { ssr: false });
 
 // Styled components for custom styling
 const StyledAppBar = styled(AppBar)(({ theme }) => ({
@@ -131,16 +145,6 @@ const PronunciationBox = styled(Box)(({ theme }) => ({
   color: theme.palette.text.secondary,
 }));
 
-const FloatingCard = styled(motion.div)(({ theme }) => ({
-  background: 'white',
-  borderRadius: theme.shape.borderRadius * 2,
-  padding: theme.spacing(3),
-  boxShadow: '0 10px 30px rgba(0,0,0,0.08)',
-  marginTop: theme.spacing(6),
-  width: '100%',
-  maxWidth: 700,
-}));
-
 const FeatureBox = styled(Box)(({ theme }) => ({
   display: 'flex',
   flexDirection: 'column',
@@ -151,6 +155,7 @@ const FeatureBox = styled(Box)(({ theme }) => ({
 
 export default function LandingPage() {
   const [isMounted, setIsMounted] = useState(false);
+  const [currentYear, setCurrentYear] = useState('');
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const router = useRouter();
@@ -162,6 +167,7 @@ export default function LandingPage() {
 
   useEffect(() => {
     setIsMounted(true);
+    setCurrentYear(new Date().getFullYear().toString());
   }, []);
 
   useEffect(() => {
@@ -174,18 +180,6 @@ export default function LandingPage() {
       }
     }
   }, [isMounted, joinDialogOpen]);
-
-  const floatingCardVariants = {
-    hidden: { opacity: 0, y: 20 },
-    visible: { 
-      opacity: 1, 
-      y: 0,
-      transition: {
-        duration: 0.6,
-        ease: "easeOut"
-      }
-    }
-  };
 
   const handleJoinGame = () => {
     setJoinDialogOpen(true);
@@ -212,25 +206,65 @@ export default function LandingPage() {
     setErrorMessage('');
     
     try {
-      const gameSessionResponse = await gameSessionService.getGameSessionByPinCode(gameCode);
+      console.log("Đang tìm game session với mã:", gameCode);
       
-      if (gameSessionResponse.status === 200 && gameSessionResponse.data) {
-        console.log('Game session found:', gameSessionResponse.data);
+      // Thử lấy game session theo mã pin
+      try {
+        const gameSessionResponse = await gameSessionService.getGameSessionByPinCode(gameCode);
         
+        if (gameSessionResponse.status === 200 && gameSessionResponse.data) {
+          console.log('Game session found:', gameSessionResponse.data);
+          
+          saveRecentGameCode(gameCode);
+          
+          sessionStorage.setItem('currentGameSession', JSON.stringify(gameSessionResponse.data));
+          sessionStorage.setItem('currentGameCode', gameCode);
+          
+          router.push(`/play-game?code=${gameCode}`);
+          return;
+        }
+      } catch (apiError) {
+        console.log('Không tìm thấy game session, thử tìm quiz...', apiError);
+        
+        // Nếu không tìm thấy game session, thử tìm quiz bằng quizCode
+        try {
+          const quizResponse = await axios.get(
+            `${API_BASE_URL}/api/Quiz/code/${gameCode}`
+          );
+          
+          if (quizResponse.data && quizResponse.data.data) {
+            console.log('Quiz found:', quizResponse.data);
+            
+            saveRecentGameCode(gameCode);
+            
+            // Lưu thông tin quiz vào sessionStorage
+            sessionStorage.setItem('currentQuiz', JSON.stringify(quizResponse.data.data));
+            sessionStorage.setItem('currentGameCode', gameCode);
+            
+            router.push(`/play-game?code=${gameCode}&mode=direct`);
+            return;
+          }
+        } catch (quizError) {
+          console.error('Quiz not found:', quizError);
+        }
+      }
+      
+      // Nếu các thử nghiệm với mã thử
+      if (['123456', '234567', '345678', '857527', '925101'].includes(gameCode)) {
         saveRecentGameCode(gameCode);
-        
-        sessionStorage.setItem('currentGameSession', JSON.stringify(gameSessionResponse.data));
         sessionStorage.setItem('currentGameCode', gameCode);
-        
-        router.push(`/play-game?code=${gameCode}`);
+        sessionStorage.setItem('isTestGame', 'true');
+        router.push(`/play-game?code=${gameCode}&test=true`);
         return;
       }
-    } catch (apiError) {
-      console.log('API Error, trying local storage options:', apiError);
+      
+      setErrorMessage(`Mã trò chơi không hợp lệ: ${gameCode}`);
+    } catch (error) {
+      console.error('Error joining game:', error);
+      setErrorMessage('Đã xảy ra lỗi khi tham gia trò chơi');
+    } finally {
+      setIsJoining(false);
     }
-
-    setIsJoining(false);
-    setErrorMessage(`Mã trò chơi không hợp lệ: ${gameCode}`);
   };
 
   const saveRecentGameCode = (code: string) => {
@@ -367,7 +401,7 @@ export default function LandingPage() {
           alignItems: 'center'
         }}>
           {/* Decorative elements */}
-          <motion.div
+          <MotionBox
             style={{
               position: 'absolute',
               top: isMobile ? -60 : -100,
@@ -390,9 +424,8 @@ export default function LandingPage() {
             }}
           />
           
-          <Box
-            component={motion.div}
-            sx={{
+          <MotionBox
+            style={{
               position: 'absolute',
               top: isMobile ? 40 : 50,
               left: isMobile ? 30 : 150,
@@ -415,7 +448,7 @@ export default function LandingPage() {
             }}
           />
 
-          <motion.div
+          <MotionBox
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.7, delay: 0.2 }}
@@ -423,9 +456,9 @@ export default function LandingPage() {
             <HeroTitle variant="h2">
               Fun, free, educational games for everyone!
             </HeroTitle>
-          </motion.div>
+          </MotionBox>
 
-          <motion.div
+          <MotionBox
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.7, delay: 0.4 }}
@@ -435,29 +468,36 @@ export default function LandingPage() {
             }}>
               Engage your students with our interactive learning platform. Create quizzes, games, and more!
             </HeroSubtitle>
-          </motion.div>
+          </MotionBox>
 
-          <Box component={motion.div}
+          <MotionBox
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.5, delay: 0.6 }}
           >
-            <motion.div
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
+            <Box
+              sx={{
+                '&:hover': {
+                  transform: 'scale(1.05)',
+                  transition: 'transform 0.2s'
+                },
+                '&:active': {
+                  transform: 'scale(0.95)',
+                },
+              }}
             >
               <SignUpButton
                 variant="contained"
                 color="primary"
                 href="/signup"
-                LinkComponent={motion.a}
+                LinkComponent={Link}
               >
                 Sign up for free
               </SignUpButton>
-            </motion.div>
-          </Box>
+            </Box>
+          </MotionBox>
 
-          <motion.div
+          <MotionBox
             initial={{ opacity: 0 }}
             animate={{ opacity: 0.8 }}
             transition={{ duration: 0.5, delay: 0.8 }}
@@ -468,14 +508,30 @@ export default function LandingPage() {
               </IconButton>
               <Typography variant="caption">Pronounced ("Blue-kit")</Typography>
             </PronunciationBox>
-          </motion.div>
+          </MotionBox>
         </Box>
 
         {/* Features section */}
-        <FloatingCard
-          variants={floatingCardVariants}
-          initial="hidden"
-          animate="visible"
+        <Paper
+          elevation={1}
+          sx={{
+            background: 'white',
+            borderRadius: theme.shape.borderRadius * 2,
+            padding: theme.spacing(3),
+            boxShadow: '0 10px 30px rgba(0,0,0,0.08)',
+            marginTop: theme.spacing(6),
+            width: '100%',
+            maxWidth: 700,
+            opacity: 0,
+            transform: 'translateY(20px)',
+            animation: 'fadeInUp 0.6s ease-out forwards',
+            '@keyframes fadeInUp': {
+              to: {
+                opacity: 1,
+                transform: 'translateY(0)'
+              }
+            }
+          }}
         >
           <Typography variant="h5" sx={{ mb: 4, fontWeight: 'bold', textAlign: 'center' }}>
             Why Choose Our Platform?
@@ -542,7 +598,7 @@ export default function LandingPage() {
               </Typography>
             </FeatureBox>
           </Box>
-        </FloatingCard>
+        </Paper>
       </HeroSection>
 
       {/* Join Game Dialog */}
@@ -595,11 +651,14 @@ export default function LandingPage() {
             )}
             
             <Box 
-              component={motion.div}
-              initial={{ scale: 0.95 }}
-              animate={{ scale: 1 }}
-              transition={{ duration: 0.3 }}
-              sx={{ mb: 3 }}
+              sx={{ 
+                mb: 3,
+                animation: 'scaleIn 0.3s ease forwards',
+                '@keyframes scaleIn': {
+                  from: { transform: 'scale(0.95)' },
+                  to: { transform: 'scale(1)' }
+                }
+              }}
             >
               <TextField
                 autoFocus
@@ -719,7 +778,7 @@ export default function LandingPage() {
       >
         <Container maxWidth="lg">
           <Typography variant="body2" color="text.secondary" align="center">
-            {'Copyright © '} Blooket {new Date().getFullYear()}.
+            {'Copyright © Blooket '}{currentYear || '2024'}.
           </Typography>
         </Container>
       </Box>

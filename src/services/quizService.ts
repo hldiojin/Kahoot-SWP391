@@ -10,8 +10,18 @@ interface QuizData {
   createdBy: number;
   categoryId: number;
   isPublic: boolean;
-  thumbnailUrl: string;
+  thumbnailUrl: string | null; // Allow null for thumbnailUrl
   createdAt: string;
+}
+
+// Add a simpler interface for creating a quiz
+interface CreateQuizRequest {
+  title: string;
+  description: string;
+  createdBy: number;
+  categoryId: number;
+  isPublic: boolean;
+  thumbnailUrl?: string | null; // Optional
 }
 
 interface QuizResponse {
@@ -26,16 +36,34 @@ const quizService = {
    * @param quizData Quiz data to be created
    * @returns Promise with quiz creation response
    */
-  createQuiz: async (quizData: QuizData): Promise<QuizResponse> => {
+  createQuiz: async (quizData: any): Promise<QuizResponse> => {
     try {
       const token = localStorage.getItem('token');
       if (!token) {
         throw new Error('Authentication token is missing');
       }
 
+      // Tạo quizCode nếu chưa có
+      const quizCode = quizData.quizCode || quizService.generateQuizCode();
+
+      // Tạo request object với đầy đủ các trường cần thiết
+      const createRequest = {
+        title: quizData.title,
+        description: quizData.description,
+        createdBy: quizData.createdBy,
+        categoryId: quizData.categoryId,
+        isPublic: quizData.isPublic,
+        thumbnailUrl: quizData.thumbnailUrl || null,
+        createdAt: quizData.createdAt || new Date().toISOString(),
+        quizCode: quizCode // Thêm trường quizCode
+      };
+
+      // Log dữ liệu gửi đi
+      console.log('Creating quiz with data:', createRequest);
+
       const response = await axios.post(
         `${API_BASE_URL}/api/Quiz`, 
-        quizData,
+        createRequest,
         {
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -45,9 +73,21 @@ const quizService = {
       );
       
       return response.data;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error creating quiz:', error);
-      throw error;
+      
+      // Log chi tiết response error
+      if (error.response) {
+        console.error('Server error status:', error.response.status);
+        console.error('Full server error data:', error.response.data);
+        throw new Error(`Server error: ${error.response?.data?.message || error.message}`);
+      } else if (error.request) {
+        console.error('No response from server:', error.request);
+        throw new Error('No response from server. Please check your connection.');
+      } else {
+        console.error('Error message:', error.message);
+        throw error;
+      }
     }
   },
 
@@ -171,7 +211,48 @@ const quizService = {
    */
   generateQuizCode: (): number => {
     return Math.floor(100000 + Math.random() * 900000);
+  },
+
+  /**
+   * Format quiz data correctly
+   * @param title Title of the quiz
+   * @param description Description of the quiz
+   * @param categoryId Category ID of the quiz (default: 1)
+   * @param isPublic Whether the quiz is public (default: true)
+   * @param thumbnailUrl Thumbnail URL of the quiz (default: placeholder image)
+   * @returns Formatted quiz data
+   */
+  formatQuizData: (
+    title: string,
+    description: string,
+    categoryId: number = 1,
+    isPublic: boolean = true,
+    thumbnailUrl: string = 'https://placehold.co/600x400?text=Quiz'
+  ): QuizData => {
+    // Get the user ID from local storage or context
+    let userId = 0;
+    try {
+      const user = JSON.parse(localStorage.getItem('user') || '{}');
+      userId = user.id || 0;
+    } catch (e) {
+      console.error("Error getting user ID:", e);
+    }
+
+    // Generate a unique quiz code
+    const quizCode = quizService.generateQuizCode();
+
+    return {
+      id: 0, // Use 0 for new quizzes; the server will assign the real ID
+      title: title || 'Untitled Quiz',
+      quizCode: quizCode,
+      description: description || '',
+      createdBy: userId, // Use the actual user ID
+      categoryId: categoryId,
+      isPublic: isPublic,
+      thumbnailUrl: thumbnailUrl,
+      createdAt: new Date().toISOString() // Đảm bảo sử dụng định dạng ISO cho createdAt
+    };
   }
 };
 
-export default quizService; 
+export default quizService;

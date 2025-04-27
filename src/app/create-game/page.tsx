@@ -374,147 +374,64 @@ const CreateGamePage = () => {
 
       // Create the game data object for API
       const quizApiData = {
-        id: 0, // Set to 0 for new quiz
         title: quizTitle || 'Untitled Quiz',
-        quizCode: generatedQuizCode,
         description: quizDescription || '',
         createdBy: parseInt(currentUser.id),
-        categoryId: quizCategory ? getCategoryId(quizCategory) : 1, // Default to Education (1) if no category
+        categoryId: quizCategory ? getCategoryId(quizCategory) : 1,
         isPublic: isPublic,
         thumbnailUrl: coverImage || 'https://img.freepik.com/free-vector/quiz-neon-sign_1262-15536.jpg',
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(), // Thêm trường createdAt
+        quizCode: generatedQuizCode // Thêm trường quizCode
       };
 
-      // Call API to create quiz
+      console.log("Sending quiz data to API:", quizApiData);
+      
+      // Gọi API để tạo quiz
       const response = await quizService.createQuiz(quizApiData);
       console.log("Quiz created successfully:", response);
       
+      // Kiểm tra kết quả từ API
       if (response.status === 201 || response.status === 200) {
-        // Store the created quiz ID for adding questions later
+        // Lưu ID quiz mới được tạo
         if (response.data && response.data.id) {
           setCreatedQuizId(response.data.id);
-          
-          // Now save all questions to the API
-          const savedQuestions = await Promise.all(
-            questions.map(async (question, index) => {
-              try {
-                const questionApiData = questionService.formatQuestionForApi(
-                  question,
-                  response.data.id,
-                  index + 1 // 1-indexed position
-                );
-                
-                const questionResponse = await questionService.createQuestion(questionApiData);
-                return {
-                  ...question,
-                  serverResponse: questionResponse,
-                  serverError: null
-                };
-              } catch (error) {
-                console.error(`Error saving question ${index + 1}:`, error);
-                return {
-                  ...question,
-                  serverResponse: null,
-                  serverError: error
-                };
-              }
-            })
-          );
-          
-          // Check if any questions failed to save
-          const failedQuestions = savedQuestions.filter(q => q.serverError);
-          if (failedQuestions.length > 0) {
-            setNotification({
-              open: true,
-              message: `Quiz created but ${failedQuestions.length} question(s) failed to save. You may need to add them again.`,
-              type: "warning"
-            });
-          } else {
-            setNotification({
-              open: true,
-              message: "Quiz and all questions saved successfully!",
-              type: "success"
-            });
+        }
+
+        // Lưu mã code cho game đã tạo (đã set ở trên nhưng lưu lại từ response để đảm bảo)
+        if (response.data && response.data.quizCode) {
+          setGameCode(response.data.quizCode.toString());
+        }
+
+        // Thông báo thành công
+        setNotification({
+          open: true,
+          message: "Quiz created successfully!",
+          type: "success"
+        });
+        
+        // Hiển thị dialog thành công với mã code
+        setSuccessDialogOpen(true);
+        
+        // Tạo các câu hỏi nếu chưa được tạo trước đó
+        if (questions.length > 0 && response.data.id) {
+          // Tạo từng câu hỏi và lưu vào cơ sở dữ liệu
+          for (let i = 0; i < questions.length; i++) {
+            try {
+              const questionApiData = questionService.formatQuestionForApi(
+                questions[i],
+                response.data.id,
+                i + 1 // Arrange property (vị trí câu hỏi bắt đầu từ 1)
+              );
+              
+              await questionService.createQuestion(questionApiData);
+            } catch (questionError) {
+              console.error(`Error creating question ${i + 1}:`, questionError);
+            }
           }
         }
+      } else {
+        throw new Error(response.message || "Failed to create quiz");
       }
-
-      // Create the local game data object for state management
-      const quizData = {
-        id: response.data?.id || 'quiz-' + Date.now(),
-        title: quizTitle || 'Untitled Quiz',
-        description: quizDescription || '',
-        gameCode: generatedQuizCode.toString(),
-        gameMode: gameMode,
-        questions: questions.map(q => ({
-          id: q.id,
-          question: q.text || 'Question',
-          options: q.answers.map(a => a.text || 'Option'),
-          correctAnswer: q.answers.findIndex(a => a.isCorrect) || 0,
-          timeLimit: q.timeLimit || 20,
-          points: q.points || 100
-        })),
-        category: quizCategory || 'Uncategorized',
-        isPublic: isPublic,
-        coverImage: coverImage || 'https://img.freepik.com/free-vector/quiz-neon-sign_1262-15536.jpg',
-        createdBy: user?.firstName + ' ' + user?.lastName || 'User',
-        createdAt: new Date().toISOString(),
-        playsCount: 0
-      };
-
-      // Save to localStorage for persistence
-      try {
-        // 1. Save to mySets for the My Sets page
-        const existingSets = JSON.parse(localStorage.getItem('mySets') || '[]');
-        existingSets.push(quizData);
-        localStorage.setItem('mySets', JSON.stringify(existingSets));
-        
-        // 2. Also save to gamesByCode in localStorage for easier access
-        const gamesByCode = JSON.parse(localStorage.getItem('gamesByCode') || '{}');
-        gamesByCode[generatedQuizCode.toString()] = quizData;
-        localStorage.setItem('gamesByCode', JSON.stringify(gamesByCode));
-      } catch (error) {
-        console.error("Error saving to localStorage:", error);
-      }
-      
-      // Save to sessionStorage for immediate play
-      try {
-        // 1. Save the current game code for reference
-        sessionStorage.setItem('currentGameCode', generatedQuizCode.toString());
-        
-        // 2. Save this specific game by its code
-        sessionStorage.setItem(`game_${generatedQuizCode}`, JSON.stringify(quizData));
-        
-        // 3. Save a complete list of all available game codes
-        const allCodes = JSON.parse(sessionStorage.getItem('availableGameCodes') || '[]');
-        if (!allCodes.includes(generatedQuizCode.toString())) {
-          allCodes.push(generatedQuizCode.toString());
-          sessionStorage.setItem('availableGameCodes', JSON.stringify(allCodes));
-        }
-        
-        // 4. Save the formatted quiz for immediate play
-        const playableQuiz = {
-          title: quizData.title,
-          description: quizData.description,
-          coverImage: quizData.coverImage,
-          category: quizData.category,
-          isPublic: quizData.isPublic,
-          gameMode: quizData.gameMode,
-          questions: quizData.questions.map(q => ({
-            id: q.id,
-            question: q.question,
-            options: q.options,
-            correctAnswer: q.correctAnswer,
-            timeLimit: q.timeLimit
-          }))
-        };
-        sessionStorage.setItem('quizPreviewData', JSON.stringify(playableQuiz));
-      } catch (error) {
-        console.error("Error saving to sessionStorage:", error);
-      }
-
-      // Open success dialog with the game code
-      setSuccessDialogOpen(true);
     } catch (error) {
       console.error("Error creating quiz:", error);
       setNotification({
