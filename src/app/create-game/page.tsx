@@ -67,6 +67,7 @@ import { useRouter } from 'next/navigation';
 import quizService from '@/services/quizService';
 import questionService from '@/services/questionService';
 import authService from '@/services/authService';
+import gameSessionService from '@/services/gameSessionService';
 
 // Interface for Question object
 interface Question {
@@ -380,8 +381,8 @@ const CreateGamePage = () => {
         categoryId: quizCategory ? getCategoryId(quizCategory) : 1,
         isPublic: isPublic,
         thumbnailUrl: coverImage || 'https://img.freepik.com/free-vector/quiz-neon-sign_1262-15536.jpg',
-        createdAt: new Date().toISOString(), // Thêm trường createdAt
-        quizCode: generatedQuizCode // Thêm trường quizCode
+        createdAt: new Date().toISOString(),
+        quizCode: generatedQuizCode
       };
 
       console.log("Sending quiz data to API:", quizApiData);
@@ -393,11 +394,40 @@ const CreateGamePage = () => {
       // Kiểm tra kết quả từ API
       if (response.status === 201 || response.status === 200) {
         // Lưu ID quiz mới được tạo
-        if (response.data && response.data.id) {
-          setCreatedQuizId(response.data.id);
+        const quizId = response.data && response.data.id;
+        if (quizId) {
+          setCreatedQuizId(quizId);
+          
+          // Tạo game session cho quiz vừa tạo
+          try {
+            // Tạo dữ liệu game session
+            const gameSessionData = gameSessionService.formatGameSessionData(
+              quizId,
+              parseInt(currentUser.id),
+              gameMode
+            );
+            
+            // Gọi API để tạo game session
+            const gameSessionResponse = await gameSessionService.createGameSession(gameSessionData);
+            
+            if (gameSessionResponse.status === 200 || gameSessionResponse.status === 201) {
+              console.log("Game session created:", gameSessionResponse.data);
+              
+              // Có thể lưu ID game session nếu cần
+              if (gameSessionResponse.data && gameSessionResponse.data.id) {
+                // Lưu gameSessionId nếu bạn muốn
+                // setGameSessionId(gameSessionResponse.data.id);
+              }
+            } else {
+              console.warn("Game session creation returned unexpected status:", gameSessionResponse.status);
+            }
+          } catch (sessionError) {
+            // Game session không tạo được thì vẫn tiếp tục với quiz đã tạo
+            console.error("Failed to create game session:", sessionError);
+          }
         }
 
-        // Lưu mã code cho game đã tạo (đã set ở trên nhưng lưu lại từ response để đảm bảo)
+        // Lưu mã quizCode cho game đã tạo
         if (response.data && response.data.quizCode) {
           setGameCode(response.data.quizCode.toString());
         }
@@ -412,21 +442,29 @@ const CreateGamePage = () => {
         // Hiển thị dialog thành công với mã code
         setSuccessDialogOpen(true);
         
-        // Tạo các câu hỏi nếu chưa được tạo trước đó
+        // Tạo các câu hỏi
         if (questions.length > 0 && response.data.id) {
-          // Tạo từng câu hỏi và lưu vào cơ sở dữ liệu
-          for (let i = 0; i < questions.length; i++) {
+          // Tạo các câu hỏi song song - không đợi lẫn nhau
+          const questionPromises = questions.map((question, index) => {
             try {
               const questionApiData = questionService.formatQuestionForApi(
-                questions[i],
+                question,
                 response.data.id,
-                i + 1 // Arrange property (vị trí câu hỏi bắt đầu từ 1)
+                index + 1
               );
-              
-              await questionService.createQuestion(questionApiData);
-            } catch (questionError) {
-              console.error(`Error creating question ${i + 1}:`, questionError);
+              return questionService.createQuestion(questionApiData);
+            } catch (error) {
+              console.error(`Error creating question ${index + 1}:`, error);
+              return Promise.reject(error);
             }
+          });
+          
+          // Chờ tất cả câu hỏi được tạo
+          try {
+            await Promise.allSettled(questionPromises);
+            console.log("All questions created or attempted");
+          } catch (questionErrors) {
+            console.error("Some questions failed to create:", questionErrors);
           }
         }
       } else {
@@ -464,6 +502,13 @@ const CreateGamePage = () => {
   // Add copy to clipboard function
   const copyCodeToClipboard = () => {
     navigator.clipboard.writeText(gameCode);
+    
+    // Show notification when copied
+    setNotification({
+      open: true,
+      message: "Game code copied to clipboard!",
+      type: "success"
+    });
   };
 
   // Function to generate colors based on question index
@@ -1411,23 +1456,31 @@ const CreateGamePage = () => {
           sx: {
             borderRadius: 3,
             maxWidth: 500,
-            width: '90%'
+            width: '90%',
+            overflow: 'hidden'
           }
         }}
       >
-        <DialogTitle sx={{ 
-          textAlign: 'center', 
-          fontWeight: 'bold',
-          pt: 3,
-          fontSize: '1.5rem',
-          color: theme.palette.primary.main
-        }}
-        component="div"
-        >
-          Quiz Created Successfully!
-        </DialogTitle>
+        <Box sx={{ 
+          py: 2, 
+          px: 3, 
+          background: 'linear-gradient(45deg, #2196F3 30%, #9C27B0 90%)',
+          color: 'white'
+        }}>
+          <DialogTitle sx={{ 
+            textAlign: 'center', 
+            fontWeight: 'bold',
+            fontSize: '1.6rem',
+            color: 'white',
+            p: 1
+          }}
+          component="div"
+          >
+            Quiz Created Successfully!
+          </DialogTitle>
+        </Box>
         <DialogContent>
-          <Box sx={{ textAlign: 'center', py: 2 }}>
+          <Box sx={{ textAlign: 'center', py: 3 }}>
             <Typography variant="body1" sx={{ mb: 3 }}>
               Share this code with your students to join the game:
             </Typography>
@@ -1440,16 +1493,18 @@ const CreateGamePage = () => {
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
-                mb: 3
+                mb: 3,
+                border: `2px dashed ${alpha(theme.palette.primary.main, 0.3)}`
               }}
             >
               <Typography 
                 variant="h2" 
                 sx={{ 
-                  letterSpacing: 4,
+                  letterSpacing: 6,
                   fontWeight: 'bold',
                   color: theme.palette.primary.main,
-                  mb: 2
+                  mb: 2,
+                  fontFamily: 'monospace'
                 }}
               >
                 {gameCode}
@@ -1457,29 +1512,59 @@ const CreateGamePage = () => {
               
               <Button 
                 variant="outlined" 
-                size="small"
                 onClick={copyCodeToClipboard}
                 startIcon={<ContentCopy />}
-                sx={{ borderRadius: 2 }}
+                sx={{ borderRadius: 8, px: 3 }}
               >
                 Copy Code
               </Button>
             </Box>
             
             <Typography variant="body2" color="text.secondary">
-              Students can enter this code on the home page without logging in.
+              Students can enter this code on the home page to join your game.
             </Typography>
+            
+            <Box 
+              sx={{ 
+                mt: 3, 
+                p: 2, 
+                backgroundColor: alpha(theme.palette.info.light, 0.1),
+                borderRadius: 2,
+                borderLeft: `4px solid ${theme.palette.info.main}`
+              }}
+            >
+              <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'left' }}>
+                <strong>Note:</strong> Your quiz is now ready for play! Students can enter the code above to join the game anytime.
+              </Typography>
+            </Box>
           </Box>
         </DialogContent>
-        <DialogActions sx={{ justifyContent: 'center', pb: 3, px: 3 }}>
+        <DialogActions sx={{ 
+          justifyContent: 'center', 
+          pb: 3, 
+          px: 3, 
+          gap: 2  
+        }}>
+          <Button 
+            onClick={() => setSuccessDialogOpen(false)} 
+            variant="outlined" 
+            color="primary"
+            sx={{ 
+              borderRadius: 8,
+              px: 3
+            }}
+          >
+            Continue Editing
+          </Button>
           <Button 
             onClick={() => router.push('/my-sets')} 
             variant="contained" 
             color="primary"
             sx={{ 
-              borderRadius: 2,
+              borderRadius: 8,
               px: 3,
               background: 'linear-gradient(45deg, #2196F3 30%, #9C27B0 90%)',
+              boxShadow: '0 4px 10px rgba(33, 150, 243, 0.3)',
             }}
           >
             Go to My Sets

@@ -147,6 +147,44 @@ const quizService = {
   },
 
   /**
+   * Get a quiz by its quiz code
+   * @param quizCode Code of the quiz to fetch
+   * @returns Promise with quiz data
+   */
+  getQuizByCode: async (quizCode: string): Promise<QuizResponse> => {
+    try {
+      console.log(`Đang tìm quiz với mã: ${quizCode}`);
+      
+      // Thử endpoint không yêu cầu xác thực trước
+      try {
+        const response = await axios.get(
+          `${API_BASE_URL}/api/Quiz/code/${quizCode}`
+        );
+        return response.data;
+      } catch (publicError) {
+        // Nếu không tìm thấy với endpoint công khai, thử với xác thực
+        const token = localStorage.getItem('token');
+        if (token) {
+          const response = await axios.get(
+            `${API_BASE_URL}/api/Quiz/code/${quizCode}`,
+            {
+              headers: {
+                'Authorization': `Bearer ${token}`
+              }
+            }
+          );
+          return response.data;
+        } else {
+          throw publicError;
+        }
+      }
+    } catch (error) {
+      console.error(`Error fetching quiz with code ${quizCode}:`, error);
+      throw error;
+    }
+  },
+
+  /**
    * Update an existing quiz
    * @param quizId ID of the quiz to update
    * @param quizData Updated quiz data

@@ -206,50 +206,7 @@ export default function LandingPage() {
     setErrorMessage('');
     
     try {
-      console.log("Đang tìm game session với mã:", gameCode);
-      
-      // Thử lấy game session theo mã pin
-      try {
-        const gameSessionResponse = await gameSessionService.getGameSessionByPinCode(gameCode);
-        
-        if (gameSessionResponse.status === 200 && gameSessionResponse.data) {
-          console.log('Game session found:', gameSessionResponse.data);
-          
-          saveRecentGameCode(gameCode);
-          
-          sessionStorage.setItem('currentGameSession', JSON.stringify(gameSessionResponse.data));
-          sessionStorage.setItem('currentGameCode', gameCode);
-          
-          router.push(`/play-game?code=${gameCode}`);
-          return;
-        }
-      } catch (apiError) {
-        console.log('Không tìm thấy game session, thử tìm quiz...', apiError);
-        
-        // Nếu không tìm thấy game session, thử tìm quiz bằng quizCode
-        try {
-          const quizResponse = await axios.get(
-            `${API_BASE_URL}/api/Quiz/code/${gameCode}`
-          );
-          
-          if (quizResponse.data && quizResponse.data.data) {
-            console.log('Quiz found:', quizResponse.data);
-            
-            saveRecentGameCode(gameCode);
-            
-            // Lưu thông tin quiz vào sessionStorage
-            sessionStorage.setItem('currentQuiz', JSON.stringify(quizResponse.data.data));
-            sessionStorage.setItem('currentGameCode', gameCode);
-            
-            router.push(`/play-game?code=${gameCode}&mode=direct`);
-            return;
-          }
-        } catch (quizError) {
-          console.error('Quiz not found:', quizError);
-        }
-      }
-      
-      // Nếu các thử nghiệm với mã thử
+      // Mã thử nghiệm
       if (['123456', '234567', '345678', '857527', '925101'].includes(gameCode)) {
         saveRecentGameCode(gameCode);
         sessionStorage.setItem('currentGameCode', gameCode);
@@ -258,10 +215,21 @@ export default function LandingPage() {
         return;
       }
       
-      setErrorMessage(`Mã trò chơi không hợp lệ: ${gameCode}`);
+      // Thiết lập trò chơi trực tiếp với quizCode
+      const gameSetup = await gameSessionService.playQuizByCode(gameCode);
+      if (gameSetup && gameSetup.data) {
+        // Lưu thông tin và chuyển hướng
+        saveRecentGameCode(gameCode);
+        sessionStorage.setItem('currentGameCode', gameCode);
+        sessionStorage.setItem('currentGameSession', JSON.stringify(gameSetup.data));
+        router.push(`/play-game?code=${gameCode}`);
+        return;
+      } else {
+        throw new Error("Không thể thiết lập trò chơi");
+      }
     } catch (error) {
-      console.error('Error joining game:', error);
-      setErrorMessage('Đã xảy ra lỗi khi tham gia trò chơi');
+      console.error("Lỗi tham gia trò chơi:", error);
+      setErrorMessage(`Không thể tham gia trò chơi với mã ${gameCode}. Vui lòng kiểm tra lại mã và thử lại.`);
     } finally {
       setIsJoining(false);
     }
