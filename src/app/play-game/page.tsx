@@ -31,6 +31,9 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import PublicLayout from '../components/PublicLayout';
 import { motion } from 'framer-motion';
 import dynamic from 'next/dynamic';
+import gameSessionService from '@/services/gameSessionService';
+import playerService from '@/services/playerService';
+import { useAuth } from '../context/AuthContext';
 
 // Dynamically import the Animal component with no SSR
 const Animal = dynamic(() => import('react-animals'), { ssr: false });
@@ -144,6 +147,7 @@ export default function PlayGamePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const code = searchParams.get('code');
+  const { user } = useAuth();
   
   const [loading, setLoading] = useState(true);
   const [gameData, setGameData] = useState<GameData | null>(null);
@@ -153,9 +157,15 @@ export default function PlayGamePage() {
   const [nameError, setNameError] = useState('');
   const [showSnackbar, setShowSnackbar] = useState(false);
   const [selectedAvatar, setSelectedAvatar] = useState<string>('alligator');
+  const [selectedAvatarColor, setSelectedAvatarColor] = useState<string>('orange');
   const [gameMode, setGameMode] = useState<'solo' | 'team'>('solo');
   const [selectedTeam, setSelectedTeam] = useState<string>(teamNames[0]);
   const [snackbarMessage, setSnackbarMessage] = useState('Name and avatar saved successfully!');
+  
+  // New state variables for API integration
+  const [gameSession, setGameSession] = useState<any>(null);
+  const [apiLoading, setApiLoading] = useState(false);
+  const [player, setPlayer] = useState<any>(null);
 
   useEffect(() => {
     // Simulate loading game data with the provided code
@@ -171,6 +181,31 @@ export default function PlayGamePage() {
         
         console.log(`Loading game with code: ${code}`);
         
+        // Try to fetch the game session from the API
+        try {
+          setApiLoading(true);
+          const sessionResponse = await gameSessionService.getGameSessionByPinCode(code);
+          
+          if (sessionResponse.status === 200 && sessionResponse.data) {
+            console.log('Game session found:', sessionResponse.data);
+            setGameSession(sessionResponse.data);
+            
+            // Now fetch the quiz data using the quizId from the session
+            // (In a real implementation, you would fetch quiz details from the API)
+            
+            // For now, set game mode based on session data
+            if (sessionResponse.data.gameType) {
+              setGameMode(sessionResponse.data.gameType.toLowerCase() === 'team' ? 'team' : 'solo');
+            }
+          }
+        } catch (apiError) {
+          console.error('API Error:', apiError);
+          // Continue with local data if API fails
+        } finally {
+          setApiLoading(false);
+        }
+        
+        // The rest of the function remains the same (your existing code)
         // Try multiple sources to find the game:
         
         // 1. Check for the specific game in sessionStorage
@@ -209,6 +244,12 @@ export default function PlayGamePage() {
               setSelectedTeam(storedTeam);
             }
             
+            // Retrieve avatar if available
+            const storedAvatar = localStorage.getItem('playerAvatar');
+            if (storedAvatar) {
+              setSelectedAvatar(storedAvatar);
+            }
+            
             setLoading(false);
             return;
           } catch (e) {
@@ -216,6 +257,7 @@ export default function PlayGamePage() {
           }
         }
         
+        // Continue with your existing fallback mechanisms
         // 2. Check sample games (for demo purposes)
         const sampleGame = sampleGames[code];
         if (sampleGame) {
@@ -434,7 +476,7 @@ export default function PlayGamePage() {
     setNameError('');
   };
 
-  const savePlayerName = () => {
+  const savePlayerName = async () => {
     if (!playerName.trim()) {
       setNameError('Please enter your name');
       return;
@@ -444,13 +486,22 @@ export default function PlayGamePage() {
     setIsEditingName(false);
     setSnackbarMessage('Name saved successfully!');
     setShowSnackbar(true);
+    
+    // If we already have a player created (after joining the session),
+    // we could update their name here via API if needed
   };
 
   const handleSelectAvatar = (avatarId: string) => {
-    setSelectedAvatar(avatarId);
-    localStorage.setItem('playerAvatar', avatarId);
-    setSnackbarMessage('Avatar selected!');
-    setShowSnackbar(true);
+    // Find the avatar in the animalAvatars array to get its color
+    const avatar = animalAvatars.find(a => a.id === avatarId);
+    if (avatar) {
+      setSelectedAvatar(avatarId);
+      setSelectedAvatarColor(avatar.color);
+      localStorage.setItem('playerAvatar', avatarId);
+      localStorage.setItem('playerAvatarColor', avatar.color);
+      setSnackbarMessage('Avatar selected!');
+      setShowSnackbar(true);
+    }
   };
   
   const handleTeamChange = (event: SelectChangeEvent<string>) => {
@@ -461,7 +512,7 @@ export default function PlayGamePage() {
     setShowSnackbar(true);
   };
 
-  const handleStartGame = () => {
+  const handleStartGame = async () => {
     if (!gameData || !code) return;
     
     if (!playerName.trim()) {
@@ -477,7 +528,45 @@ export default function PlayGamePage() {
       return;
     }
     
-    // In a real app, this would initialize a game session
+    // Set loading state
+    setApiLoading(true);
+    setSnackbarMessage('Joining the game...');
+    setShowSnackbar(true);
+    
+    try {
+      // Create a player via API if we have a game session
+      if (gameSession && gameSession.id) {
+        // Get the currently logged-in user's ID if available
+        const userId = user?.id ? parseInt(user.id) : 0;
+        
+        // Format player data for API
+        const playerData = playerService.formatPlayerData(
+          playerName,
+          gameSession.id,
+          selectedAvatar,
+          selectedAvatarColor,
+          userId
+        );
+        
+        // Call API to create player
+        const playerResponse = await playerService.createPlayer(playerData);
+        
+        if (playerResponse.status === 201 || playerResponse.status === 200) {
+          console.log('Player created successfully:', playerResponse.data);
+          setPlayer(playerResponse.data);
+          
+          // Store the player ID in session storage for reference during the game
+          sessionStorage.setItem('currentPlayerId', playerResponse.data.id.toString());
+        }
+      }
+    } catch (apiError) {
+      console.error('Error creating player:', apiError);
+      // Continue with local data if API fails
+    } finally {
+      setApiLoading(false);
+    }
+    
+    // Continue with your existing implementation
     try {
       // Ensure the game data includes questions with the correct format
       const formattedQuizData = {

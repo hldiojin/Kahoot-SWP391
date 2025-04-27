@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   AppBar,
   Toolbar,
@@ -19,12 +19,17 @@ import {
   DialogActions,
   TextField,
   Alert,
-  alpha
+  alpha,
+  CircularProgress,
+  InputAdornment,
+  Fade,
+  Chip
 } from '@mui/material';
-import { PlayArrow as PlayArrowIcon, VolumeUp as VolumeUpIcon } from '@mui/icons-material';
+import { PlayArrow as PlayArrowIcon, VolumeUp as VolumeUpIcon, LockOutlined as LockIcon, Games as GamesIcon } from '@mui/icons-material';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { useRouter } from 'next/navigation';
+import gameSessionService from '@/services/gameSessionService';
 
 // Styled components for custom styling
 const StyledAppBar = styled(AppBar)(({ theme }) => ({
@@ -97,11 +102,11 @@ const HeroTitle = styled(Typography)(({ theme }) => ({
 const HeroSubtitle = styled(Typography)(({ theme }) => ({
   marginBottom: theme.spacing(4),
   color: theme.palette.text.secondary,
-  maxWidth: '700px', // Giá trị cố định thay vì phần trăm
-  margin: '0 auto', // Căn giữa
+  maxWidth: '700px',
+  margin: '0 auto',
   lineHeight: '1.6',
   [theme.breakpoints.down('sm')]: {
-    maxWidth: '90%', // Thu nhỏ lại trên màn hình điện thoại
+    maxWidth: '90%',
     fontSize: '1rem',
   },
 }));
@@ -145,12 +150,30 @@ const FeatureBox = styled(Box)(({ theme }) => ({
 }));
 
 export default function LandingPage() {
+  const [isMounted, setIsMounted] = useState(false);
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const router = useRouter();
   const [joinDialogOpen, setJoinDialogOpen] = useState(false);
   const [gameCode, setGameCode] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+  const [isJoining, setIsJoining] = useState(false);
+  const [recentGames, setRecentGames] = useState<string[]>([]);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (isMounted && joinDialogOpen) {
+      try {
+        const recentGamesList = JSON.parse(localStorage.getItem('recentGameCodes') || '[]');
+        setRecentGames(recentGamesList.slice(0, 3));
+      } catch (e) {
+        console.error("Error loading recent games:", e);
+      }
+    }
+  }, [isMounted, joinDialogOpen]);
 
   const floatingCardVariants = {
     hidden: { opacity: 0, y: 20 },
@@ -174,115 +197,98 @@ export default function LandingPage() {
     setErrorMessage('');
   };
 
-  const handleSubmitCode = () => {
+  const handleSubmitCode = async () => {
     if (!gameCode.trim()) {
-      setErrorMessage('Please enter a game code');
+      setErrorMessage('Vui lòng nhập mã trò chơi');
       return;
     }
     
-    // Check if it's a 6-digit code
     if (!/^\d{6}$/.test(gameCode)) {
-      setErrorMessage('Game code should be 6 digits');
+      setErrorMessage('Mã trò chơi phải gồm 6 chữ số');
       return;
+    }
+    
+    setIsJoining(true);
+    setErrorMessage('');
+    
+    try {
+      const gameSessionResponse = await gameSessionService.getGameSessionByPinCode(gameCode);
+      
+      if (gameSessionResponse.status === 200 && gameSessionResponse.data) {
+        console.log('Game session found:', gameSessionResponse.data);
+        
+        saveRecentGameCode(gameCode);
+        
+        sessionStorage.setItem('currentGameSession', JSON.stringify(gameSessionResponse.data));
+        sessionStorage.setItem('currentGameCode', gameCode);
+        
+        router.push(`/play-game?code=${gameCode}`);
+        return;
+      }
+    } catch (apiError) {
+      console.log('API Error, trying local storage options:', apiError);
     }
 
-    console.log("Checking game code:", gameCode);
-    
-    // Try all possible sources of game codes:
-    
-    // 1. Check in sessionStorage for this specific game
-    const specificGameKey = `game_${gameCode}`;
-    if (sessionStorage.getItem(specificGameKey)) {
-      console.log(`Found game with code ${gameCode} in sessionStorage`);
-      // Store the current code being used
-      sessionStorage.setItem('currentGameCode', gameCode);
-      router.push(`/play-game?code=${gameCode}`);
-      return;
-    }
-    
-    // 2. Check in the list of available game codes in sessionStorage
-    try {
-      const availableGameCodes = JSON.parse(sessionStorage.getItem('availableGameCodes') || '[]');
-      if (availableGameCodes.includes(gameCode)) {
-        console.log(`Found code ${gameCode} in available game codes list`);
-        sessionStorage.setItem('currentGameCode', gameCode);
-        router.push(`/play-game?code=${gameCode}`);
-        return;
-      }
-    } catch (e) {
-      console.error("Error checking availableGameCodes:", e);
-    }
-    
-    // 3. Check localStorage for games by code
-    try {
-      const gamesByCode = JSON.parse(localStorage.getItem('gamesByCode') || '{}');
-      if (gamesByCode[gameCode]) {
-        console.log(`Found game with code ${gameCode} in localStorage`);
-        
-        // Copy this game to sessionStorage for play
-        sessionStorage.setItem(`game_${gameCode}`, JSON.stringify(gamesByCode[gameCode]));
-        sessionStorage.setItem('currentGameCode', gameCode);
-        
-        // Format for quizPreviewData
-        const game = gamesByCode[gameCode];
-        const playableQuiz = {
-          title: game.title,
-          description: game.description,
-          coverImage: game.coverImage,
-          category: game.category,
-          isPublic: game.isPublic,
-          questions: game.questions
-        };
-        sessionStorage.setItem('quizPreviewData', JSON.stringify(playableQuiz));
-        
-        router.push(`/play-game?code=${gameCode}`);
-        return;
-      }
-    } catch (e) {
-      console.error("Error checking gamesByCode in localStorage:", e);
-    }
-    
-    // 4. Check in mySets from localStorage
-    try {
-      const mySets = JSON.parse(localStorage.getItem('mySets') || '[]');
-      const foundSet = mySets.find((set: { gameCode: string; }) => set.gameCode === gameCode);
-      if (foundSet) {
-        console.log(`Found game with code ${gameCode} in mySets`);
-        
-        // Copy this game to sessionStorage for play
-        sessionStorage.setItem(`game_${gameCode}`, JSON.stringify(foundSet));
-        sessionStorage.setItem('currentGameCode', gameCode);
-        
-        // Format for quizPreviewData
-        const playableQuiz = {
-          title: foundSet.title,
-          description: foundSet.description,
-          coverImage: foundSet.coverImage,
-          category: foundSet.category,
-          isPublic: foundSet.isPublic,
-          questions: foundSet.questions
-        };
-        sessionStorage.setItem('quizPreviewData', JSON.stringify(playableQuiz));
-        
-        router.push(`/play-game?code=${gameCode}`);
-        return;
-      }
-    } catch (e) {
-      console.error("Error checking mySets in localStorage:", e);
-    }
-    
-    // 5. For demo purposes, allow some specific codes
-    const demoValidCodes = ['123456', '234567', '345678', '857527', '925101'];
-    if (demoValidCodes.includes(gameCode)) {
-      console.log(`Using demo code: ${gameCode}`);
-      sessionStorage.setItem('currentGameCode', gameCode);
-      router.push(`/play-game?code=${gameCode}`);
-      return;
-    }
-
-    // If we reach here, the code is invalid
-    setErrorMessage(`Invalid game code. No game found with code: ${gameCode}`);
+    setIsJoining(false);
+    setErrorMessage(`Mã trò chơi không hợp lệ: ${gameCode}`);
   };
+
+  const saveRecentGameCode = (code: string) => {
+    try {
+      const recentCodes = JSON.parse(localStorage.getItem('recentGameCodes') || '[]');
+      const updatedCodes = recentCodes.filter((c: string) => c !== code);
+      updatedCodes.unshift(code);
+      const trimmedCodes = updatedCodes.slice(0, 5);
+      localStorage.setItem('recentGameCodes', JSON.stringify(trimmedCodes));
+    } catch (e) {
+      console.error("Error saving recent game code:", e);
+    }
+  };
+
+  const joinRecentGame = (code: string) => {
+    setGameCode(code);
+    handleSubmitCode();
+  };
+
+  if (!isMounted) {
+    return (
+      <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', position: 'relative' }}>
+        <StyledAppBar position="static">
+          <Toolbar>
+            <LogoTypography variant="h6">
+              Blooket
+            </LogoTypography>
+            <Box sx={{ flexGrow: 1 }} />
+            <Button
+              variant="contained"
+              startIcon={<PlayArrowIcon />}
+              sx={{
+                mr: 2,
+                borderRadius: 2,
+                background: 'linear-gradient(45deg, #2196F3 30%, #9C27B0 90%)',
+              }}
+            >
+              Join a game
+            </Button>
+            <Button
+              variant="outlined"
+              sx={{ borderRadius: 2 }}
+            >
+              Log in
+            </Button>
+          </Toolbar>
+        </StyledAppBar>
+        
+        <HeroSection maxWidth="lg">
+          <Box sx={{ width: '100%', textAlign: 'center' }}>
+            <HeroTitle variant="h2">
+              Fun, free, educational games for everyone!
+            </HeroTitle>
+          </Box>
+        </HeroSection>
+      </Box>
+    );
+  }
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', position: 'relative' }}>
@@ -313,17 +319,20 @@ export default function LandingPage() {
           <LogoTypography variant="h6">
             Blooket
           </LogoTypography>
-          <Box sx={{ flexGrow: 1 }} /> {}
+          <Box sx={{ flexGrow: 1 }} />
           <Button
-            variant="outlined"
+            variant="contained"
             startIcon={<PlayArrowIcon />}
             sx={{ 
               mr: 2, 
               textTransform: 'none',
               borderRadius: 2,
-              borderWidth: 2,
+              fontWeight: 'medium',
+              px: 2,
+              background: 'linear-gradient(45deg, #2196F3 30%, #9C27B0 90%)',
+              boxShadow: '0 2px 10px rgba(33, 150, 243, 0.3)',
               '&:hover': {
-                borderWidth: 2,
+                boxShadow: '0 4px 15px rgba(33, 150, 243, 0.5)',
               }
             }}
             onClick={handleJoinGame}
@@ -547,6 +556,8 @@ export default function LandingPage() {
             width: '90%'
           }
         }}
+        TransitionComponent={Fade}
+        transitionDuration={300}
       >
         <DialogTitle 
           component="div"
@@ -559,17 +570,22 @@ export default function LandingPage() {
             background: 'linear-gradient(45deg, #2196F3 30%, #9C27B0 90%)',
             WebkitBackgroundClip: 'text',
             WebkitTextFillColor: 'transparent',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
           }}
         >
-          Join a Game
+          <GamesIcon sx={{ mr: 1, fontSize: '1.8rem', opacity: 0.8 }} />
+          Tham gia trò chơi
         </DialogTitle>
+
         <DialogContent>
           <Box sx={{ textAlign: 'center' }}>
             <Typography variant="subtitle1" sx={{ mb: 1 }}>
-              No account needed to play!
+              Không cần tài khoản để chơi!
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-              Enter the 6-digit game code provided by your teacher
+              Nhập mã trò chơi 6 chữ số do giáo viên cung cấp
             </Typography>
             
             {errorMessage && (
@@ -589,9 +605,13 @@ export default function LandingPage() {
                 autoFocus
                 fullWidth
                 value={gameCode}
-                onChange={(e) => setGameCode(e.target.value)}
-                placeholder="Enter code"
+                onChange={(e) => {
+                  setGameCode(e.target.value.replace(/\D/g, '').slice(0, 6));
+                  if (errorMessage) setErrorMessage('');
+                }}
+                placeholder="Nhập mã"
                 variant="outlined"
+                disabled={isJoining}
                 inputProps={{ 
                   style: { 
                     textAlign: 'center', 
@@ -603,6 +623,11 @@ export default function LandingPage() {
                   maxLength: 6
                 }}
                 InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <LockIcon sx={{ color: 'primary.main', opacity: 0.7 }} />
+                    </InputAdornment>
+                  ),
                   sx: { 
                     borderRadius: 3,
                     backgroundColor: alpha('#f5f7fa', 0.7)
@@ -611,11 +636,37 @@ export default function LandingPage() {
               />
             </Box>
 
+            {/* Hiển thị các game gần đây */}
+            {recentGames.length > 0 && (
+              <Box sx={{ mt: 3, mb: 2 }}>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+                  Trò chơi gần đây:
+                </Typography>
+                <Box sx={{ display: 'flex', gap: 1, justifyContent: 'center', flexWrap: 'wrap' }}>
+                  {recentGames.map((code) => (
+                    <Chip
+                      key={code}
+                      label={code}
+                      variant="outlined"
+                      color="primary"
+                      onClick={() => joinRecentGame(code)}
+                      sx={{ 
+                        fontWeight: 'medium',
+                        px: 0.5,
+                        '&:hover': { bgcolor: alpha(theme.palette.primary.main, 0.1) }
+                      }}
+                    />
+                  ))}
+                </Box>
+              </Box>
+            )}
+
             <Typography variant="body2" color="text.secondary" sx={{ mt: 1, display: 'block', textAlign: 'center' }}>
-              For demo purposes, try codes: 123456, 234567, 345678, 857527, or 925101
+              Để thử nghiệm, hãy dùng mã: 123456, 234567, 345678, 857527, hoặc 925101
             </Typography>
           </Box>
         </DialogContent>
+
         <DialogActions sx={{ 
           justifyContent: 'center',
           flexDirection: 'column', 
@@ -628,6 +679,7 @@ export default function LandingPage() {
             variant="contained" 
             fullWidth
             size="large"
+            disabled={isJoining}
             sx={{ 
               borderRadius: 2,
               py: 1.5,
@@ -637,15 +689,16 @@ export default function LandingPage() {
               fontSize: '1.1rem'
             }}
           >
-            Enter
+            {isJoining ? <CircularProgress size={24} color="inherit" /> : 'Tham gia'}
           </Button>
           <Button 
             onClick={handleCloseDialog} 
             variant="text"
             size="small"
             sx={{ color: 'text.secondary' }}
+            disabled={isJoining}
           >
-            Cancel
+            Huỷ
           </Button>
         </DialogActions>
       </Dialog>
