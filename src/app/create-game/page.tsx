@@ -35,7 +35,10 @@ import {
   ToggleButtonGroup,
   CircularProgress,
   Snackbar,
-  Alert
+  Alert,
+  Slider,
+  FormControlLabel,
+  Checkbox
 } from '@mui/material';
 import { 
   Add as AddIcon, 
@@ -59,7 +62,10 @@ import {
   QuestionMark as QuestionIcon,
   ContentCopy as ContentCopy,
   Person as PersonIcon,
-  Groups as GroupsIcon
+  Groups as GroupsIcon,
+  People as PeopleIcon,
+  Star as StarIcon,
+  StarBorder as StarBorderIcon
 } from '@mui/icons-material';
 import MainLayout from '../components/MainLayout';
 import { useAuth } from '../context/AuthContext';
@@ -67,7 +73,6 @@ import { useRouter } from 'next/navigation';
 import quizService from '@/services/quizService';
 import questionService from '@/services/questionService';
 import authService from '@/services/authService';
-import gameSessionService from '@/services/gameSessionService';
 
 // Interface for Question object
 interface Question {
@@ -102,6 +107,9 @@ const CreateGamePage = () => {
   const [isPublic, setIsPublic] = useState(true);
   const [gameMode, setGameMode] = useState<'solo' | 'team'>('solo');
   const [coverImage, setCoverImage] = useState<string | null>(null);
+  const [minPlayers, setMinPlayers] = useState(1);
+  const [maxPlayers, setMaxPlayers] = useState(50);
+  const [isFavorite, setIsFavorite] = useState(false);
   const [questions, setQuestions] = useState<Question[]>([{
     id: '1',
     text: '',
@@ -129,6 +137,10 @@ const CreateGamePage = () => {
     type: 'info' as 'success' | 'error' | 'info' | 'warning'
   });
   const [createdQuizId, setCreatedQuizId] = useState<number | null>(null);
+
+  // Add new state variables for team configuration
+  const [teamCount, setTeamCount] = useState(4);
+  const [membersPerTeam, setMembersPerTeam] = useState(5);
 
   // Steps for the quiz creation process
   const steps = ['Quiz Info', 'Add Questions', 'Preview & Finish'];
@@ -349,6 +361,13 @@ const CreateGamePage = () => {
   ) => {
     if (newMode !== null) {
       setGameMode(newMode);
+      // Reset to default values when switching to team mode
+      if (newMode === 'team') {
+        setTeamCount(4);
+        setMembersPerTeam(5);
+        setMinPlayers(5);
+        setMaxPlayers(20); // 4 teams * 5 members = 20 max players
+      }
     }
   };
 
@@ -382,7 +401,14 @@ const CreateGamePage = () => {
         isPublic: isPublic,
         thumbnailUrl: coverImage || 'https://img.freepik.com/free-vector/quiz-neon-sign_1262-15536.jpg',
         createdAt: new Date().toISOString(),
-        quizCode: generatedQuizCode
+        quizCode: generatedQuizCode,
+        maxPlayer: maxPlayers, // Maximum players allowed
+        minPlayer: minPlayers, // Minimum players required
+        favorite: isFavorite, // Set favorite status
+        gameMode: gameMode, // 'solo' or 'team'
+        // Add team configuration
+        teamCount: gameMode === 'team' ? teamCount : undefined,
+        membersPerTeam: gameMode === 'team' ? membersPerTeam : undefined
       };
 
       console.log("Sending quiz data to API:", quizApiData);
@@ -397,36 +423,8 @@ const CreateGamePage = () => {
         const quizId = response.data && response.data.id;
         if (quizId) {
           setCreatedQuizId(quizId);
-          
-          // Tạo game session cho quiz vừa tạo
-          try {
-            // Tạo dữ liệu game session
-            const gameSessionData = gameSessionService.formatGameSessionData(
-              quizId,
-              parseInt(currentUser.id),
-              gameMode
-            );
-            
-            // Gọi API để tạo game session
-            const gameSessionResponse = await gameSessionService.createGameSession(gameSessionData);
-            
-            if (gameSessionResponse.status === 200 || gameSessionResponse.status === 201) {
-              console.log("Game session created:", gameSessionResponse.data);
-              
-              // Có thể lưu ID game session nếu cần
-              if (gameSessionResponse.data && gameSessionResponse.data.id) {
-                // Lưu gameSessionId nếu bạn muốn
-                // setGameSessionId(gameSessionResponse.data.id);
-              }
-            } else {
-              console.warn("Game session creation returned unexpected status:", gameSessionResponse.status);
-            }
-          } catch (sessionError) {
-            // Game session không tạo được thì vẫn tiếp tục với quiz đã tạo
-            console.error("Failed to create game session:", sessionError);
-          }
         }
-
+        
         // Lưu mã quizCode cho game đã tạo
         if (response.data && response.data.quizCode) {
           setGameCode(response.data.quizCode.toString());
@@ -719,6 +717,127 @@ const CreateGamePage = () => {
                         </Box>
                       </ToggleButton>
                     </ToggleButtonGroup>
+                  </Box>
+                  
+                  {/* Team Configuration (only shown when team mode is selected) */}
+                  {gameMode === 'team' && (
+                    <Paper sx={{ p: 2, mb: 3, borderRadius: 2, bgcolor: alpha(theme.palette.info.light, 0.1) }}>
+                      <Typography variant="subtitle1" gutterBottom sx={{ display: 'flex', alignItems: 'center' }}>
+                        <GroupsIcon sx={{ mr: 1, fontSize: '1.2rem' }} />
+                        Team Configuration
+                      </Typography>
+                      
+                      <Box sx={{ mb: 2 }}>
+                        <Typography variant="body2" gutterBottom color="text.secondary">
+                          Number of Teams: {teamCount}
+                        </Typography>
+                        <Slider
+                          value={teamCount}
+                          onChange={(_, value) => {
+                            setTeamCount(value as number);
+                            setMaxPlayers((value as number) * membersPerTeam);
+                          }}
+                          step={1}
+                          marks
+                          min={4}
+                          max={4}
+                          valueLabelDisplay="auto"
+                          aria-labelledby="team-count-slider"
+                          disabled
+                        />
+                      </Box>
+                      
+                      <Box>
+                        <Typography variant="body2" gutterBottom color="text.secondary">
+                          Players per Team: {membersPerTeam}
+                        </Typography>
+                        <Slider
+                          value={membersPerTeam}
+                          onChange={(_, value) => {
+                            setMembersPerTeam(value as number);
+                            setMaxPlayers(teamCount * (value as number));
+                          }}
+                          step={1}
+                          marks
+                          min={5}
+                          max={5}
+                          valueLabelDisplay="auto"
+                          aria-labelledby="members-per-team-slider"
+                          disabled
+                        />
+                      </Box>
+                      
+                      <Box sx={{ mt: 2, p: 1, bgcolor: 'rgba(255,255,255,0.7)', borderRadius: 1, borderLeft: '3px solid', borderColor: 'info.main' }}>
+                        <Typography variant="caption" color="info.main">
+                          This will create 4 teams with 5 members each. Total capacity: 20 players.
+                        </Typography>
+                      </Box>
+                    </Paper>
+                  )}
+                  
+                  {/* Player Settings */}
+                  <Box sx={{ mb: 3 }}>
+                    <Typography variant="subtitle1" gutterBottom sx={{ display: 'flex', alignItems: 'center' }}>
+                      <PeopleIcon sx={{ mr: 1, fontSize: '1.2rem' }} />
+                      Player Settings
+                    </Typography>
+                    
+                    <Paper sx={{ p: 2, borderRadius: 2, bgcolor: alpha(theme.palette.background.paper, 0.7) }}>
+                      <Box sx={{ mb: 2 }}>
+                        <Typography variant="body2" gutterBottom color="text.secondary">
+                          Minimum Players: {minPlayers}
+                        </Typography>
+                        <Slider
+                          value={minPlayers}
+                          onChange={(_, value) => setMinPlayers(value as number)}
+                          step={1}
+                          marks
+                          min={gameMode === 'team' ? 5 : 1}
+                          max={gameMode === 'team' ? 20 : 100}
+                          valueLabelDisplay="auto"
+                          aria-labelledby="min-players-slider"
+                        />
+                      </Box>
+                      
+                      <Box>
+                        <Typography variant="body2" gutterBottom color="text.secondary">
+                          Maximum Players: {maxPlayers}
+                        </Typography>
+                        <Slider
+                          value={maxPlayers}
+                          onChange={(_, value) => setMaxPlayers(value as number)}
+                          step={1}
+                          marks
+                          min={gameMode === 'team' ? 5 : 1}
+                          max={gameMode === 'team' ? 20 : 100}
+                          valueLabelDisplay="auto"
+                          aria-labelledby="max-players-slider"
+                        />
+                      </Box>
+                    </Paper>
+                  </Box>
+                  
+                  {/* Favorite Option */}
+                  <Box sx={{ mb: 3 }}>
+                    <FormControlLabel
+                      control={
+                        <Checkbox 
+                          checked={isFavorite}
+                          onChange={(e) => setIsFavorite(e.target.checked)}
+                          icon={<StarBorderIcon />}
+                          checkedIcon={<StarIcon />}
+                          sx={{ color: theme.palette.warning.main }}
+                        />
+                      }
+                      label={
+                        <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+                          <Typography variant="body2">Add to Favorites</Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            This quiz will appear in your favorites list
+                          </Typography>
+                        </Box>
+                      }
+                    />
                   </Box>
                 </Box>
 
@@ -1144,6 +1263,12 @@ const CreateGamePage = () => {
                       color="secondary"
                     />
                     <Chip 
+                      icon={<PeopleIcon fontSize="small" />}
+                      label={`${minPlayers}-${maxPlayers} players`} 
+                      size="small" 
+                      color="default"
+                    />
+                    <Chip 
                       icon={<QuestionIcon fontSize="small" />}
                       label={`${questions.length} questions`} 
                       size="small" 
@@ -1153,6 +1278,14 @@ const CreateGamePage = () => {
                       label={`${Math.ceil(questions.reduce((total, q) => total + q.timeLimit, 0) / 60)} min`} 
                       size="small" 
                     />
+                    {isFavorite && (
+                      <Chip 
+                        icon={<StarIcon fontSize="small" />}
+                        label="Favorite" 
+                        size="small"
+                        color="warning"
+                      />
+                    )}
                   </Box>
                 </Box>
                 <Button 

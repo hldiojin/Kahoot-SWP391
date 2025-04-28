@@ -28,7 +28,6 @@ import {
 import { PlayArrow as PlayArrowIcon, VolumeUp as VolumeUpIcon, LockOutlined as LockIcon, Games as GamesIcon } from '@mui/icons-material';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
-import gameSessionService from '@/services/gameSessionService';
 import { useRouter } from 'next/navigation';
 import axios from 'axios';
 
@@ -164,10 +163,22 @@ export default function LandingPage() {
   const [errorMessage, setErrorMessage] = useState('');
   const [isJoining, setIsJoining] = useState(false);
   const [recentGames, setRecentGames] = useState<string[]>([]);
+  const [animationStyles, setAnimationStyles] = useState({});
 
   useEffect(() => {
     setIsMounted(true);
     setCurrentYear(new Date().getFullYear().toString());
+    
+    // Set animation styles only on client side
+    setAnimationStyles({
+      fadeInUp: {
+        opacity: 1,
+        transform: 'translateY(0)'
+      },
+      scaleIn: {
+        transform: 'scale(1)'
+      }
+    });
   }, []);
 
   useEffect(() => {
@@ -215,21 +226,81 @@ export default function LandingPage() {
         return;
       }
       
-      // Thiết lập trò chơi trực tiếp với quizCode
-      const gameSetup = await gameSessionService.playQuizByCode(gameCode);
-      if (gameSetup && gameSetup.data) {
-        // Lưu thông tin và chuyển hướng
-        saveRecentGameCode(gameCode);
-        sessionStorage.setItem('currentGameCode', gameCode);
-        sessionStorage.setItem('currentGameSession', JSON.stringify(gameSetup.data));
-        router.push(`/play-game?code=${gameCode}`);
-        return;
-      } else {
-        throw new Error("Không thể thiết lập trò chơi");
+      // Kiểm tra quiz code bằng API với đúng endpoint và URL đầy đủ
+      try {
+        const quizResponse = await axios.get(
+          `https://kahootclone-f7hkd0hwafgbfrfa.southeastasia-01.azurewebsites.net/api/Quiz/check-quiz-code/${gameCode}`
+        );
+        
+        console.log("API Response:", quizResponse.data);
+        
+        // Kiểm tra response và xử lý trường hợp chỉ có "message": "Quiz code is valid."
+        if (quizResponse.data) {
+          if (quizResponse.data.data) {
+            // Nếu có data, sử dụng như bình thường
+            console.log("Tìm thấy quiz:", quizResponse.data);
+            
+            // Lưu thông tin và chuyển hướng
+            saveRecentGameCode(gameCode);
+            sessionStorage.setItem('currentGameCode', gameCode);
+            sessionStorage.setItem('currentQuiz', JSON.stringify(quizResponse.data.data));
+            
+            // Lưu game vào sessionStorage với key specifcGameKey
+            const specificGameKey = `game_${gameCode}`;
+            const gameData = {
+              id: quizResponse.data.data.id,
+              title: quizResponse.data.data.title,
+              description: quizResponse.data.data.description,
+              coverImage: quizResponse.data.data.thumbnailUrl,
+              createdBy: quizResponse.data.data.createdBy,
+              gameMode: quizResponse.data.data.gameMode || 'solo',
+              category: quizResponse.data.data.categoryId
+            };
+            
+            // Lưu vào sessionStorage
+            sessionStorage.setItem(specificGameKey, JSON.stringify(gameData));
+            console.log(`Game saved to sessionStorage with key: ${specificGameKey}`);
+            
+            router.push(`/play-game?code=${gameCode}`);
+          } 
+          // Kiểm tra trường hợp message: "Quiz code is valid."
+          else if (quizResponse.data.message === "Quiz code is valid.") {
+            console.log("Found valid quiz code without details:", gameCode);
+            
+            // Lưu thông tin cơ bản
+            saveRecentGameCode(gameCode);
+            sessionStorage.setItem('currentGameCode', gameCode);
+            
+            // Tạo dữ liệu cơ bản cho quiz
+            const specificGameKey = `game_${gameCode}`;
+            const gameData = {
+              id: parseInt(gameCode),
+              title: `Quiz ${gameCode}`,
+              description: "Quiz đã được xác nhận",
+              coverImage: 'https://source.unsplash.com/random/300x200?quiz',
+              createdBy: "Teacher",
+              gameMode: 'solo',
+              category: 1
+            };
+            
+            // Lưu vào sessionStorage
+            sessionStorage.setItem(specificGameKey, JSON.stringify(gameData));
+            console.log(`Basic game info saved to sessionStorage with key: ${specificGameKey}`);
+            
+            router.push(`/play-game?code=${gameCode}`);
+          } else {
+            throw new Error("Không tìm thấy quiz với mã này");
+          }
+        } else {
+          throw new Error("Không tìm thấy quiz với mã này");
+        }
+      } catch (error) {
+        console.error("Không thể tìm quiz:", error);
+        setErrorMessage(`Không tìm thấy quiz với mã ${gameCode}. Vui lòng kiểm tra lại mã và thử lại.`);
       }
     } catch (error) {
       console.error("Lỗi tham gia trò chơi:", error);
-      setErrorMessage(`Không thể tham gia trò chơi với mã ${gameCode}. Vui lòng kiểm tra lại mã và thử lại.`);
+      setErrorMessage(`Không thể tìm thấy quiz với mã ${gameCode}. Vui lòng kiểm tra lại mã và thử lại.`);
     } finally {
       setIsJoining(false);
     }
@@ -253,6 +324,7 @@ export default function LandingPage() {
   };
 
   if (!isMounted) {
+    // Return a simple loading state to avoid hydration mismatch
     return (
       <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', position: 'relative' }}>
         <StyledAppBar position="static">
@@ -281,13 +353,9 @@ export default function LandingPage() {
           </Toolbar>
         </StyledAppBar>
         
-        <HeroSection maxWidth="lg">
-          <Box sx={{ width: '100%', textAlign: 'center' }}>
-            <HeroTitle variant="h2">
-              Fun, free, educational games for everyone!
-            </HeroTitle>
-          </Box>
-        </HeroSection>
+        <Container maxWidth="lg" sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
+          <CircularProgress />
+        </Container>
       </Box>
     );
   }
@@ -490,15 +558,9 @@ export default function LandingPage() {
             marginTop: theme.spacing(6),
             width: '100%',
             maxWidth: 700,
-            opacity: 0,
-            transform: 'translateY(20px)',
-            animation: 'fadeInUp 0.6s ease-out forwards',
-            '@keyframes fadeInUp': {
-              to: {
-                opacity: 1,
-                transform: 'translateY(0)'
-              }
-            }
+            opacity: isMounted ? 1 : 0,
+            transform: isMounted ? 'translateY(0)' : 'translateY(20px)',
+            transition: 'opacity 0.6s ease-out, transform 0.6s ease-out',
           }}
         >
           <Typography variant="h5" sx={{ mb: 4, fontWeight: 'bold', textAlign: 'center' }}>
@@ -621,11 +683,8 @@ export default function LandingPage() {
             <Box 
               sx={{ 
                 mb: 3,
-                animation: 'scaleIn 0.3s ease forwards',
-                '@keyframes scaleIn': {
-                  from: { transform: 'scale(0.95)' },
-                  to: { transform: 'scale(1)' }
-                }
+                transform: isMounted ? 'scale(1)' : 'scale(0.95)',
+                transition: 'transform 0.3s ease',
               }}
             >
               <TextField

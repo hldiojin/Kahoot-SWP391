@@ -1,4 +1,5 @@
 import axios from 'axios';
+import groupService from './groupService';
 
 const API_BASE_URL = 'https://kahootclone-f7hkd0hwafgbfrfa.southeastasia-01.azurewebsites.net';
 
@@ -10,8 +11,12 @@ interface QuizData {
   createdBy: number;
   categoryId: number;
   isPublic: boolean;
-  thumbnailUrl: string | null; // Allow null for thumbnailUrl
+  thumbnailUrl: string | null;
   createdAt: string;
+  maxPlayer: number;
+  minPlayer: number;
+  favorite: boolean;
+  gameMode: string;
 }
 
 // Add a simpler interface for creating a quiz
@@ -21,7 +26,24 @@ interface CreateQuizRequest {
   createdBy: number;
   categoryId: number;
   isPublic: boolean;
-  thumbnailUrl?: string | null; // Optional
+  thumbnailUrl?: string | null;
+  createdAt: string;
+  maxPlayer: number;
+  minPlayer: number;
+  favorite: boolean;
+  gameMode: string;
+}
+
+// Interface for creating groups
+interface GroupData {
+  id: number;
+  name: string;
+  description: string;
+  rank: number;
+  maxMembers: number;
+  totalPoint: number;
+  createdBy: number;
+  createdAt: string;
 }
 
 interface QuizResponse {
@@ -46,23 +68,47 @@ const quizService = {
       // Tạo quizCode nếu chưa có
       const quizCode = quizData.quizCode || quizService.generateQuizCode();
 
-      // Tạo request object với đầy đủ các trường cần thiết
+      // Đảm bảo đúng định dạng ngày
+      const currentDate = new Date();
+      const formattedDate = currentDate.toISOString();
+
+      // Đảm bảo createdBy là số
+      let createdById = 0;
+      try {
+        const user = JSON.parse(localStorage.getItem('user') || '{}');
+        createdById = user.id ? parseInt(user.id) : 0;
+      } catch (e) {
+        console.error("Error getting user ID:", e);
+      }
+
+      // Xử lý lại categoryId nếu không hợp lệ
+      let categoryId = quizData.categoryId || 1;
+      if (categoryId <= 0 || isNaN(categoryId)) {
+        categoryId = 1;
+      }
+
+      // Tạo request object với đầy đủ các trường cần thiết và định dạng đúng
       const createRequest = {
-        title: quizData.title,
-        description: quizData.description,
-        createdBy: quizData.createdBy,
-        categoryId: quizData.categoryId,
-        isPublic: quizData.isPublic,
+        title: quizData.title || "Untitled Quiz",
+        description: quizData.description || "",
+        createdBy: createdById || quizData.createdBy || 1,
+        categoryId: categoryId,
+        isPublic: quizData.isPublic !== undefined ? quizData.isPublic : true,
         thumbnailUrl: quizData.thumbnailUrl || null,
-        createdAt: quizData.createdAt || new Date().toISOString(),
-        quizCode: quizCode // Thêm trường quizCode
+        createdAt: formattedDate, // Sử dụng thời gian hiện tại, không dùng dữ liệu từ client
+        quizCode: quizCode,
+        maxPlayer: quizData.maxPlayer && !isNaN(quizData.maxPlayer) && quizData.maxPlayer > 0 ? quizData.maxPlayer : 50,
+        minPlayer: quizData.minPlayer && !isNaN(quizData.minPlayer) && quizData.minPlayer > 0 ? quizData.minPlayer : 1,
+        favorite: quizData.favorite === true ? true : false,
+        gameMode: ["solo", "team"].includes(quizData.gameMode) ? quizData.gameMode : 'solo'
       };
 
       // Log dữ liệu gửi đi
       console.log('Creating quiz with data:', createRequest);
 
+      // Sử dụng URL hardcoded để đảm bảo
       const response = await axios.post(
-        `${API_BASE_URL}/api/Quiz`, 
+        'https://kahootclone-f7hkd0hwafgbfrfa.southeastasia-01.azurewebsites.net/api/Quiz', 
         createRequest,
         {
           headers: {
@@ -72,6 +118,33 @@ const quizService = {
         }
       );
       
+      // Log response để debug
+      console.log("Quiz creation successful response:", response);
+      
+      // If quiz is in team mode and creation was successful, create the teams
+      if (createRequest.gameMode === 'team' && response.data && response.data.status === 201) {
+        const quizId = response.data.data?.id;
+        if (quizId) {
+          try {
+            // Get team configuration from quiz data or use defaults
+            const numTeams = quizData.teamCount || 4;
+            const maxMembersPerTeam = quizData.membersPerTeam || 5;
+            
+            // Create teams based on configuration using the group service
+            await groupService.createTeamsForQuiz(
+              quizId, 
+              numTeams, 
+              maxMembersPerTeam, 
+              createdById
+            );
+            console.log(`Teams created successfully for quiz: ${quizId} (${numTeams} teams with ${maxMembersPerTeam} members each)`);
+          } catch (teamError) {
+            console.error("Error creating teams for quiz:", teamError);
+            // Continue with the quiz creation even if team creation fails
+          }
+        }
+      }
+      
       return response.data;
     } catch (error: any) {
       console.error('Error creating quiz:', error);
@@ -80,6 +153,47 @@ const quizService = {
       if (error.response) {
         console.error('Server error status:', error.response.status);
         console.error('Full server error data:', error.response.data);
+        
+        // Thử lại với bộ dữ liệu tối thiểu nếu lỗi 500
+        if (error.response.status === 500) {
+          try {
+            console.log("Retrying with minimal data set");
+            
+            const minimalRequest = {
+              title: quizData.title || "Untitled Quiz",
+              description: quizData.description || "",
+              createdBy: 1,
+              categoryId: 1,
+              isPublic: true,
+              quizCode: quizService.generateQuizCode(),
+              createdAt: new Date().toISOString(),
+              maxPlayer: 50,
+              minPlayer: 1,
+              favorite: false,
+              gameMode: "solo"
+            };
+            
+            console.log("Minimal request:", minimalRequest);
+            
+            const token = localStorage.getItem('token');
+            const retryResponse = await axios.post(
+              'https://kahootclone-f7hkd0hwafgbfrfa.southeastasia-01.azurewebsites.net/api/Quiz', 
+              minimalRequest,
+              {
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'Content-Type': 'application/json'
+                }
+              }
+            );
+            
+            console.log("Retry successful:", retryResponse);
+            return retryResponse.data;
+          } catch (retryError) {
+            console.error("Retry also failed:", retryError);
+          }
+        }
+        
         throw new Error(`Server error: ${error.response?.data?.message || error.message}`);
       } else if (error.request) {
         console.error('No response from server:', error.request);
@@ -89,6 +203,19 @@ const quizService = {
         throw error;
       }
     }
+  },
+
+  /**
+   * Create teams for a quiz in team mode
+   * @param quizId ID of the quiz
+   * @param teamCount Number of teams to create
+   * @param membersPerTeam Maximum members per team
+   * @param createdBy ID of the user creating the teams
+   * @returns Promise with array of team creation responses
+   */
+  createTeamsForQuiz: async (quizId: number, teamCount: number = 4, membersPerTeam: number = 5, createdBy: number = 0): Promise<any[]> => {
+    // Use the groupService to create teams
+    return groupService.createTeamsForQuiz(quizId, teamCount, membersPerTeam, createdBy);
   },
 
   /**
@@ -258,6 +385,10 @@ const quizService = {
    * @param categoryId Category ID of the quiz (default: 1)
    * @param isPublic Whether the quiz is public (default: true)
    * @param thumbnailUrl Thumbnail URL of the quiz (default: placeholder image)
+   * @param gameMode Game mode (solo or team)
+   * @param minPlayer Minimum player count (default: 1)
+   * @param maxPlayer Maximum player count (default: 50)
+   * @param favorite Whether the quiz is favorited (default: false)
    * @returns Formatted quiz data
    */
   formatQuizData: (
@@ -265,7 +396,11 @@ const quizService = {
     description: string,
     categoryId: number = 1,
     isPublic: boolean = true,
-    thumbnailUrl: string = 'https://placehold.co/600x400?text=Quiz'
+    thumbnailUrl: string = 'https://placehold.co/600x400?text=Quiz',
+    gameMode: string = 'solo',
+    minPlayer: number = 1,
+    maxPlayer: number = 50,
+    favorite: boolean = false
   ): QuizData => {
     // Get the user ID from local storage or context
     let userId = 0;
@@ -288,7 +423,11 @@ const quizService = {
       categoryId: categoryId,
       isPublic: isPublic,
       thumbnailUrl: thumbnailUrl,
-      createdAt: new Date().toISOString() // Đảm bảo sử dụng định dạng ISO cho createdAt
+      createdAt: new Date().toISOString(),
+      minPlayer: minPlayer,
+      maxPlayer: maxPlayer,
+      favorite: favorite,
+      gameMode: gameMode
     };
   }
 };
