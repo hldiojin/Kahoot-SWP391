@@ -108,15 +108,23 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccessMessage, setShowSuccessMessage] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   const router = useRouter();
 
-  // Check if user is already logged in
+  // Check if user is already logged in - moved to useEffect only
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      router.push('/dashboard');
+    try {
+      const token = localStorage.getItem('token');
+      if (token) {
+        setIsLoggedIn(true);
+        router.push('/dashboard');
+      }
+    } catch (e) {
+      // Handle error silently
     }
+    
+    // Set mounted after checking local storage
     setMounted(true);
   }, [router]);
 
@@ -234,169 +242,145 @@ export default function LoginPage() {
     </Alert>
   );
 
-  // If not mounted yet, render a simple version for SSR
-  if (!mounted) {
-    return (
-      <Container maxWidth={false} sx={{ 
-        display: 'flex', 
+  // Use simple, non-animated components for initial render to prevent hydration mismatch
+  // Use a consistent structure between server and client renders
+  return (
+    <Container maxWidth={false} sx={{ 
+      display: 'flex', 
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      minHeight: '100vh',
+      padding: 3
+    }}>
+      {mounted && (
+        <Box sx={{ position: 'absolute', top: 20, left: 20 }}>
+          <Button
+            component={Link}
+            href="/"
+            startIcon={<ArrowBack />}
+            sx={{ textTransform: 'none' }}
+          >
+            Back to Home
+          </Button>
+        </Box>
+      )}
+
+      <Paper elevation={3} sx={{
+        padding: 4,
+        display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: '100vh',
-        padding: 3
+        maxWidth: '450px',
+        width: '100%',
+        borderRadius: 4,
       }}>
-        <Paper elevation={3} sx={{
-          padding: 4,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          maxWidth: '450px',
-          width: '100%',
-          borderRadius: 4,
-        }}>
-          <LoginTitle variant="h4">Log in to Blooket Clone</LoginTitle>
-        </Paper>
-      </Container>
-    );
-  }
-
-  // Full animated version for client
-  return (
-    <LoginContainer 
-      maxWidth={false}
-      variants={containerVariants}
-      initial="hidden"
-      animate="visible"
-    >
-      <MotionBox 
-        sx={{ position: 'absolute', top: 20, left: 20 }}
-        variants={itemVariants}
-      >
-        <Button
-          component={Link}
-          href="/"
-          startIcon={<ArrowBack />}
-          sx={{ textTransform: 'none' }}
-        >
-          Back to Home
-        </Button>
-      </MotionBox>
-
-      <LoginPaper 
-        elevation={3}
-        variants={itemVariants}
-      >
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.2, duration: 0.5 }}
-        >
-          <LoginTitle variant="h4">Log in to Blooket Clone</LoginTitle>
-        </motion.div>
+        <LoginTitle variant="h4">Log in to Blooket Clone</LoginTitle>
         
-        {demoCredentials}
-        
-        {error && (
-          <Alert severity="error" sx={{ mb: 2, width: '100%' }}>
-            {error}
-          </Alert>
-        )}
-        
-        <Box component="form" onSubmit={handleSubmit} sx={{ width: '100%' }}>
-          <MotionTextField
-            margin="normal"
-            required
-            fullWidth
-            id="email"
-            label="Email Address"
-            name="email"
-            autoComplete="email"
-            autoFocus
-            value={formData.email}
-            onChange={handleChange}
-            sx={{ mb: 2 }}
-            variants={itemVariants}
-            disabled={isSubmitting}
-          />
-          
-          <MotionTextField
-            margin="normal"
-            required
-            fullWidth
-            name="password"
-            label="Password"
-            type={showPassword ? 'text' : 'password'}
-            id="password"
-            autoComplete="current-password"
-            value={formData.password}
-            onChange={handleChange}
-            InputProps={{
-              endAdornment: (
-                <InputAdornment position="end">
-                  <IconButton
-                    aria-label="toggle password visibility"
-                    onClick={handleTogglePassword}
-                    edge="end"
-                  >
-                    {showPassword ? <VisibilityOff /> : <Visibility />}
-                  </IconButton>
-                </InputAdornment>
-              ),
-            }}
-            variants={itemVariants}
-            disabled={isSubmitting}
-          />
-          
-          <LoginButton
-            type="submit"
-            fullWidth
-            variant="contained"
-            color="primary"
-            variants={buttonVariants}
-            initial="initial"
-            whileHover="hover"
-            whileTap="tap"
-            disabled={isSubmitting}
-          >
-            {isSubmitting ? (
-              <CircularProgress size={24} color="inherit" />
-            ) : (
-              'Log In'
+        {/* Only show these elements when client-side has mounted */}
+        {mounted && (
+          <>
+            {demoCredentials}
+            
+            {error && (
+              <Alert severity="error" sx={{ mb: 2, width: '100%' }}>
+                {error}
+              </Alert>
             )}
-          </LoginButton>
-          
-          <MotionBox 
-            sx={{ mt: 2, textAlign: 'center' }}
-            variants={itemVariants}
-          >
-            <MuiLink 
-              component={Link} 
-              href="/forgot-password"
-              underline="hover"
-              sx={{ cursor: 'pointer' }}
-            >
-              Forgot password?
-            </MuiLink>
-          </MotionBox>
-          
-          <MotionBox 
-            sx={{ mt: 3, textAlign: 'center' }}
-            variants={itemVariants}
-          >
-            <Typography variant="body2">
-              Don't have an account?{' '}
-              <MuiLink 
-                component={Link} 
-                href="/signup"
-                underline="hover"
-                sx={{ fontWeight: 'bold', cursor: 'pointer' }}
+            
+            <Box component="form" onSubmit={handleSubmit} sx={{ width: '100%' }}>
+              <TextField
+                margin="normal"
+                required
+                fullWidth
+                id="email"
+                label="Email Address"
+                name="email"
+                autoComplete="email"
+                autoFocus
+                value={formData.email}
+                onChange={handleChange}
+                sx={{ mb: 2 }}
+                disabled={isSubmitting}
+              />
+              
+              <TextField
+                margin="normal"
+                required
+                fullWidth
+                name="password"
+                label="Password"
+                type={showPassword ? 'text' : 'password'}
+                id="password"
+                autoComplete="current-password"
+                value={formData.password}
+                onChange={handleChange}
+                InputProps={{
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <IconButton
+                        aria-label="toggle password visibility"
+                        onClick={handleTogglePassword}
+                        edge="end"
+                      >
+                        {showPassword ? <VisibilityOff /> : <Visibility />}
+                      </IconButton>
+                    </InputAdornment>
+                  ),
+                }}
+                disabled={isSubmitting}
+              />
+              
+              <Button
+                type="submit"
+                fullWidth
+                variant="contained"
+                color="primary"
+                sx={{
+                  padding: 1.2,
+                  fontSize: '1rem',
+                  marginTop: 3,
+                  borderRadius: 4,
+                  textTransform: 'none',
+                  fontWeight: 'bold',
+                }}
+                disabled={isSubmitting}
               >
-                Sign up
-              </MuiLink>
-            </Typography>
-          </MotionBox>
-        </Box>
-      </LoginPaper>
+                {isSubmitting ? (
+                  <CircularProgress size={24} color="inherit" />
+                ) : (
+                  'Log In'
+                )}
+              </Button>
+              
+              <Box sx={{ mt: 2, textAlign: 'center' }}>
+                <MuiLink 
+                  component={Link} 
+                  href="/forgot-password"
+                  underline="hover"
+                  sx={{ cursor: 'pointer' }}
+                >
+                  Forgot password?
+                </MuiLink>
+              </Box>
+              
+              <Box sx={{ mt: 3, textAlign: 'center' }}>
+                <Typography variant="body2">
+                  Don't have an account?{' '}
+                  <MuiLink 
+                    component={Link} 
+                    href="/signup"
+                    underline="hover"
+                    sx={{ fontWeight: 'bold', cursor: 'pointer' }}
+                  >
+                    Sign up
+                  </MuiLink>
+                </Typography>
+              </Box>
+            </Box>
+          </>
+        )}
+      </Paper>
       
       <Snackbar
         open={showSuccessMessage}
@@ -404,6 +388,6 @@ export default function LoginPage() {
         onClose={() => setShowSuccessMessage(false)}
         message="Login successful! Redirecting..."
       />
-    </LoginContainer>
+    </Container>
   );
 }

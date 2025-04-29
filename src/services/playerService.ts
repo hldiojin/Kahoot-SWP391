@@ -180,7 +180,7 @@ const playerService = {
    * @param questionId ID of the question
    * @param isCorrect Whether the answer is correct
    * @param responseTime Time taken to answer in seconds
-   * @param answer The answer value (e.g., 'A', 'B', 'C', or 'D')
+   * @param answer The answer value (e.g., 'A', 'B', 'C', 'D', or 'T' for timeout)
    * @returns Promise with answer submission response
    */
   submitAnswer: async (
@@ -191,14 +191,25 @@ const playerService = {
     answer: string
   ): Promise<PlayerResponse> => {
     try {
+      // Ensure playerId and questionId are valid integers
+      const playerIdInt = parseInt(String(playerId), 10);
+      const questionIdInt = parseInt(String(questionId), 10);
+      
+      if (isNaN(playerIdInt) || isNaN(questionIdInt)) {
+        throw new Error(`Invalid player ID (${playerId}) or question ID (${questionId})`);
+      }
+      
+      // Handle timeout answer with special 'T' value
+      const finalAnswer = answer === '' || answer === null ? 'T' : answer;
+      
       const answerData = {
         id: 0, // Server will assign this
-        playerId: playerId,
-        questionId: questionId,
+        playerId: playerIdInt,
+        questionId: questionIdInt,
         answeredAt: new Date().toISOString(),
         isCorrect: isCorrect,
         responseTime: responseTime,
-        answer: answer
+        answer: finalAnswer
       };
 
       console.log("Submitting player answer:", answerData);
@@ -218,7 +229,40 @@ const playerService = {
       console.error('Error submitting player answer:', error);
       throw error;
     }
+  },
+  
+  /**
+   * Handle timeout or no answer from player
+   * @param playerId ID of the player
+   * @param questionId ID of the question
+   * @param timeLimit The time limit of the question
+   * @returns Promise with answer submission response
+   */
+  submitTimeoutAnswer: async (
+    playerId: number,
+    questionId: number,
+    timeLimit: number
+  ): Promise<PlayerResponse> => {
+    try {
+      // For timeouts, we know the answer is incorrect
+      const isCorrect = false;
+      
+      // Use the full time limit as response time since player didn't answer
+      const responseTime = timeLimit; 
+      
+      // 'T' represents a timeout/no answer
+      return await playerService.submitAnswer(
+        playerId,
+        questionId,
+        isCorrect,
+        responseTime,
+        'T'
+      );
+    } catch (error) {
+      console.error('Error submitting timeout answer:', error);
+      throw error;
+    }
   }
 };
 
-export default playerService; 
+export default playerService;

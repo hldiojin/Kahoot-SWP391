@@ -52,12 +52,19 @@ const buttonAnimation = {
   transition: { duration: 0.3 }
 };
 
-// Feedback animations
+// Feedback animations - modified to work with spring animation 
+// Fixed: Separated spring animation from multi-keyframe animations
 const feedbackAnimation = {
   initial: { scale: 0, opacity: 0 },
-  animate: { scale: 1, opacity: 1, rotate: [0, -10, 10, -5, 5, 0] },
-  exit: { scale: 0, opacity: 0 },
+  animate: { scale: 1, opacity: 1 },
   transition: { duration: 0.5, type: 'spring', stiffness: 200 }
+};
+
+// Wobble animation - separate from spring animations
+// Fixed: Using tween animation type instead of spring for multi-keyframe animations
+const wobbleAnimation = {
+  animate: { rotate: [0, -10, 10, -5, 5, 0] },
+  transition: { duration: 0.6, ease: "easeInOut", type: "tween" }
 };
 
 // CustomAnimal component for avatars
@@ -139,6 +146,8 @@ const OPTION_COLORS = [
 const OPTION_SHAPES = ['▲', '◆', '●', '■'];
 
 export default function GamePage() {
+  // ...existing code...
+  
   const router = useRouter();
   const searchParams = useSearchParams();
   const quizCode = searchParams.get('code');
@@ -166,6 +175,16 @@ export default function GamePage() {
   const [waitingState, setWaitingState] = useState(false);
   const [otherPlayers, setOtherPlayers] = useState<any[]>([]);
   const [playerData, setPlayerData] = useState<any>(null); // To store the player data from API
+  
+  // Hardcoded data for demonstration (will be used if real data fails to load)
+  const hardcodedQuestion = {
+    id: "1",
+    question: "Câu hỏi 1",
+    options: ["Đáp án A", "Đáp án B", "Đáp án C", "Đáp án D"],
+    correctAnswer: 0,
+    timeLimit: 30,
+    points: 100
+  };
 
   // Load game data
   useEffect(() => {
@@ -214,14 +233,26 @@ export default function GamePage() {
                   if (questionsResponse && questionsResponse.data && Array.isArray(questionsResponse.data)) {
                     // Format the questions to match the expected format
                     const formattedQuestions = questionsResponse.data.map((q: any) => {
-                      // Determine the correct answer index based on isCorrect value (which is 'A', 'B', 'C', or 'D')
+                      // Determine the correct answer index based on isCorrect value
                       const correctAnswerIndex = q.isCorrect ? 
                         q.isCorrect.charCodeAt(0) - 'A'.charCodeAt(0) : 0;
                       
+                      console.log(`Question: ${q.text}, correctAnswer: ${q.isCorrect} (index ${correctAnswerIndex})`);
+                      
+                      // FIXED: Always provide default options regardless of whether the original options are empty
+                      const options = [
+                        q.optionA?.trim() || `Option A`,
+                        q.optionB?.trim() || `Option B`,
+                        q.optionC?.trim() || `Option C`,
+                        q.optionD?.trim() || `Option D`
+                      ];
+                      
+                      console.log("Formatted options:", options);
+                      
                       return {
                         id: q.id.toString(),
-                        question: q.text,
-                        options: [q.optionA, q.optionB, q.optionC, q.optionD].filter(Boolean),
+                        question: q.text || 'Question',
+                        options: options,
                         correctAnswer: correctAnswerIndex,
                         timeLimit: q.timeLimit || DEFAULT_TIMER_DURATION,
                         points: q.score || 100
@@ -271,8 +302,22 @@ export default function GamePage() {
         // All questions answered, show final results
         setShowResults(true);
       }
+    } else {
+      // If no questions loaded from API, use hardcoded data
+      console.log("Using hardcoded question data since API data is missing");
+      
+      // Create a minimal quiz structure with our hardcoded question
+      const demoQuiz = {
+        title: "Demo Quiz",
+        description: "This is a demo quiz with hardcoded questions",
+        questions: [hardcodedQuestion],
+        gameMode: "solo"
+      };
+      
+      setQuizData(demoQuiz);
+      setCurrentQuestion(hardcodedQuestion);
     }
-  }, [quizData, currentQuestionIndex]);
+  }, [quizData, currentQuestionIndex, hardcodedQuestion]);
 
   // Timer effect for current question
   useEffect(() => {
@@ -344,12 +389,12 @@ export default function GamePage() {
     }
   };
 
-  // Show feedback after answering
+  // Update the showFeedback function to better handle player IDs
   const showFeedback = (answerIndex: number, isCorrect: boolean, timeTaken: number) => {
     setIsFeedbackShown(true);
     
     // Save the answer to the API
-    if (playerInfo && currentQuestion) {
+    if (playerInfo) {
       try {
         // Convert answer index to letter (A, B, C, D)
         // Use 'T' for timeout (no answer)
@@ -357,49 +402,44 @@ export default function GamePage() {
           String.fromCharCode(65 + answerIndex) : // A=65, B=66, etc.
           'T'; // T for Timeout/no answer
         
-        // Get player ID from stored info or create a temporary one
-        const playerId = playerInfo.id || playerInfo.playerId || 0;
+        // Get player ID from stored info and ensure it's a valid number
+        const playerId = playerInfo.id || playerInfo.playerId;
         
-        console.log(`Submitting answer: Player=${playerId}, Question=${currentQuestion.id}, Answer=${answerLetter}, Correct=${isCorrect}`);
-        
-        // Create answer data
-        const answerData = {
-          id: 0,
-          playerId: playerId,
-          questionId: parseInt(currentQuestion.id),
-          answeredAt: new Date().toISOString(),
-          isCorrect: isCorrect,
-          responseTime: timeTaken,
-          answer: answerLetter
-        };
-        
-        // Try direct API call for reliability
-        axios.post(
-          'https://kahootclone-f7hkd0hwafgbfrfa.southeastasia-01.azurewebsites.net/api/PlayerAnswer',
-          answerData,
-          {
-            headers: {
-              'Content-Type': 'application/json'
-            }
-          }
-        ).then(response => {
-          console.log("Answer submitted successfully:", response.data);
-        }).catch(error => {
-          console.error("Error submitting answer to API:", error);
+        // Only proceed if we have a valid player ID and question ID
+        if (playerId && currentQuestion?.id) {
+          console.log(`Submitting answer: Player=${playerId}, Question=${currentQuestion.id}, Answer=${answerLetter}, Correct=${isCorrect}`);
           
-          // Fallback to playerService if direct call fails
-          playerService.submitAnswer(
-            playerId,
-            parseInt(currentQuestion.id),
-            isCorrect,
-            timeTaken,
-            answerLetter
+          // Create answer data
+          const answerData = {
+            id: 0,
+            playerId: parseInt(playerId),
+            questionId: parseInt(currentQuestion.id),
+            answeredAt: new Date().toISOString(),
+            isCorrect: isCorrect,
+            responseTime: timeTaken,
+            answer: answerLetter
+          };
+          
+          // Try direct API call for reliability
+          axios.post(
+            'https://kahootclone-f7hkd0hwafgbfrfa.southeastasia-01.azurewebsites.net/api/PlayerAnswer',
+            answerData,
+            {
+              headers: {
+                'Content-Type': 'application/json'
+              }
+            }
           ).then(response => {
-            console.log("Answer submitted via service:", response);
-          }).catch(serviceError => {
-            console.error("Service also failed:", serviceError);
+            console.log("Answer submitted successfully:", response.data);
+          }).catch(error => {
+            console.error("Error submitting answer to API:", error);
           });
-        });
+        } else {
+          console.warn("Cannot submit answer: Missing player ID or question ID", { 
+            playerId, 
+            questionId: currentQuestion?.id 
+          });
+        }
       } catch (error) {
         console.error("Error preparing answer submission:", error);
       }
@@ -904,7 +944,7 @@ export default function GamePage() {
         
         {/* Answer Options - Kahoot style */}
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 3 }}>
-          {currentQuestion?.options.map((option: string, index: number) => (
+          {currentQuestion?.options?.map((option: string, index: number) => (
             <motion.div
               key={index}
               initial={buttonAnimation.initial}
@@ -968,10 +1008,10 @@ export default function GamePage() {
                 </Box>
                 
                 <Box sx={{ flex: 1, textAlign: 'left', pr: 3 }}>
-                  {option}
+                  {`${String.fromCharCode(65 + index)}: ${option || `Option ${String.fromCharCode(65 + index)}`}`} {/* Always show A, B, C, D prefixes */}
                 </Box>
                 
-                {/* Correct answer indicator */}
+                {/* Correct answer indicator with improved visibility */}
                 {showCorrectAnswer && index === currentQuestion.correctAnswer && (
                   <Box
                     sx={{
@@ -984,10 +1024,10 @@ export default function GamePage() {
                   >
                     <motion.div 
                       initial={{ scale: 0 }}
-                      animate={{ scale: 1, rotate: [0, -10, 10, -5, 5, 0] }}
+                      animate={{ scale: 1 }}
                       transition={{ duration: 0.6, type: 'spring', stiffness: 200 }}
                     >
-                      <CorrectIcon sx={{ fontSize: '2rem' }} />
+                      <CorrectIcon sx={{ fontSize: '2.5rem', filter: 'drop-shadow(0 0 3px rgba(0,0,0,0.3))' }} />
                     </motion.div>
                   </Box>
                 )}
@@ -1097,4 +1137,4 @@ export default function GamePage() {
       </Dialog>
     </Box>
   );
-} 
+}

@@ -84,6 +84,24 @@ const questionService = {
   },
 
   /**
+   * Get all questions for a session (to allow players to fetch questions)
+   * @param sessionId ID of the session to fetch questions for
+   * @returns Promise with all questions for the session
+   */
+  getQuestionsBySessionId: async (sessionId: number): Promise<QuestionResponse> => {
+    try {
+      const response = await axios.get(
+        `${API_BASE_URL}/api/questions/session/${sessionId}`
+      );
+      
+      return response.data;
+    } catch (error) {
+      console.error(`Error fetching questions for session ID ${sessionId}:`, error);
+      throw error;
+    }
+  },
+
+  /**
    * Update an existing question
    * @param questionId ID of the question to update
    * @param questionData Updated question data
@@ -184,4 +202,4 @@ const questionService = {
   }
 };
 
-export default questionService; 
+export default questionService;
