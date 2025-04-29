@@ -274,13 +274,54 @@ const quizService = {
   },
 
   /**
+   * Get a quiz by its quiz code (using the QuizCode endpoint)
+   * @param quizCode Code of the quiz to fetch
+   * @returns Promise with quiz data
+   */
+  getQuizByQuizCode: async (quizCode: string): Promise<QuizResponse> => {
+    try {
+      console.log(`Finding quiz with code: ${quizCode} using QuizCode endpoint`);
+      
+      // Try endpoint without authentication first
+      try {
+        const response = await axios.get(
+          `${API_BASE_URL}/api/Quiz/QuizCode/${quizCode}`
+        );
+        return response.data;
+      } catch (publicError) {
+        // If public endpoint fails, try with authentication
+        const token = localStorage.getItem('token');
+        if (token) {
+          const response = await axios.get(
+            `${API_BASE_URL}/api/Quiz/QuizCode/${quizCode}`,
+            {
+              headers: {
+                'Authorization': `Bearer ${token}`
+              }
+            }
+          );
+          return response.data;
+        } else {
+          throw publicError;
+        }
+      }
+    } catch (error) {
+      console.error(`Error fetching quiz with code ${quizCode} from QuizCode endpoint:`, error);
+      throw error;
+    }
+  },
+
+  /**
    * Get a quiz by its quiz code
    * @param quizCode Code of the quiz to fetch
    * @returns Promise with quiz data
    */
   getQuizByCode: async (quizCode: string): Promise<QuizResponse> => {
+    // First try the new QuizCode endpoint, then fall back to the old endpoint if needed
     try {
-      console.log(`Đang tìm quiz với mã: ${quizCode}`);
+      return await quizService.getQuizByQuizCode(quizCode);
+    } catch (error) {
+      console.log(`QuizCode endpoint failed, trying alternate endpoint for code: ${quizCode}`);
       
       // Thử endpoint không yêu cầu xác thực trước
       try {
@@ -305,9 +346,6 @@ const quizService = {
           throw publicError;
         }
       }
-    } catch (error) {
-      console.error(`Error fetching quiz with code ${quizCode}:`, error);
-      throw error;
     }
   },
 

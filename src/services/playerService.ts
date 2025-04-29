@@ -99,36 +99,46 @@ const playerService = {
   },
 
   /**
-   * Format an animal avatar URL from react-animals to a string representation
-   * @param animalName Name of the animal (e.g., 'alligator', 'elephant')
-   * @param animalColor Color of the animal (e.g., 'orange', 'blue')
-   * @returns String representation of animal avatar for storage
+   * Format an avatar URL to a string representation that doesn't rely on react-animals
+   * @param animalName Name of the animal (e.g., 'cat', 'dog')
+   * @param animalColor Color of the animal (e.g., '#FF3355', 'blue')
+   * @returns String representation of avatar for storage
    */
   formatAnimalAvatar: (animalName: string, animalColor: string): string => {
-    return `animal://${animalName}/${animalColor}`;
+    return `simple://${animalName}/${animalColor}`;
   },
 
   /**
-   * Parse a string representation of animal avatar back to object
-   * @param avatarUrl String representation of animal avatar (e.g., 'animal://elephant/blue')
-   * @returns Object with name and color properties for react-animals
+   * Parse a string representation of avatar back to object
+   * @param avatarUrl String representation of avatar
+   * @returns Object with name and color properties
    */
   parseAnimalAvatar: (avatarUrl: string): {name: string, color: string} => {
     // Default values if parsing fails
-    const defaultAvatar = { name: 'alligator', color: 'orange' };
+    const defaultAvatar = { name: 'dog', color: 'red' };
     
-    if (!avatarUrl || !avatarUrl.startsWith('animal://')) {
+    if (!avatarUrl) {
       return defaultAvatar;
     }
     
     try {
-      // Extract animal name and color from URL
-      const parts = avatarUrl.replace('animal://', '').split('/');
-      if (parts.length === 2) {
-        return { name: parts[0], color: parts[1] };
+      // Handle both the old animal:// format and new simple:// format
+      if (avatarUrl.startsWith('animal://')) {
+        const parts = avatarUrl.replace('animal://', '').split('/');
+        if (parts.length === 2) {
+          return { name: parts[0], color: parts[1] };
+        }
+      } else if (avatarUrl.startsWith('simple://')) {
+        const parts = avatarUrl.replace('simple://', '').split('/');
+        if (parts.length === 2) {
+          return { name: parts[0], color: parts[1] };
+        }
+      } else {
+        // If just a plain animal name is provided, use that with a default color
+        return { name: avatarUrl, color: 'blue' };
       }
     } catch (error) {
-      console.error('Error parsing animal avatar:', error);
+      console.error('Error parsing avatar:', error);
     }
     
     return defaultAvatar;
@@ -162,6 +172,52 @@ const playerService = {
       score: 0, // Initial score is 0
       sessionId: sessionId
     };
+  },
+
+  /**
+   * Submit a player's answer to a question
+   * @param playerId ID of the player
+   * @param questionId ID of the question
+   * @param isCorrect Whether the answer is correct
+   * @param responseTime Time taken to answer in seconds
+   * @param answer The answer value (e.g., 'A', 'B', 'C', or 'D')
+   * @returns Promise with answer submission response
+   */
+  submitAnswer: async (
+    playerId: number,
+    questionId: number,
+    isCorrect: boolean,
+    responseTime: number,
+    answer: string
+  ): Promise<PlayerResponse> => {
+    try {
+      const answerData = {
+        id: 0, // Server will assign this
+        playerId: playerId,
+        questionId: questionId,
+        answeredAt: new Date().toISOString(),
+        isCorrect: isCorrect,
+        responseTime: responseTime,
+        answer: answer
+      };
+
+      console.log("Submitting player answer:", answerData);
+      
+      const response = await axios.post(
+        `${API_BASE_URL}/api/PlayerAnswer`,
+        answerData,
+        {
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+      
+      return response.data;
+    } catch (error) {
+      console.error('Error submitting player answer:', error);
+      throw error;
+    }
   }
 };
 
