@@ -205,81 +205,86 @@ export default function GamePage() {
         setPlayerInfo(playerData);
         console.log('Player info loaded:', playerData);
 
-        // Fetch quiz data
-        const quizDataStr = sessionStorage.getItem('quizPreviewData');
-        if (quizDataStr) {
-          // Use the cached quiz data if available
-          const parsedQuiz = JSON.parse(quizDataStr);
-          setQuizData(parsedQuiz);
-          console.log('Quiz data loaded from session storage:', parsedQuiz);
-        } else {
-          // Fetch quiz data from API if not in session storage
-          console.log('Fetching quiz data from API for code:', quizCode);
-          try {
-            const response = await quizService.getQuizByCode(quizCode);
+        // Fetch quiz data - sử dụng API đúng
+        console.log('Fetching quiz data for code:', quizCode);
+        
+        try {
+          // Bước 1: Lấy thông tin quiz bằng quizCode
+          const quizResponse = await fetch(
+            `https://kahootclone-f7hkd0hwafgbfrfa.southeastasia-01.azurewebsites.net/api/Quiz/QuizCode/${quizCode}`
+          );
+          const quizResponseData = await quizResponse.json();
+          
+          console.log('Quiz API response:', quizResponseData);
+          
+          if (quizResponseData && quizResponseData.status === 200 && quizResponseData.data) {
+            const quizInfo = quizResponseData.data;
+            console.log('Quiz info loaded:', quizInfo);
             
-            if (response && response.data) {
-              const apiQuizData = response.data;
-              console.log('Quiz data loaded from API:', apiQuizData);
+            // Bước 2: Lấy câu hỏi bằng quizId
+            const quizId = quizInfo.id;
+            console.log(`Fetching questions for quiz ID: ${quizId}`);
+            
+            // Sử dụng API endpoint đã hoạt động
+            const questionsResponse = await fetch(
+              `https://kahootclone-f7hkd0hwafgbfrfa.southeastasia-01.azurewebsites.net/api/questions/quiz/${quizId}`
+            );
+            const questionsResponseData = await questionsResponse.json();
+            
+            console.log('Questions API response:', questionsResponseData);
+            
+            // Kiểm tra và xử lý câu hỏi
+            if (questionsResponseData && questionsResponseData.status === 200 && Array.isArray(questionsResponseData.data)) {
+              const rawQuestions = questionsResponseData.data;
+              console.log(`Retrieved ${rawQuestions.length} questions for quiz ${quizId}`);
               
-              // Get the questions separately using the questions API
-              try {
-                console.log('Fetching questions for quiz ID:', apiQuizData.id);
-                // Note: We need to make sure we have the quiz ID from the response
-                if (apiQuizData.id) {
-                  const questionsResponse = await questionService.getQuestionsByQuizId(apiQuizData.id);
-                  console.log('Questions API response:', questionsResponse);
-                  
-                  if (questionsResponse && questionsResponse.data && Array.isArray(questionsResponse.data)) {
-                    // Format the questions to match the expected format
-                    const formattedQuestions = questionsResponse.data.map((q: any) => {
-                      // Determine the correct answer index based on isCorrect value
-                      const correctAnswerIndex = q.isCorrect ? 
-                        q.isCorrect.charCodeAt(0) - 'A'.charCodeAt(0) : 0;
-                      
-                      console.log(`Question: ${q.text}, correctAnswer: ${q.isCorrect} (index ${correctAnswerIndex})`);
-                      
-                      // FIXED: Always provide default options regardless of whether the original options are empty
-                      const options = [
-                        q.optionA?.trim() || `Option A`,
-                        q.optionB?.trim() || `Option B`,
-                        q.optionC?.trim() || `Option C`,
-                        q.optionD?.trim() || `Option D`
-                      ];
-                      
-                      console.log("Formatted options:", options);
-                      
-                      return {
-                        id: q.id.toString(),
-                        question: q.text || 'Question',
-                        options: options,
-                        correctAnswer: correctAnswerIndex,
-                        timeLimit: q.timeLimit || DEFAULT_TIMER_DURATION,
-                        points: q.score || 100
-                      };
-                    });
-                    
-                    // Add the formatted questions to the quiz data
-                    apiQuizData.questions = formattedQuestions;
-                    console.log('Updated quiz data with questions:', apiQuizData);
-                  } else {
-                    console.warn('No questions found or invalid response', questionsResponse);
-                    apiQuizData.questions = [];
-                  }
-                }
-              } catch (questionsError) {
-                console.error('Error fetching questions:', questionsError);
-                apiQuizData.questions = []; // Set empty questions on error
-              }
+              // Sắp xếp câu hỏi theo arrange field
+              const sortedQuestions = [...rawQuestions].sort((a, b) => a.arrange - b.arrange);
+              console.log('Questions sorted by arrange field:', sortedQuestions);
               
-              setQuizData(apiQuizData);
+              // Format câu hỏi để hiển thị trong game
+              const formattedQuestions = sortedQuestions.map(q => {
+                // Xác định đáp án đúng dựa trên trường isCorrect (A, B, C, D)
+                const correctAnswerIndex = q.isCorrect ? 
+                  q.isCorrect.charCodeAt(0) - 'A'.charCodeAt(0) : 0;
+                
+                // Chuẩn bị các options
+                const options = [
+                  q.optionA && q.optionA.trim() !== "" ? q.optionA.trim() : `Option A`,
+                  q.optionB && q.optionB.trim() !== "" ? q.optionB.trim() : `Option B`,
+                  q.optionC && q.optionC.trim() !== "" ? q.optionC.trim() : `Option C`,
+                  q.optionD && q.optionD.trim() !== "" ? q.optionD.trim() : `Option D`
+                ];
+                
+                return {
+                  id: q.id,
+                  question: q.text || 'Question',
+                  options: options,
+                  correctAnswer: correctAnswerIndex,
+                  timeLimit: q.timeLimit || DEFAULT_TIMER_DURATION,
+                  points: q.score || 100
+                };
+              });
+              
+              // Cập nhật thông tin quiz với câu hỏi đã định dạng
+              const completeQuizData = {
+                ...quizInfo,
+                questions: formattedQuestions
+              };
+              
+              console.log('Processed quiz data with questions:', completeQuizData);
+              setQuizData(completeQuizData);
             } else {
-              throw new Error('Failed to load quiz data');
+              console.warn('No questions found for quiz:', quizId);
+              throw new Error('No questions found for this quiz.');
             }
-          } catch (apiError) {
-            console.error('Error fetching quiz data:', apiError);
-            throw new Error('Failed to load quiz data. Please check the quiz code.');
+          } else {
+            console.warn('Failed to load quiz with code:', quizCode);
+            throw new Error('Quiz not found. Please check the quiz code.');
           }
+        } catch (apiError) {
+          console.error('Error fetching quiz data:', apiError);
+          throw new Error('Failed to load quiz data. Please check the quiz code.');
         }
 
         setLoading(false);
