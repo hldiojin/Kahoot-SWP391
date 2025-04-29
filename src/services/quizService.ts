@@ -413,7 +413,17 @@ const quizService = {
    * @returns A 6-digit number
    */
   generateQuizCode: (): number => {
-    return Math.floor(100000 + Math.random() * 900000);
+    // For client-side, use Math.random()
+    // For server-side, use a more deterministic approach
+    if (typeof window !== 'undefined') {
+      // Client-side code
+      return Math.floor(100000 + Math.random() * 900000);
+    } else {
+      // Server-side code - use a more deterministic approach
+      const timestamp = Date.now();
+      // Use timestamp modulo to create a number that's still unique but more consistent
+      return 100000 + (timestamp % 900000);
+    }
   },
 
   /**
