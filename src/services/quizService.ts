@@ -1,5 +1,6 @@
 import axios from 'axios';
 import groupService from './groupService';
+import authService from './authService';
 
 const API_BASE_URL = 'https://kahootclone-f7hkd0hwafgbfrfa.southeastasia-01.azurewebsites.net';
 
@@ -346,6 +347,95 @@ const quizService = {
           throw publicError;
         }
       }
+    }
+  },
+
+  /**
+   * Get all quizzes created by a specific user
+   * @param userId ID of the user
+   * @returns Promise with user's quizzes
+   */
+  getMyQuizzes: async (userId: number): Promise<QuizResponse> => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        throw new Error('Authentication token is missing');
+      }
+
+      // Make sure userId is valid
+      if (!userId || isNaN(Number(userId))) {
+        const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+        userId = currentUser.id ? parseInt(currentUser.id) : 0;
+        
+        if (!userId) {
+          throw new Error('User ID is required and could not be determined automatically');
+        }
+      }
+
+      // Call the API to get user's quizzes
+      const response = await axios.get(
+        `${API_BASE_URL}/api/Quiz/MySets/${userId}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        }
+      );
+      
+      console.log("My quizzes retrieved:", response.data);
+      
+      // Store the quizzes in sessionStorage
+      if (response.data && response.data.data) {
+        sessionStorage.setItem('myQuizzes', JSON.stringify(response.data.data));
+      }
+      
+      return response.data;
+    } catch (error) {
+      console.error(`Error fetching quizzes for user ${userId}:`, error);
+      throw error;
+    }
+  },
+
+  /**
+   * Get all quizzes created by the current user and store them in sessionStorage
+   * @returns Promise with user's quizzes
+   */
+  fetchAndStoreMyQuizzes: async (): Promise<QuizResponse> => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        throw new Error('Authentication token is missing');
+      }
+
+      // Get current user information
+      const currentUser = authService.getCurrentUser();
+      if (!currentUser || !currentUser.id) {
+        throw new Error('User ID not available');
+      }
+
+      const userId = currentUser.id;
+
+      // Call the API to get user's quizzes
+      const response = await axios.get(
+        `${API_BASE_URL}/api/Quiz/MySets/${userId}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        }
+      );
+      
+      console.log("My quizzes retrieved:", response.data);
+      
+      // Store the quizzes in sessionStorage
+      if (response.data && response.data.data) {
+        sessionStorage.setItem('myQuizzes', JSON.stringify(response.data.data));
+      }
+      
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching user quizzes:', error);
+      throw error;
     }
   },
 

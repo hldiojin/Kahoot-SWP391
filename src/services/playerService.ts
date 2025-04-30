@@ -160,8 +160,18 @@ const playerService = {
     animalColor: string = 'orange',
     userId: number = 0
   ): PlayerData => {
-    // Generate a random 6-digit player code
-    const playerCode = Math.floor(100000 + Math.random() * 900000);
+    // Use a more stable approach for playerCode
+    // Instead of Math.random(), use a hash of the nickname + sessionId
+    const hashCode = (str: string): number => {
+      let hash = 0;
+      for (let i = 0; i < str.length; i++) {
+        hash = ((hash << 5) - hash) + str.charCodeAt(i);
+        hash |= 0; // Convert to 32bit integer
+      }
+      return Math.abs(hash) % 900000 + 100000; // Keep it within 100000-999999 range
+    };
+    
+    const playerCode = hashCode(`${nickname}-${sessionId}-${Date.now()}`);
     
     return {
       id: 0, // The server will assign an ID
@@ -202,11 +212,13 @@ const playerService = {
       // Handle timeout answer with special 'T' value
       const finalAnswer = answer === '' || answer === null ? 'T' : answer;
       
+      // Create a timestamp on the server to avoid hydration issues
       const answerData = {
-        id: 0, // Server will assign this
+        id: 0,
         playerId: playerIdInt,
         questionId: questionIdInt,
-        answeredAt: new Date().toISOString(),
+        // Don't include a client-generated timestamp
+        answeredAt: null, // Let the server set this
         isCorrect: isCorrect,
         responseTime: responseTime,
         answer: finalAnswer
@@ -262,7 +274,40 @@ const playerService = {
       console.error('Error submitting timeout answer:', error);
       throw error;
     }
-  }
+  },
+
+  /**
+   * @param playerData Player data to be created
+   * @returns Promise with player creation/retrieval response
+   */
+  getOrCreatePlayer: async (playerData: PlayerData): Promise<PlayerResponse> => {
+    try {
+      const sessionPlayers = await playerService.getPlayersBySessionId(playerData.sessionId)
+        .catch(() => ({ data: [] }));
+      
+      // If we have players and data is an array
+      if (sessionPlayers && Array.isArray(sessionPlayers.data)) {
+        // Look for a matching player by nickname
+        const existingPlayer = sessionPlayers.data.find(
+          (p) => p.nickname === playerData.nickname
+        );
+        
+        if (existingPlayer) {
+          console.log("Found existing player:", existingPlayer);
+          return {
+            status: 200,
+            message: "Retrieved existing player",
+            data: existingPlayer
+          };
+        }
+      }
+      
+      return await playerService.createPlayer(playerData);
+    } catch (error) {
+      console.error('Error in getOrCreatePlayer:', error);
+      throw error;
+    }
+  },
 };
 
 export default playerService;

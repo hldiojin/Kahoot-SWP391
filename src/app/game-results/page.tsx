@@ -31,7 +31,6 @@ import { motion } from 'framer-motion';
 import dynamic from 'next/dynamic';
 import ReactConfetti from 'react-confetti';
 
-// Dynamically import Animal component with SSR disabled
 const Animal = dynamic(() => import('react-animals'), { ssr: false });
 
 interface PlayerScore {
@@ -50,6 +49,17 @@ interface GroupScore {
   score: number;
   memberCount: number;
   members: PlayerScore[];
+}
+
+// Add this interface for player answers
+interface PlayerAnswer {
+  id: number;
+  playerId: number;
+  questionId: number;
+  answeredAt: string;
+  isCorrect: boolean;
+  responseTime: number; 
+  answer: string; // A, B, C, D, or T for timeout
 }
 
 // Array of valid animal avatars and colors
@@ -116,10 +126,34 @@ const getAnimalAvatar = (avatarId: string) => {
   return animalAvatars.find(a => a.id === avatarId) || animalAvatars[0];
 };
 
+// Helper function to normalize API response data
+const normalizeApiResponse = (responseData: any): any[] => {
+  // Check if the response follows the { status, data: [...] } pattern
+  if (responseData?.status && Array.isArray(responseData.data)) {
+    return responseData.data;
+  }
+  
+  // Check if the response is a direct array
+  if (Array.isArray(responseData)) {
+    return responseData;
+  }
+  
+  // Check if the response has a data property that is an array
+  if (responseData?.data && Array.isArray(responseData.data)) {
+    return responseData.data;
+  }
+  
+  // Return empty array if we can't determine the structure
+  console.warn("Could not normalize API response:", responseData);
+  return [];
+};
+
 export default function GameResultsPage() {
   const router = useRouter();
   const [playerResults, setPlayerResults] = useState<PlayerScore[]>([]);
   const [groupResults, setGroupResults] = useState<GroupScore[]>([]);
+  const [playerAnswers, setPlayerAnswers] = useState<PlayerAnswer[]>([]);
+  const [answersLoading, setAnswersLoading] = useState(false);
   const [gameTitle, setGameTitle] = useState('');
   const [currentPlayer, setCurrentPlayer] = useState('');
   const [loading, setLoading] = useState(true);
@@ -128,6 +162,8 @@ export default function GameResultsPage() {
   const [viewMode, setViewMode] = useState<'player' | 'group'>('player');
   const [gameMode, setGameMode] = useState<'solo' | 'team'>('solo');
   const [windowDimensions, setWindowDimensions] = useState({ width: 0, height: 0 });
+  const [playerInfo, setPlayerInfo] = useState<any>(null);
+  const [quiz, setQuiz] = useState<any>({});
 
   useEffect(() => {
     // Set window dimensions for confetti
@@ -139,17 +175,30 @@ export default function GameResultsPage() {
     // Get data from sessionStorage
     try {
       const storedResults = sessionStorage.getItem('gameResults');
-      const quizData = sessionStorage.getItem('quizPreviewData');
-      const playerName = sessionStorage.getItem('currentPlayer');
+      const quizData = sessionStorage.getItem('quizPreviewData') || sessionStorage.getItem('currentQuiz');
+      const playerInfo = sessionStorage.getItem('currentPlayer');
       const storedAvatar = sessionStorage.getItem('playerAvatar');
+      
+      // Set player info
+      if (playerInfo) {
+        const parsedPlayerInfo = JSON.parse(playerInfo);
+        setPlayerInfo(parsedPlayerInfo);
+      }
+      
+      // Set quiz data
+      if (quizData) {
+        const parsedQuizData = JSON.parse(quizData);
+        setQuiz(parsedQuizData);
+      }
       
       if (storedAvatar) {
         setPlayerAvatar(storedAvatar);
       }
       
-      if (storedResults && quizData) {
+      if (storedResults && quizData && playerInfo) {
         const results = JSON.parse(storedResults);
         const quiz = JSON.parse(quizData);
+        const player = JSON.parse(playerInfo);
         
         // Get game mode from quiz data or default to solo
         const mode = quiz.gameMode || 'solo';
@@ -158,68 +207,28 @@ export default function GameResultsPage() {
         // Set initial view mode based on game mode
         setViewMode(mode === 'team' ? 'group' : 'player');
         
-        // For team mode, ensure players have groups assigned
-        // For solo mode, we'll still calculate groups but they're optional to view
-        const resultsWithGroups = results.map((player: PlayerScore) => {
-          if (mode === 'team' && !player.group) {
-            return {
-              ...player,
-              group: groupNames[Math.floor(Math.random() * groupNames.length)]
-            };
-          }
-          return player;
-        });
-        
-        // Sort results by score (highest first)
-        const sortedResults = [...resultsWithGroups].sort((a, b) => b.score - a.score);
-        
-        // Calculate speed metrics for displaying
-        sortedResults.forEach(player => {
-          // Set a default average answer time if not provided
-          if (!player.averageAnswerTime) {
-            // Average answer time is random between 3-15 seconds for demo purposes
-            player.averageAnswerTime = Math.round((Math.random() * 12 + 3) * 10) / 10;
-          }
-          
-          // Ensure each player has a valid avatar
-          if (!player.avatar || !animalAvatars.find(a => a.id === player.avatar)) {
-            player.avatar = animalAvatars[Math.floor(Math.random() * animalAvatars.length)].id;
-          }
-        });
-        
-        setPlayerResults(sortedResults);
+        // Set player results
+        setPlayerResults(results);
         
         // Calculate group scores
-        const groups = calculateGroupScores(sortedResults);
+        const groups = calculateGroupScores(results);
         setGroupResults(groups);
         
         setGameTitle(quiz.title);
-        setCurrentPlayer(playerName || '');
+        setCurrentPlayer(player?.name || '');
+        
+        // Fetch player answers from API
+        if (player && player.id && quiz.id) {
+          fetchPlayerAnswers(player.id, quiz.id);
+        }
         
         // Hide confetti after 5 seconds
         setTimeout(() => {
           setShowConfetti(false);
         }, 5000);
         
-        // Save results to localStorage for teacher to see
-        const gameId = quiz.id || Date.now();
-        const gameResultsForTeacher = {
-          id: gameId,
-          title: quiz.title,
-          description: quiz.description || '',
-          gameMode: mode,
-          coverImage: quiz.coverImage || quiz.imageUrl || '',
-          completed: true,
-          dateCompleted: new Date().toISOString(),
-          playerResults: sortedResults,
-          groupResults: groups,
-          questions: quiz.questions
-        };
-        
-        // Save to localStorage (in a real app, this would be saved to a database)
-        const completedGames = JSON.parse(localStorage.getItem('completedGames') || '[]');
-        completedGames.push(gameResultsForTeacher);
-        localStorage.setItem('completedGames', JSON.stringify(completedGames));
+        // Save the game data for teacher to see
+        saveCompletedGame(quiz, results, groups);
       }
     } catch (error) {
       console.error('Error loading game results:', error);
@@ -227,6 +236,232 @@ export default function GameResultsPage() {
       setLoading(false);
     }
   }, []);
+
+  // Add this near the top of your component
+  useEffect(() => {
+    // ...existing code
+    
+    // Make sure to get and store player ID early
+    const playerInfoStr = sessionStorage.getItem('currentPlayer');
+    if (playerInfoStr) {
+      try {
+        const playerData = JSON.parse(playerInfoStr);
+        const playerId = playerData.id || playerData.playerId;
+        
+        // Store playerId in sessionStorage for easy access
+        if (playerId) {
+          sessionStorage.setItem('currentPlayerId', String(playerId));
+          console.log("Set currentPlayerId in session:", playerId);
+        }
+      } catch (e) {
+        console.error("Error parsing player info:", e);
+      }
+    }
+    
+    // ...rest of existing code
+  }, []);
+
+  // Add this effect to fetch answers when component mounts
+  useEffect(() => {
+    const getAnswers = async () => {
+      try {
+        const playerInfoStr = sessionStorage.getItem('currentPlayer');
+        const quizDataStr = sessionStorage.getItem('quizPreviewData') || sessionStorage.getItem('currentQuiz');
+        
+        if (playerInfoStr && quizDataStr) {
+          const playerData = JSON.parse(playerInfoStr);
+          const quizData = JSON.parse(quizDataStr);
+          
+          const playerId = playerData.id || playerData.playerId;
+          const quizId = quizData.id;
+          
+          if (playerId && quizId) {
+            await fetchPlayerAnswers(playerId, quizId);
+          }
+        }
+      } catch (error) {
+        console.error("Error in getAnswers effect:", error);
+      }
+    };
+    
+    getAnswers();
+  }, []);
+
+  // Improved function to fetch player answers using GET method
+  const fetchPlayerAnswers = async (playerId: number, quizId: number) => {
+    try {
+      setAnswersLoading(true);
+      console.log(`Fetching answers for player ${playerId} in quiz ${quizId}`);
+      
+      // First approach: Get all answers and filter client-side
+      const response = await fetch(
+        `https://kahootclone-f7hkd0hwafgbfrfa.southeastasia-01.azurewebsites.net/api/PlayerAnswer`,
+        {
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json'
+          }
+        }
+      );
+      
+      if (!response.ok) {
+        console.warn(`Main API call failed with status ${response.status}`);
+        throw new Error(`Failed to fetch player answers: ${response.status}`);
+      }
+      
+      const responseData = await response.json();
+      console.log("All player answers response:", responseData);
+      
+      if (responseData && Array.isArray(responseData.data)) {
+        // Filter answers for this specific player
+        const playerAnswers = responseData.data.filter((answer: { playerId: number; }) => 
+          answer.playerId === playerId
+        );
+        
+        console.log(`Found ${playerAnswers.length} answers for player ${playerId}`);
+        
+        if (playerAnswers.length > 0) {
+          setPlayerAnswers(playerAnswers);
+          
+          // Also update localStorage for persistance
+          setTimeout(() => {
+            // Get the updated quiz data with our answers
+            const updatedQuiz = JSON.parse(sessionStorage.getItem('quizPreviewData') || sessionStorage.getItem('currentQuiz') || '{}');
+            saveCompletedGame(updatedQuiz, playerResults, groupResults);
+          }, 500);
+          
+          return;
+        }
+      }
+      
+      // If first approach fails, try player-specific endpoint
+      console.log("Trying player-specific endpoint as fallback");
+      const playerSpecificResponse = await fetch(
+        `https://kahootclone-f7hkd0hwafgbfrfa.southeastasia-01.azurewebsites.net/api/PlayerAnswer/player/${playerId}`,
+        {
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json'
+          }
+        }
+      );
+      
+      if (!playerSpecificResponse.ok) {
+        throw new Error(`Player-specific endpoint failed: ${playerSpecificResponse.status}`);
+      }
+      
+      const playerData = await playerSpecificResponse.json();
+      console.log("Player-specific answers:", playerData);
+      
+      if (playerData && playerData.data && Array.isArray(playerData.data)) {
+        setPlayerAnswers(playerData.data);
+        
+        // Update stored game data
+        setTimeout(() => {
+          const updatedQuiz = JSON.parse(sessionStorage.getItem('quizPreviewData') || sessionStorage.getItem('currentQuiz') || '{}');
+          saveCompletedGame(updatedQuiz, playerResults, groupResults);
+        }, 500);
+      } else {
+        console.warn("No valid data from player-specific endpoint");
+        
+        // If you have local answers from the game session, use those as a last resort
+        const gameResultsStr = sessionStorage.getItem('gameResults');
+        if (gameResultsStr) {
+          try {
+            const gameResults = JSON.parse(gameResultsStr);
+            const currentPlayerResult = gameResults.find((p: any) => p.name === currentPlayer);
+            
+            if (currentPlayerResult && currentPlayerResult.answers) {
+              // Convert local answers to API format
+              const formattedAnswers = currentPlayerResult.answers.map((a: any, index: number) => ({
+                id: index + 1,
+                playerId: playerId,
+                questionId: quiz.questions[a.questionIndex].id,
+                answeredAt: new Date().toISOString(),
+                isCorrect: a.isCorrect,
+                responseTime: a.timeTaken,
+                answer: a.selectedAnswer !== null ? 
+                  String.fromCharCode(65 + a.selectedAnswer) : 'T' // A, B, C, D or T for timeout
+              }));
+              
+              console.log("Using local answer data:", formattedAnswers);
+              setPlayerAnswers(formattedAnswers);
+              
+              // Update stored game data
+              setTimeout(() => {
+                saveCompletedGame(quiz, playerResults, groupResults);
+              }, 500);
+            }
+          } catch (err) {
+            console.error("Error using local answer data:", err);
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching player answers:", error);
+      
+      // Try to fall back to any session-stored answers
+      const sessionAnswers = sessionStorage.getItem('playerAnswers');
+      if (sessionAnswers) {
+        try {
+          const parsedAnswers = JSON.parse(sessionAnswers);
+          if (Array.isArray(parsedAnswers) && parsedAnswers.length > 0) {
+            console.log("Using session-stored answers:", parsedAnswers);
+            setPlayerAnswers(parsedAnswers);
+          }
+        } catch (e) {
+          console.error("Error parsing session answers:", e);
+        }
+      }
+    } finally {
+      setAnswersLoading(false);
+    }
+  };
+
+  // Add helper function to save the game data
+  const saveCompletedGame = (quiz: any, players: PlayerScore[], groups: GroupScore[]) => {
+    try {
+      if (!quiz) {
+        console.error('No quiz data available to save completed game');
+        return;
+      }
+      
+      const gameId = quiz.id || Date.now();
+      const gameResultsForTeacher = {
+        id: gameId,
+        title: quiz.title || 'Unnamed Quiz',
+        description: quiz.description || '',
+        gameMode: quiz.gameMode || 'solo',
+        coverImage: quiz.coverImage || quiz.imageUrl || quiz.thumbnailUrl || '',
+        completed: true,
+        dateCompleted: new Date().toISOString(),
+        playerResults: players,
+        groupResults: groups,
+        playerAnswers: playerAnswers, // Include the player answers fetched from API
+        questions: quiz.questions || [],
+        sessionId: quiz.sessionId || quiz.id || null
+      };
+      
+      // Save to localStorage (in a real app, this would be saved to a database)
+      const completedGames = JSON.parse(localStorage.getItem('completedGames') || '[]');
+      
+      // Check if this game already exists in completed games
+      const existingGameIndex = completedGames.findIndex((g: any) => g.id === gameId);
+      
+      if (existingGameIndex >= 0) {
+        // Update existing game
+        completedGames[existingGameIndex] = gameResultsForTeacher;
+      } else {
+        // Add new completed game
+        completedGames.push(gameResultsForTeacher);
+      }
+      
+      localStorage.setItem('completedGames', JSON.stringify(completedGames));
+      console.log('Game results saved successfully:', gameResultsForTeacher);
+    } catch (error) {
+      console.error('Error saving completed game:', error);
+    }
+  };
 
   const handlePlayAgain = () => {
     router.push('/play-quiz-preview');
@@ -678,6 +913,150 @@ export default function GameResultsPage() {
               </List>
             )}
 
+            {/* Question and Answer Summary */}
+            <Typography variant="h5" sx={{ mt: 4, mb: 2, display: 'flex', alignItems: 'center' }}>
+              Question Summary
+            </Typography>
+
+            <Paper elevation={1} sx={{ p: 0, borderRadius: 2, overflow: 'hidden', mb: 4 }}>
+              {answersLoading ? (
+                <Box sx={{ p: 3, textAlign: 'center' }}>
+                  <Typography>Loading answer data...</Typography>
+                </Box>
+              ) : playerAnswers.length > 0 ? (
+                <List disablePadding>
+                  {/* Get the quiz questions from sessionStorage */}
+                  {(() => {
+                    const quizData = JSON.parse(sessionStorage.getItem('quizPreviewData') || sessionStorage.getItem('currentQuiz') || '{}');
+                    const questions = quizData.questions || [];
+                    
+                    // Create a map of questionId -> question for quick lookup
+                    const questionMap = new Map();
+                    questions.forEach((q: any) => {
+                      questionMap.set(parseInt(q.id), q);
+                    });
+                    
+                    // Group answers by questionId for better display
+                    const answersByQuestion = new Map();
+                    playerAnswers.forEach(answer => {
+                      if (!answersByQuestion.has(answer.questionId)) {
+                        answersByQuestion.set(answer.questionId, []);
+                      }
+                      answersByQuestion.get(answer.questionId).push(answer);
+                    });
+                    
+                    // Sort questions by their ID or index
+                    const sortedQuestionIds = Array.from(answersByQuestion.keys()).sort((a, b) => a - b);
+                    
+                    return sortedQuestionIds.map((questionId, qIndex) => {
+                      const question = questionMap.get(questionId);
+                      const answers = answersByQuestion.get(questionId) || [];
+                      
+                      if (!question) {
+                        return (
+                          <ListItem key={`question-${questionId}`} sx={{ p: 2, backgroundColor: qIndex % 2 === 0 ? 'rgba(0,0,0,0.02)' : 'transparent' }}>
+                            <ListItemText 
+                              primary={`Question #${qIndex + 1}`}
+                              secondary="Question details not available"
+                            />
+                          </ListItem>
+                        );
+                      }
+                      
+                      const playerAnswer = answers.find((a: { playerId: any; }) => 
+                        a.playerId === (playerInfo?.id || playerInfo?.playerId)
+                      );
+                      
+                      const answerIndex = playerAnswer ? 
+                        playerAnswer.answer.charCodeAt(0) - 'A'.charCodeAt(0) : -1;
+                      
+                      const correctAnswerIndex = typeof question.correctAnswer === 'number' ? 
+                        question.correctAnswer : 
+                        (question.isCorrect?.charCodeAt(0) - 'A'.charCodeAt(0) || 0);
+                        
+                      const options = question.options || [
+                        question.optionA || 'Option A',
+                        question.optionB || 'Option B',
+                        question.optionC || 'Option C',
+                        question.optionD || 'Option D'
+                      ];
+                      
+                      return (
+                        <React.Fragment key={`question-${questionId}`}>
+                          {qIndex > 0 && <Divider />}
+                          <ListItem sx={{ 
+                            flexDirection: 'column', 
+                            alignItems: 'flex-start',
+                            p: 2,
+                            backgroundColor: qIndex % 2 === 0 ? 'rgba(0,0,0,0.02)' : 'transparent'
+                          }}>
+                            <Box sx={{ width: '100%', display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                              <Typography variant="subtitle1" sx={{ fontWeight: 'medium' }}>
+                                Question {qIndex + 1}
+                              </Typography>
+                              {playerAnswer && (
+                                <Chip 
+                                  size="small"
+                                  label={playerAnswer.isCorrect ? "Correct" : "Incorrect"}
+                                  color={playerAnswer.isCorrect ? "success" : "error"}
+                                />
+                              )}
+                            </Box>
+                            
+                            <Typography variant="body1" sx={{ mb: 1 }}>
+                              {question.question || question.text || `Question #${qIndex + 1}`}
+                            </Typography>
+                            
+                            <Box sx={{ display: 'grid', gridTemplateColumns: {xs: '1fr', sm: '1fr 1fr'}, width: '100%', gap: 1 }}>
+                              {options.map((option: string, i: number) => (
+                                <Box 
+                                  key={`option-${i}`}
+                                  sx={{ 
+                                    p: 1.5, 
+                                    borderRadius: 1,
+                                    border: '1px solid',
+                                    borderColor: 
+                                      i === correctAnswerIndex ? 'success.main' : 
+                                      (i === answerIndex && i !== correctAnswerIndex) ? 'error.main' : 
+                                      'divider',
+                                    backgroundColor: 
+                                      i === correctAnswerIndex ? 'success.light' : 
+                                      (i === answerIndex && i !== correctAnswerIndex) ? 'error.light' : 
+                                      'transparent',
+                                    opacity: 
+                                      i === correctAnswerIndex || i === answerIndex ? 1 : 0.7,
+                                    display: 'flex',
+                                    alignItems: 'center'
+                                  }}
+                                >
+                                  <Typography variant="body2" sx={{ ml: 1 }}>
+                                    {String.fromCharCode(65 + i)}. {option}
+                                  </Typography>
+                                </Box>
+                              ))}
+                            </Box>
+                            
+                            {playerAnswer && (
+                              <Typography variant="body2" sx={{ mt: 1, color: 'text.secondary' }}>
+                                Response time: {playerAnswer.responseTime}s
+                              </Typography>
+                            )}
+                          </ListItem>
+                        </React.Fragment>
+                      );
+                    });
+                  })()}
+                </List>
+              ) : (
+                <Box sx={{ p: 3, textAlign: 'center' }}>
+                  <Typography>No answer data available</Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                    Answer data could not be retrieved from the server.
+                  </Typography>
+                </Box>
+              )}
+            </Paper>
+
             {/* Action buttons */}
             <Box sx={{ mt: 4, display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, justifyContent: 'center', gap: 2 }}>
               <Button
@@ -702,4 +1081,4 @@ export default function GameResultsPage() {
       </Container>
     </PublicLayout>
   );
-} 
+}

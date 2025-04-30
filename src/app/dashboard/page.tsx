@@ -346,6 +346,15 @@ function Dashboard() {
       const response = await quizService.createQuiz(defaultQuizData);
       console.log("Default quiz created successfully:", response);
 
+      // Fetch and store user quizzes for display in my-sets page
+      try {
+        await quizService.fetchAndStoreMyQuizzes();
+        console.log("User quizzes fetched and stored in sessionStorage");
+      } catch (fetchError) {
+        console.error("Error fetching user quizzes:", fetchError);
+        // Continue with the main flow even if this fails
+      }
+
       // Show success notification
       setNotificationMessage("Quiz created successfully! Redirecting to editor...");
       setNotificationType("success");

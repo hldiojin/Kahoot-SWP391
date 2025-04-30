@@ -134,8 +134,10 @@ const GameCard: React.FC<GameCardProps> = ({
   };
 
   // Generate a gradient background based on the title (for consistency)
-  const generateGradient = (title: string) => {
-    const hash = title.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  const generateGradient = (title: string | number | null | undefined) => {
+    // Convert title to string and provide a fallback if it's not a valid string
+    const titleStr = typeof title === 'string' ? title : String(title || 'Default Title');
+    const hash = titleStr.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
     const hue1 = hash % 360;
     const hue2 = (hue1 + 60) % 360;
     return `linear-gradient(135deg, hsl(${hue1}, 80%, 55%) 0%, hsl(${hue2}, 80%, 50%) 100%)`;

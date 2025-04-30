@@ -146,8 +146,6 @@ const OPTION_COLORS = [
 const OPTION_SHAPES = ['▲', '◆', '●', '■'];
 
 export default function GamePage() {
-  // ...existing code...
-  
   const router = useRouter();
   const searchParams = useSearchParams();
   const quizCode = searchParams.get('code');
@@ -186,7 +184,6 @@ export default function GamePage() {
     points: 100
   };
 
-  // Load game data
   useEffect(() => {
     const loadGame = async () => {
       try {
@@ -194,61 +191,41 @@ export default function GamePage() {
           throw new Error('No quiz code provided');
         }
 
-        // Fetch player info from session storage
         const playerInfoStr = sessionStorage.getItem('currentPlayer');
         if (!playerInfoStr) {
           throw new Error('No player information found. Please join the game first.');
         }
 
-        // Parse player info
         const playerData = JSON.parse(playerInfoStr);
         setPlayerInfo(playerData);
-        console.log('Player info loaded:', playerData);
 
-        // Fetch quiz data - sử dụng API đúng
-        console.log('Fetching quiz data for code:', quizCode);
-        
         try {
-          // Bước 1: Lấy thông tin quiz bằng quizCode
           const quizResponse = await fetch(
             `https://kahootclone-f7hkd0hwafgbfrfa.southeastasia-01.azurewebsites.net/api/Quiz/QuizCode/${quizCode}`
           );
           const quizResponseData = await quizResponse.json();
           
-          console.log('Quiz API response:', quizResponseData);
-          
           if (quizResponseData && quizResponseData.status === 200 && quizResponseData.data) {
             const quizInfo = quizResponseData.data;
-            console.log('Quiz info loaded:', quizInfo);
             
-            // Bước 2: Lấy câu hỏi bằng quizId
             const quizId = quizInfo.id;
-            console.log(`Fetching questions for quiz ID: ${quizId}`);
             
-            // Sử dụng API endpoint đã hoạt động
             const questionsResponse = await fetch(
               `https://kahootclone-f7hkd0hwafgbfrfa.southeastasia-01.azurewebsites.net/api/questions/quiz/${quizId}`
             );
             const questionsResponseData = await questionsResponse.json();
             
-            console.log('Questions API response:', questionsResponseData);
-            
-            // Kiểm tra và xử lý câu hỏi
             if (questionsResponseData && questionsResponseData.status === 200 && Array.isArray(questionsResponseData.data)) {
               const rawQuestions = questionsResponseData.data;
-              console.log(`Retrieved ${rawQuestions.length} questions for quiz ${quizId}`);
               
-              // Sắp xếp câu hỏi theo arrange field
               const sortedQuestions = [...rawQuestions].sort((a, b) => a.arrange - b.arrange);
-              console.log('Questions sorted by arrange field:', sortedQuestions);
               
-              // Format câu hỏi để hiển thị trong game
               const formattedQuestions = sortedQuestions.map(q => {
-                // Xác định đáp án đúng dựa trên trường isCorrect (A, B, C, D)
+                const questionId = typeof q.id === 'string' ? parseInt(q.id, 10) : q.id;
+                
                 const correctAnswerIndex = q.isCorrect ? 
                   q.isCorrect.charCodeAt(0) - 'A'.charCodeAt(0) : 0;
                 
-                // Chuẩn bị các options
                 const options = [
                   q.optionA && q.optionA.trim() !== "" ? q.optionA.trim() : `Option A`,
                   q.optionB && q.optionB.trim() !== "" ? q.optionB.trim() : `Option B`,
@@ -257,7 +234,7 @@ export default function GamePage() {
                 ];
                 
                 return {
-                  id: q.id,
+                  id: questionId,
                   question: q.text || 'Question',
                   options: options,
                   correctAnswer: correctAnswerIndex,
@@ -266,30 +243,24 @@ export default function GamePage() {
                 };
               });
               
-              // Cập nhật thông tin quiz với câu hỏi đã định dạng
               const completeQuizData = {
                 ...quizInfo,
                 questions: formattedQuestions
               };
               
-              console.log('Processed quiz data with questions:', completeQuizData);
               setQuizData(completeQuizData);
             } else {
-              console.warn('No questions found for quiz:', quizId);
               throw new Error('No questions found for this quiz.');
             }
           } else {
-            console.warn('Failed to load quiz with code:', quizCode);
             throw new Error('Quiz not found. Please check the quiz code.');
           }
         } catch (apiError) {
-          console.error('Error fetching quiz data:', apiError);
           throw new Error('Failed to load quiz data. Please check the quiz code.');
         }
 
         setLoading(false);
       } catch (error) {
-        console.error('Error loading game:', error);
         setError(error instanceof Error ? error.message : 'An unknown error occurred');
         setLoading(false);
       }
@@ -298,20 +269,14 @@ export default function GamePage() {
     loadGame();
   }, [quizCode]);
 
-  // Set current question when quiz data is loaded or question index changes
   useEffect(() => {
     if (quizData && quizData.questions && quizData.questions.length > 0) {
       if (currentQuestionIndex < quizData.questions.length) {
         setCurrentQuestion(quizData.questions[currentQuestionIndex]);
       } else {
-        // All questions answered, show final results
         setShowResults(true);
       }
     } else {
-      // If no questions loaded from API, use hardcoded data
-      console.log("Using hardcoded question data since API data is missing");
-      
-      // Create a minimal quiz structure with our hardcoded question
       const demoQuiz = {
         title: "Demo Quiz",
         description: "This is a demo quiz with hardcoded questions",
@@ -324,7 +289,6 @@ export default function GamePage() {
     }
   }, [quizData, currentQuestionIndex, hardcodedQuestion]);
 
-  // Timer effect for current question
   useEffect(() => {
     if (!gameStarted || showResults || !currentQuestion || isFeedbackShown) return;
 
@@ -348,167 +312,42 @@ export default function GamePage() {
     return () => clearInterval(timerInterval);
   }, [currentQuestion, gameStarted, showResults, isFeedbackShown]);
 
-  // Function to start the game
-  const startGame = () => {
-    setGameStarted(true);
-    setCurrentQuestionIndex(0);
-    setScore(0);
-    setAnswersRecord([]);
-  };
-
-  // Handle when time runs out for a question
-  const handleTimeUp = () => {
-    if (selectedAnswer === null) {
-      // Time's up without an answer
-      setIsCorrect(false);
-      setSubmittedAnswer(null);
+  useEffect(() => {
+    if (showResults) {
+      const stats = calculateStats();
       
-      // No answer selected, send -1 as answer index
-      showFeedback(-1, false, currentQuestion?.timeLimit || DEFAULT_TIMER_DURATION);
-    }
-  };
-
-  // Handle selecting an answer
-  const handleSelectAnswer = (answerIndex: number) => {
-    if (submittedAnswer !== null || isFeedbackShown) return;
-    
-    setSelectedAnswer(answerIndex);
-    setSubmittedAnswer(answerIndex);
-    
-    // Calculate answer time
-    const timeTaken = Math.floor((Date.now() - questionStartTime) / 1000);
-    setAnswerTime(timeTaken);
-    
-    // Check if answer is correct
-    const isAnswerCorrect = answerIndex === currentQuestion.correctAnswer;
-    setIsCorrect(isAnswerCorrect);
-    
-    // Show feedback
-    showFeedback(answerIndex, isAnswerCorrect, timeTaken);
-    
-    // Calculate score (more points for faster answers)
-    if (isAnswerCorrect) {
-      const timeBonus = Math.max(0, timeLeft) * 10;
-      const questionScore = 1000 + timeBonus;
-      setScore(prev => prev + questionScore);
-    }
-  };
-
-  // Update the showFeedback function to better handle player IDs
-  const showFeedback = (answerIndex: number, isCorrect: boolean, timeTaken: number) => {
-    setIsFeedbackShown(true);
-    
-    // Save the answer to the API
-    if (playerInfo) {
-      try {
-        // Convert answer index to letter (A, B, C, D)
-        // Use 'T' for timeout (no answer)
-        const answerLetter = answerIndex >= 0 ? 
-          String.fromCharCode(65 + answerIndex) : // A=65, B=66, etc.
-          'T'; // T for Timeout/no answer
-        
-        // Get player ID from stored info and ensure it's a valid number
-        const playerId = playerInfo.id || playerInfo.playerId;
-        
-        // Only proceed if we have a valid player ID and question ID
-        if (playerId && currentQuestion?.id) {
-          console.log(`Submitting answer: Player=${playerId}, Question=${currentQuestion.id}, Answer=${answerLetter}, Correct=${isCorrect}`);
-          
-          // Create answer data
-          const answerData = {
-            id: 0,
-            playerId: parseInt(playerId),
-            questionId: parseInt(currentQuestion.id),
-            answeredAt: new Date().toISOString(),
-            isCorrect: isCorrect,
-            responseTime: timeTaken,
-            answer: answerLetter
-          };
-          
-          // Try direct API call for reliability
-          axios.post(
-            'https://kahootclone-f7hkd0hwafgbfrfa.southeastasia-01.azurewebsites.net/api/PlayerAnswer',
-            answerData,
-            {
-              headers: {
-                'Content-Type': 'application/json'
-              }
-            }
-          ).then(response => {
-            console.log("Answer submitted successfully:", response.data);
-          }).catch(error => {
-            console.error("Error submitting answer to API:", error);
-          });
-        } else {
-          console.warn("Cannot submit answer: Missing player ID or question ID", { 
-            playerId, 
-            questionId: currentQuestion?.id 
-          });
-        }
-      } catch (error) {
-        console.error("Error preparing answer submission:", error);
-      }
-    }
-    
-    setTimeout(() => {
-      setShowCorrectAnswer(true);
+      const playerInfoStr = sessionStorage.getItem('currentPlayer');
+      const playerInfo = playerInfoStr ? JSON.parse(playerInfoStr) : null;
       
-      // Record the answer
-      setAnswersRecord(prev => [...prev, {
-        questionIndex: currentQuestionIndex,
-        selectedAnswer: answerIndex,
-        isCorrect: answerIndex === currentQuestion.correctAnswer,
-        timeTaken: answerTime,
-        correctAnswer: currentQuestion.correctAnswer
-      }]);
+      const gameResults = {
+        score: stats.totalScore,
+        correctAnswers: stats.correctAnswers,
+        totalQuestions: stats.totalQuestions,
+        accuracy: stats.accuracy,
+        player: {
+          name: playerInfo?.name || 'Player',
+          avatar: playerInfo?.avatar || 'dog',
+          id: playerInfo?.id || playerInfo?.playerId || 0
+        },
+        answers: answersRecord,
+        quizId: quizData?.id || 0
+      };
       
-      // Wait before moving to next question
-      setTimeout(() => {
-        setWaitingState(true);
-        // Simulate others answering
-        setTimeout(() => {
-          moveToNextQuestion();
-        }, 2000);
-      }, 2000);
-    }, 1000);
-  };
-
-  // Move to the next question
-  const moveToNextQuestion = () => {
-    setSelectedAnswer(null);
-    setSubmittedAnswer(null);
-    setIsCorrect(null);
-    setShowCorrectAnswer(false);
-    setIsFeedbackShown(false);
-    setWaitingState(false);
-    
-    if (currentQuestionIndex < quizData.questions.length - 1) {
-      setCurrentQuestionIndex(prev => prev + 1);
-    } else {
-      // Show final results
-      setShowResults(true);
+      sessionStorage.setItem('gameResults', JSON.stringify([{
+        name: playerInfo?.name || 'Player',
+        score: stats.totalScore,
+        correctAnswers: stats.correctAnswers,
+        totalQuestions: stats.totalQuestions,
+        timeBonus: Math.floor(stats.totalScore / 10),
+        averageAnswerTime: answersRecord.reduce((sum, a) => sum + a.timeTaken, 0) / answersRecord.length,
+        avatar: playerInfo?.avatar || 'dog',
+        group: playerInfo?.team || null
+      }]));
+      
+      router.push('/game-results');
     }
-  };
+  }, [showResults, answersRecord, quizData, router]);
 
-  // Exit the game
-  const exitGame = () => {
-    router.push('/');
-  };
-
-  // Play again
-  const playAgain = () => {
-    // Reset the game state
-    setGameStarted(false);
-    setShowResults(false);
-    setCurrentQuestionIndex(0);
-    setScore(0);
-    setAnswersRecord([]);
-    setSelectedAnswer(null);
-    setSubmittedAnswer(null);
-    setIsCorrect(null);
-  };
-
-  // Calculate stats for results screen
   const calculateStats = () => {
     const correctAnswers = answersRecord.filter(a => a.isCorrect).length;
     const totalQuestions = quizData?.questions?.length || 0;
@@ -522,7 +361,170 @@ export default function GamePage() {
     };
   };
 
-  // LOADING SCREEN
+  const handleSelectAnswer = (index: number) => {
+    if (submittedAnswer !== null || isFeedbackShown) return;
+    
+    setSelectedAnswer(index);
+    setSubmittedAnswer(index);
+    
+    // Calculate elapsed time
+    const elapsedTime = Math.min(
+      (Date.now() - questionStartTime) / 1000,
+      currentQuestion.timeLimit || DEFAULT_TIMER_DURATION
+    );
+    setAnswerTime(parseFloat(elapsedTime.toFixed(1)));
+    
+    // Check if answer is correct
+    const isAnswerCorrect = index === currentQuestion.correctAnswer;
+    setIsCorrect(isAnswerCorrect);
+    
+    // Calculate points based on speed and correctness
+    const pointsForQuestion = currentQuestion.points || 100;
+    const timeRatio = elapsedTime / (currentQuestion.timeLimit || DEFAULT_TIMER_DURATION);
+    const timeMultiplier = 1 - timeRatio * 0.5; // Max multiplier is 1, min is 0.5
+    
+    let pointsEarned = 0;
+    if (isAnswerCorrect) {
+      pointsEarned = Math.round(pointsForQuestion * timeMultiplier);
+      setScore(prevScore => prevScore + pointsEarned);
+    }
+    
+    // Show feedback UI
+    setIsFeedbackShown(true);
+    
+    // Convert index to letter (A, B, C, D)
+    const answerLetter = String.fromCharCode(65 + index);
+    
+    // Save answer to API
+    try {
+      // Extract playerId more carefully
+      const playerInfoStr = sessionStorage.getItem('currentPlayer');
+      if (playerInfoStr) {
+        const playerInfoObj = JSON.parse(playerInfoStr);
+        // Use the first available ID property
+        const playerId = playerInfoObj.id || playerInfoObj.playerId || playerInfo.id || playerInfo.playerId;
+        
+        if (playerId && currentQuestion?.id) {
+          console.log(`Submitting answer using player ID: ${playerId} and question ID: ${currentQuestion.id}`);
+          
+          // Use the service to submit the answer
+          playerService.submitAnswer(
+            parseInt(String(playerId)),
+            parseInt(String(currentQuestion.id)),
+            isAnswerCorrect,
+            elapsedTime,
+            answerLetter
+          )
+          .then(response => {
+            console.log("Answer submitted successfully:", response);
+          })
+          .catch(error => {
+            console.error("Error submitting answer:", error);
+          });
+        }
+      }
+    } catch (error) {
+      console.error("Error preparing answer submission:", error);
+    }
+    
+    // Record the answer for final stats
+    setAnswersRecord(prev => [...prev, {
+      questionIndex: currentQuestionIndex,
+      selectedAnswer: index,
+      isCorrect: isAnswerCorrect,
+      timeTaken: elapsedTime,
+      correctAnswer: currentQuestion.correctAnswer
+    }]);
+    
+    // Show correct answer after a delay
+    setTimeout(() => {
+      setShowCorrectAnswer(true);
+      
+      // Wait before moving to next question
+      setTimeout(() => {
+        setWaitingState(true);
+        // Simulate others answering
+        setTimeout(() => {
+          moveToNextQuestion();
+        }, 2000);
+      }, 2000);
+    }, 1000);
+  };
+
+  const handleTimeUp = () => {
+    // Handle when time runs out (player didn't select an answer)
+    setIsFeedbackShown(true);
+    setIsCorrect(false);
+    
+    try {
+      // Extract playerId more carefully
+      const playerInfoStr = sessionStorage.getItem('currentPlayer');
+      if (playerInfoStr) {
+        const playerInfoObj = JSON.parse(playerInfoStr);
+        // Use the first available ID property
+        const playerId = playerInfoObj.id || playerInfoObj.playerId || playerInfo.id || playerInfo.playerId;
+        
+        if (playerId && currentQuestion?.id) {
+          console.log(`Submitting timeout answer using player ID: ${playerId} and question ID: ${currentQuestion.id}`);
+          
+          // Use the service to submit a timeout answer ('T' for timeout)
+          playerService.submitTimeoutAnswer(
+            parseInt(String(playerId)),
+            parseInt(String(currentQuestion.id)),
+            currentQuestion.timeLimit || DEFAULT_TIMER_DURATION
+          )
+          .then(response => {
+            console.log("Timeout answer submitted successfully:", response);
+          })
+          .catch(error => {
+            console.error("Error submitting timeout answer:", error);
+          });
+        }
+      }
+    } catch (error) {
+      console.error("Error preparing timeout answer submission:", error);
+    }
+    
+    // Record the timeout for final stats
+    setAnswersRecord(prev => [...prev, {
+      questionIndex: currentQuestionIndex,
+      selectedAnswer: null,
+      isCorrect: false,
+      timeTaken: currentQuestion.timeLimit || DEFAULT_TIMER_DURATION,
+      correctAnswer: currentQuestion.correctAnswer
+    }]);
+    
+    // Show correct answer after a delay
+    setTimeout(() => {
+      setShowCorrectAnswer(true);
+      
+      // Wait before moving to next question
+      setTimeout(() => {
+        setWaitingState(true);
+        setTimeout(() => {
+          moveToNextQuestion();
+        }, 2000);
+      }, 2000);
+    }, 1000);
+  };
+
+  const moveToNextQuestion = () => {
+    // Reset states for next question
+    setSelectedAnswer(null);
+    setSubmittedAnswer(null);
+    setIsCorrect(null);
+    setIsFeedbackShown(false);
+    setShowCorrectAnswer(false);
+    setWaitingState(false);
+    
+    // Move to next question or end quiz
+    if (currentQuestionIndex + 1 < (quizData?.questions?.length || 0)) {
+      setCurrentQuestionIndex(prev => prev + 1);
+    } else {
+      setShowResults(true);
+    }
+  };
+
   if (loading) {
     return (
       <PublicLayout>
@@ -540,7 +542,6 @@ export default function GamePage() {
     );
   }
 
-  // ERROR SCREEN
   if (error) {
     return (
       <PublicLayout>
@@ -572,7 +573,6 @@ export default function GamePage() {
     );
   }
 
-  // GAME LOBBY SCREEN
   if (!gameStarted) {
     return (
       <PublicLayout>
@@ -636,7 +636,7 @@ export default function GamePage() {
             <Button
               variant="contained"
               size="large"
-              onClick={startGame}
+              onClick={() => setGameStarted(true)}
               sx={{
                 px: 6,
                 py: 1.5,
@@ -657,178 +657,23 @@ export default function GamePage() {
     );
   }
 
-  // RESULTS SCREEN
   if (showResults) {
-    const stats = calculateStats();
-    
     return (
       <PublicLayout>
-        <Container maxWidth="md" sx={{ py: 4 }}>
-          <Paper
-            elevation={3}
-            sx={{
-              p: 4,
-              borderRadius: 3,
-              textAlign: 'center',
-              background: 'linear-gradient(to right, #11998e, #38ef7d)',
-              color: 'white'
-            }}
-          >
-            <Box sx={{ mb: 4 }}>
-              <TrophyIcon sx={{ fontSize: 60, color: '#FFD700', mb: 2 }} />
-              <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
-                Game Complete!
-              </Typography>
-            </Box>
-            
-            <Box sx={{ mb: 4 }}>
-              <Typography variant="h5" gutterBottom>
-                Your Score: {stats.totalScore}
-              </Typography>
-              
-              <Box sx={{ 
-                display: 'flex', 
-                justifyContent: 'center', 
-                gap: 2, 
-                flexWrap: 'wrap',
-                mb: 3
-              }}>
-                <Chip 
-                  label={`${stats.correctAnswers}/${stats.totalQuestions} Correct`} 
-                  icon={<CorrectIcon />}
-                  sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: 'white' }}
-                />
-                <Chip 
-                  label={`${stats.accuracy}% Accuracy`} 
-                  sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: 'white' }}
-                />
-              </Box>
-              
-              <Box sx={{ display: 'flex', justifyContent: 'center', mb: 3 }}>
-                <CustomAnimal 
-                  animal={playerInfo?.avatar || 'fox'} 
-                  size="120px"
-                  showBorder
-                />
-              </Box>
-              
-              <Typography variant="h6">
-                {playerInfo?.name || 'Player'}
-              </Typography>
-              {playerInfo?.team && (
-                <Typography variant="body1" sx={{ opacity: 0.8, mt: 1 }}>
-                  Team: {playerInfo.team}
-                </Typography>
-              )}
-            </Box>
-            
-            {/* Button Group - replacing Grid */}
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 2 }}>
-              <Box sx={{ width: { xs: '100%', sm: '45%', md: '30%' }, minWidth: '180px' }}>
-                <Button
-                  fullWidth
-                  variant="contained"
-                  onClick={playAgain}
-                  sx={{
-                    py: 1.5,
-                    bgcolor: 'white',
-                    color: '#11998e',
-                    '&:hover': {
-                      bgcolor: 'rgba(255,255,255,0.9)',
-                    }
-                  }}
-                >
-                  Play Again
-                </Button>
-              </Box>
-              <Box sx={{ width: { xs: '100%', sm: '45%', md: '30%' }, minWidth: '180px' }}>
-                <Button
-                  fullWidth
-                  variant="outlined"
-                  onClick={exitGame}
-                  sx={{
-                    py: 1.5,
-                    borderColor: 'white',
-                    color: 'white',
-                    '&:hover': {
-                      borderColor: 'white',
-                      bgcolor: 'rgba(255,255,255,0.1)',
-                    }
-                  }}
-                >
-                  Exit
-                </Button>
-              </Box>
-            </Box>
-          </Paper>
-          
-          {/* Answer Summary */}
-          <Paper
-            elevation={2}
-            sx={{
-              p: 3,
-              borderRadius: 3,
-              mt: 3
-            }}
-          >
-            <Typography variant="h6" gutterBottom sx={{ fontWeight: 'bold' }}>
-              Questions Summary
-            </Typography>
-            
-            <Box sx={{ maxHeight: '400px', overflow: 'auto', pr: 1 }}>
-              {answersRecord.map((record, index) => {
-                const question = quizData?.questions[record.questionIndex];
-                return (
-                  <Paper 
-                    key={index}
-                    variant="outlined"
-                    sx={{ 
-                      p: 2, 
-                      mb: 2,
-                      borderColor: record.isCorrect ? '#4caf50' : '#f44336',
-                      borderLeft: '4px solid',
-                      borderLeftColor: record.isCorrect ? '#4caf50' : '#f44336' 
-                    }}
-                  >
-                    <Box sx={{ display: 'flex', alignItems: 'flex-start' }}>
-                      {record.isCorrect ? (
-                        <CorrectIcon color="success" sx={{ mr: 1, mt: 0.5 }} />
-                      ) : (
-                        <WrongIcon color="error" sx={{ mr: 1, mt: 0.5 }} />
-                      )}
-                      <Box>
-                        <Typography variant="subtitle1" sx={{ fontWeight: 'medium' }}>
-                          Q{index + 1}: {question?.question || 'Question'}
-                        </Typography>
-                        
-                        <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                          Your answer: {record.selectedAnswer !== -1 
-                            ? question?.options[record.selectedAnswer] || 'No answer' 
-                            : 'No answer (time up)'}
-                        </Typography>
-                        
-                        {!record.isCorrect && (
-                          <Typography variant="body2" color="success.main" sx={{ mt: 0.5 }}>
-                            Correct answer: {question?.options[record.correctAnswer] || 'Unknown'}
-                          </Typography>
-                        )}
-                        
-                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-                          Time taken: {record.timeTaken}s
-                        </Typography>
-                      </Box>
-                    </Box>
-                  </Paper>
-                );
-              })}
-            </Box>
-          </Paper>
-        </Container>
+        <Box sx={{ 
+          display: 'flex', 
+          flexDirection: 'column',
+          justifyContent: 'center', 
+          alignItems: 'center', 
+          minHeight: '70vh' 
+        }}>
+          <CircularProgress size={60} sx={{ mb: 3 }} />
+          <Typography variant="h6">Loading results...</Typography>
+        </Box>
       </PublicLayout>
     );
   }
 
-  // MAIN GAME SCREEN
   return (
     <Box sx={{ 
       minHeight: '100vh', 
@@ -838,7 +683,6 @@ export default function GamePage() {
       backgroundImage: 'linear-gradient(to bottom right, #46178f, #9a42fe)',
       color: 'white'
     }}>
-      {/* Timer Bar */}
       <LinearProgress 
         variant="determinate" 
         value={timerPercentage} 
@@ -850,7 +694,6 @@ export default function GamePage() {
         }} 
       />
       
-      {/* Game Header */}
       <Box sx={{ 
         p: 2, 
         display: 'flex', 
@@ -894,7 +737,6 @@ export default function GamePage() {
         </Box>
       </Box>
       
-      {/* Question Area */}
       <Container maxWidth="md" sx={{ py: 3 }}>
         <motion.div
           initial={{ y: -20, opacity: 0 }}
@@ -925,7 +767,6 @@ export default function GamePage() {
               {currentQuestion?.question || 'Loading question...'}
             </Typography>
             
-            {/* Points info */}
             <Box sx={{ 
               position: 'absolute',
               top: 10,
@@ -947,7 +788,6 @@ export default function GamePage() {
           </Paper>
         </motion.div>
         
-        {/* Answer Options - Kahoot style */}
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 3 }}>
           {currentQuestion?.options?.map((option: string, index: number) => (
             <motion.div
@@ -981,20 +821,17 @@ export default function GamePage() {
                     boxShadow: `0 12px 20px ${OPTION_COLORS[index].shadow}`,
                   },
                   transition: 'all 0.2s',
-                  // Highlight selected answer
                   ...(submittedAnswer === index && {
                     boxShadow: `0 0 0 4px white, 0 0 0 8px ${OPTION_COLORS[index].bg}`,
                   }),
-                  // Show correct/incorrect state
                   ...(showCorrectAnswer && {
                     bgcolor: index === currentQuestion.correctAnswer 
-                      ? '#4caf50' // Green for correct
-                      : submittedAnswer === index ? '#f44336' : OPTION_COLORS[index].bg, // Red for selected wrong answer
+                      ? '#4caf50'
+                      : submittedAnswer === index ? '#f44336' : OPTION_COLORS[index].bg,
                     opacity: index !== currentQuestion.correctAnswer && index !== submittedAnswer ? 0.7 : 1
                   })
                 }}
               >
-                {/* Shape icon */}
                 <Box
                   sx={{
                     mr: 2,
@@ -1013,10 +850,9 @@ export default function GamePage() {
                 </Box>
                 
                 <Box sx={{ flex: 1, textAlign: 'left', pr: 3 }}>
-                  {`${String.fromCharCode(65 + index)}: ${option || `Option ${String.fromCharCode(65 + index)}`}`} {/* Always show A, B, C, D prefixes */}
+                  {`${String.fromCharCode(65 + index)}: ${option || `Option ${String.fromCharCode(65 + index)}`}`}
                 </Box>
                 
-                {/* Correct answer indicator with improved visibility */}
                 {showCorrectAnswer && index === currentQuestion.correctAnswer && (
                   <Box
                     sx={{
@@ -1037,7 +873,6 @@ export default function GamePage() {
                   </Box>
                 )}
                 
-                {/* Selected answer indicator */}
                 {submittedAnswer === index && !showCorrectAnswer && (
                   <Box
                     sx={{
@@ -1067,7 +902,6 @@ export default function GamePage() {
         </Box>
       </Container>
       
-      {/* Feedback Dialog */}
       <Dialog
         open={isFeedbackShown}
         TransitionComponent={Slide}

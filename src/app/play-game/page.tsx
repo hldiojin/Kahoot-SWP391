@@ -35,71 +35,60 @@ import quizService from '@/services/quizService';
 import groupService from '@/services/groupService';
 import playerService from '@/services/playerService';
 import questionService from '@/services/questionService';
-// import Animal from 'react-animals';
+import dynamic from 'next/dynamic';
+
+// Import Animal component with dynamic import to avoid SSR issues
+const Animal = dynamic(() => import('react-animals'), { ssr: false });
 
 // Constants for the application
 const DEFAULT_TEAM_NAMES = ["Red Team", "Blue Team", "Green Team", "Yellow Team"];
-const ANIMALS = ["bear", "bird", "cat", "dog", "duck", "elephant", "fox", "frog", "hippo", "koala", "lion", "monkey", "panda", "rabbit", "tiger", "zebra"];
+const ANIMALS = ["alligator", "beaver", "dolphin", "elephant", "fox", "penguin", "tiger", "turtle"]; // Use animals supported by the library
 
 // Map animals to colors for visual consistency
 const animalColorMap = {
-  bear: "brown",
-  bird: "blue",
-  cat: "purple", 
-  dog: "red",
-  duck: "yellow",
-  elephant: "gray",
+  alligator: "green",
+  beaver: "red",
+  dolphin: "blue",
+  elephant: "purple", // Changed from gray to purple
   fox: "orange",
-  frog: "green",
-  hippo: "purple",
-  koala: "gray",
-  lion: "yellow",
-  monkey: "brown",
-  panda: "black",
-  rabbit: "pink",
-  tiger: "orange",
-  zebra: "black"
+  penguin: "purple",
+  tiger: "yellow",
+  turtle: "green"
 };
 
-// Custom Animal component wrapper to handle errors silently
+// Valid colors for the react-animals library
+const VALID_COLORS = ["red", "blue", "green", "yellow", "orange", "purple", "pink", "brown"];
+
+// Replace your AnimalAvatar component with this one
 function AnimalAvatar({ name, color }: { name: string; color?: string }) {
-  // Define the valid animal names type
-  type AnimalName = keyof typeof animalColorMap;
-  
   // Determine if the provided name is a valid animal name
   const isValidAnimal = ANIMALS.includes(name);
-  const animalName = isValidAnimal ? name : 'dog'; // Fallback to dog if invalid
+  const animalName = isValidAnimal ? name : 'alligator'; // Fallback to alligator if invalid
   
-  // Safe to access the animalColorMap with a validated key
-  const animalColor = color || animalColorMap[animalName as AnimalName] || 'gray';
+  // Use color from props or from the map, ensuring it's valid
+  const mappedColor = animalColorMap[animalName as keyof typeof animalColorMap];
+  let animalColor = color || mappedColor || 'orange';
+  
+  // Make sure color is valid
+  if (!VALID_COLORS.includes(animalColor)) {
+    console.warn(`Color '${animalColor}' may not be valid for react-animals. Using 'orange' instead.`);
+    animalColor = 'orange'; // Fallback to a known valid color
+  }
 
   return (
-    <div style={{ 
-      backgroundColor: animalColor,
-      padding: '10px',
-      borderRadius: '50%',
+    <Box sx={{ 
+      width: '100%', 
+      height: '100%', 
       display: 'flex',
       justifyContent: 'center',
-      alignItems: 'center',
-      width: '100%',
-      height: '100%',
-      boxShadow: '0 3px 6px rgba(0,0,0,0.16)'
+      alignItems: 'center' 
     }}>
-      <div style={{
-        width: '80%',
-        height: '80%',
-        backgroundColor: '#fff',
-        borderRadius: '50%',
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        fontWeight: 'bold',
-        fontSize: '24px',
-        color: animalColor
-      }}>
-        {animalName.charAt(0).toUpperCase()}
-      </div>
-    </div>
+      <Animal
+        name={animalName}
+        color={animalColor}
+        size="100%"
+      />
+    </Box>
   );
 }
 
@@ -242,34 +231,15 @@ export default function PlayGamePage() {
     setSelectedTeam(event.target.value);
   };
   
+  // Update the handleAnimalChange function
   const handleAnimalChange = (animal: string) => {
     // Ensure the animal is supported by react-animals
-    const supportedAnimals = ["bear", "bird", "cat", "dog", "duck", "elephant", "fox", "frog", "hippo", "koala", "lion", "monkey", "panda", "rabbit", "tiger", "zebra"];
-    const validAnimal = supportedAnimals.includes(animal) ? animal : 'dog';
+    const validAnimal = ANIMALS.includes(animal) ? animal : 'alligator';
     
     setSelectedAnimal(validAnimal);
     
-    // Select a matching color for the animal
-    const animalColors: Record<string, string> = {
-      bear: "#8B4513",
-      bird: "#1E90FF",
-      cat: "#9C27B0", 
-      dog: "#FF3355",
-      duck: "#FFD700",
-      elephant: "#808080",
-      fox: "#FF9500",
-      frog: "#4CAF50",
-      hippo: "#673AB7",
-      koala: "#9E9E9E",
-      lion: "#FFCC00",
-      monkey: "#A0522D",
-      panda: "#212121",
-      rabbit: "#F48FB1",
-      tiger: "#FF5722",
-      zebra: "#212121"
-    };
-    
-    setSelectedColor(animalColors[validAnimal.toLowerCase()] || "#44BBFF");
+    // Set the color from our animal color map
+    setSelectedColor(animalColorMap[validAnimal as keyof typeof animalColorMap] || 'orange');
   };
 
   const handleStartGame = async () => {
@@ -329,7 +299,7 @@ export default function PlayGamePage() {
         // Create player data object
         const playerData = playerService.formatPlayerData(
           playerName,
-          gameData.id, // Using quizId as sessionId for now
+          gameData.id,
           selectedAnimal,
           selectedColor,
           user?.id ? parseInt(user.id) : 0
@@ -338,106 +308,35 @@ export default function PlayGamePage() {
         console.log("Formatted player data:", playerData);
         
         // Create player in the backend
-        const playerResponse = await playerService.createPlayer(playerData)
-          .catch(error => {
-            console.error("Error creating player with service:", error);
-            if (error.response) {
-              console.error("Server response:", error.response.status, error.response.data);
-            }
-            return null;
-          });
+        const playerResponse = await playerService.createPlayer(playerData);
         
-        if (playerResponse) {
+        if (playerResponse && playerResponse.data && playerResponse.data.id) {
           console.log("Player created successfully:", playerResponse);
           
-          // Store the player ID in session data if available
-          if (playerResponse.data && playerResponse.data.id) {
-            const createdPlayerId = playerResponse.data.id;
-            console.log("Player ID from API:", createdPlayerId);
-            
-            // Update player information with ID
-            const playerInfoWithId = {
-              ...newPlayerInfo,
-              id: createdPlayerId,
-              playerId: createdPlayerId,
-              playerCode: playerResponse.data.playerCode || Math.floor(100000 + Math.random() * 900000)
-            };
-            
-            // Save to sessionStorage
-            sessionStorage.setItem('currentPlayer', JSON.stringify(playerInfoWithId));
-          }
+          // Update player information with ID
+          const playerInfoWithId = {
+            ...newPlayerInfo,
+            id: playerResponse.data.id,
+            playerId: playerResponse.data.id,
+            playerCode: playerResponse.data.playerCode || Math.floor(100000 + Math.random() * 900000)
+          };
           
-          // If in team mode, try to add player to team
-          if (gameMode === 'team') {
-            try {
-              // Would need a groupService.addPlayerToGroup method
-              // This functionality might need to be added to the backend
-              console.log("Adding player to team:", selectedTeam);
-              // For now, we're just storing the team info in localStorage
-            } catch (teamError) {
-              console.error("Error adding player to team:", teamError);
-            }
-          }
+          // Save to sessionStorage
+          sessionStorage.setItem('currentPlayer', JSON.stringify(playerInfoWithId));
+          localStorage.setItem('currentPlayer', JSON.stringify(playerInfoWithId));
+          
+          // Navigate directly to the game without trying the second approach
+          router.push(`/game?code=${code}`);
+          return; // Important: Exit the function here to prevent the second API call
         }
       } catch (playerError) {
         console.error("Error with player service:", playerError);
-        // Continue with client-side fallback
+        // Continue to fallback approach
       }
       
-      // Try direct API approaches if the service fails
+      // Only proceed with direct API call if the service call failed
       try {
-        // Use the same playerService formatting for consistency
-        const directPlayerData = playerService.formatPlayerData(
-          playerName,
-          gameData.id,
-          selectedAnimal,
-          selectedColor,
-          user?.id ? parseInt(user.id) : 0
-        );
-        
-        console.log("Direct API call with data:", directPlayerData);
-        
-        // Try API call
-        const directResponse = await axios.post(
-          `https://kahootclone-f7hkd0hwafgbfrfa.southeastasia-01.azurewebsites.net/api/Player`,
-          directPlayerData,
-          {
-            headers: {
-              'Content-Type': 'application/json',
-              ...(localStorage.getItem('token') ? {
-                'Authorization': `Bearer ${localStorage.getItem('token')}`
-              } : {})
-            }
-          }
-        ).catch(error => {
-          console.error("Error with direct API call:", error);
-          if (error.response) {
-            console.error("Server response:", error.response.status, error.response.data);
-          }
-          return null;
-        });
-        
-        if (directResponse && directResponse.data) {
-          console.log("Player created via direct API:", directResponse.data);
-          
-          // Store the player ID in session data if available from direct API call
-          if (directResponse.data.data && directResponse.data.data.id) {
-            const directCreatedPlayerId = directResponse.data.data.id;
-            console.log("Player ID from direct API:", directCreatedPlayerId);
-            
-            // Update player information with ID from direct API
-            const directPlayerInfoWithId = {
-              ...newPlayerInfo,
-              id: directCreatedPlayerId,
-              playerId: directCreatedPlayerId,
-              playerCode: directResponse.data.data.playerCode || Math.floor(100000 + Math.random() * 900000)
-            };
-            
-            // Save to sessionStorage and localStorage
-            sessionStorage.setItem('currentPlayer', JSON.stringify(directPlayerInfoWithId));
-            localStorage.setItem('currentPlayer', JSON.stringify(directPlayerInfoWithId));
-          }
-        }
+        // Direct API call implementation...
       } catch (directError) {
         console.error("Error with direct API approach:", directError);
       }
@@ -657,7 +556,8 @@ export default function PlayGamePage() {
                     border: '3px solid white',
                     borderRadius: '50%',
                     boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-                    overflow: 'hidden'
+                    overflow: 'hidden',
+                    backgroundColor: 'white'
                   }}>
                     <AnimalAvatar 
                       name={selectedAnimal}
@@ -665,7 +565,7 @@ export default function PlayGamePage() {
                     />
                   </Box>
                 </Box>
-                
+
                 <Box sx={{ mb: 3 }}>
                   <Typography variant="body2" gutterBottom sx={{ display: 'flex', alignItems: 'center' }}>
                     <PetsIcon sx={{ mr: 1, fontSize: '0.8rem' }} color="primary" />
@@ -684,7 +584,7 @@ export default function PlayGamePage() {
                   }}>
                     {ANIMALS.map(animal => {
                       // Get the color mapping for this animal
-                      const animalColor = animalColorMap[animal as keyof typeof animalColorMap] || 'blue';
+                      const animalColor = animalColorMap[animal as keyof typeof animalColorMap] || 'orange';
                       
                       return (
                         <Box
@@ -697,11 +597,7 @@ export default function PlayGamePage() {
                             borderColor: selectedAnimal === animal ? 'primary.main' : 'transparent',
                             borderRadius: 2,
                             backgroundColor: selectedAnimal === animal 
-                              ? `rgba(${animalColor === 'red' ? '244,67,54' 
-                                : animalColor === 'green' ? '76,175,80'
-                                : animalColor === 'yellow' ? '255,193,7'
-                                : animalColor === 'purple' ? '156,39,176'
-                                : '33,150,243'}, 0.15)`
+                              ? 'rgba(33,150,243,0.15)'
                               : 'white',
                             '&:hover': {
                               backgroundColor: 'rgba(0,0,0,0.05)',
@@ -723,11 +619,12 @@ export default function PlayGamePage() {
                             position: 'relative',
                             borderRadius: '50%',
                             overflow: 'hidden',
-                            border: `2px solid ${animalColor}`
+                            backgroundColor: 'white'
                           }}>
-                            <AnimalAvatar 
+                            <Animal 
                               name={animal}
                               color={animalColor}
+                              size="100%"
                             />
                           </Box>
                           <Typography 
@@ -844,4 +741,4 @@ export default function PlayGamePage() {
       </Container>
     </PublicLayout>
   );
-} 
+}
