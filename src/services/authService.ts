@@ -32,6 +32,19 @@ interface UserProfile {
   id: number;
   username: string;
   email: string;
+  password?: string;
+}
+
+interface UpdateUserData {
+  id: number;
+  username: string;
+  email: string;
+  password?: string;
+  role?: string;
+  avatarUrl?: string;
+  isActive?: boolean;
+  status?: string;
+  createdAt?: string;
 }
 
 const authService = {
@@ -188,6 +201,22 @@ const authService = {
       return response.data;
     } catch (error) {
       console.error('Error fetching user profile:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Update user information
+   * @param userId User ID to update
+   * @param userData Updated user data
+   * @returns Promise with update response
+   */
+  updateUser: async (userId: number, userData: UpdateUserData): Promise<any> => {
+    try {
+      const response = await axiosInstance.put(`/api/v1/users/${userId}`, userData);
+      return response.data;
+    } catch (error) {
+      console.error('Error updating user:', error);
       throw error;
     }
   }

@@ -40,7 +40,7 @@ import { useRouter } from 'next/navigation';
 
 export default function ProfilePage() {
   const theme = useTheme();
-  const { user } = useAuth();
+  const { user, updateUser } = useAuth();
   const router = useRouter();
   const [isClient, setIsClient] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -57,7 +57,11 @@ export default function ProfilePage() {
     organization: 'FPT University',
     bio: 'Educational enthusiast passionate about interactive learning.',
     location: 'Ho Chi Minh City, Vietnam',
-    joinDate: '2023'
+    joinDate: '2023',
+    password: '',
+    avatarUrl: '',
+    isActive: true,
+    status: 'active'
   });
 
   // Handle client-side only code
@@ -94,7 +98,11 @@ export default function ProfilePage() {
           organization: 'FPT University',
           bio: 'Educational enthusiast passionate about interactive learning.',
           location: 'Ho Chi Minh City, Vietnam',
-          joinDate: '2023'
+          joinDate: '2023',
+          password: '',
+          avatarUrl: '',
+          isActive: true,
+          status: 'active'
         });
         
         setLoading(false);
@@ -124,15 +132,51 @@ export default function ProfilePage() {
     });
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     setLoading(true);
-    // In a real implementation, you would call an API to update the user profile
-    // For now, we'll just simulate an API call
-    setTimeout(() => {
+    try {
+      // Create the update payload according to API requirements
+      const updatePayload: any = {
+        id: userData.id,
+        username: `${userData.firstName} ${userData.lastName}`.trim(),
+        email: userData.email,
+        role: userData.role,
+        isActive: userData.isActive,
+        status: userData.status,
+        createdAt: new Date().toISOString() // Current date as ISO string
+      };
+
+      // Since API requires a password field, we need to include it
+      // If user didn't enter a new password, use a placeholder that tells the backend not to change it
+      if (userData.password && userData.password.trim() !== '') {
+        // User entered a new password, include it for update
+        updatePayload.password = userData.password;
+      } else {
+        // Use a special value that the backend can recognize to not change the password
+        // Note: Your backend needs to be configured to handle this special value
+        updatePayload.password = "NO_CHANGE"; // This is a convention - backend should check for this
+      }
+
+      // Include avatarUrl only if it exists
+      if (userData.avatarUrl) {
+        updatePayload.avatarUrl = userData.avatarUrl;
+      }
+
+      // Call the updateUser function from AuthContext
+      const response = await updateUser(userData.id, updatePayload);
+      
+      if (response && response.status === 1) {
+        setEditMode(false);
+        setSuccessMessage('User updated successfully');
+      } else {
+        setErrorMessage(response?.message || 'Failed to update profile. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error saving profile:', error);
+      setErrorMessage('An error occurred while saving your profile. Please try again.');
+    } finally {
       setLoading(false);
-      setEditMode(false);
-      setSuccessMessage('Profile updated successfully!');
-    }, 1000);
+    }
   };
 
   const handleCancel = () => {
@@ -227,7 +271,13 @@ export default function ProfilePage() {
             onClose={handleCloseSnackbar} 
             severity="success" 
             variant="filled"
-            sx={{ width: '100%', boxShadow: theme.shadows[3] }}
+            sx={{ 
+              width: '100%', 
+              boxShadow: theme.shadows[3], 
+              bgcolor: 'success.main',
+              color: 'white',
+              fontWeight: 'bold'
+            }}
           >
             {successMessage}
           </Alert>
@@ -711,6 +761,51 @@ export default function ProfilePage() {
                       }
                     }}
                   />
+                  
+                  {/* Password field - only shown in edit mode */}
+                  {editMode && (
+                    <TextField
+                      fullWidth
+                      type="password"
+                      label="New Password (leave blank to keep current)"
+                      name="password"
+                      value={userData.password}
+                      onChange={handleInputChange}
+                      variant="outlined"
+                      margin="normal"
+                      helperText="This field is required by the API, but we'll handle it on your behalf if left blank"
+                      InputProps={{
+                        startAdornment: (
+                          <Box sx={{ 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            justifyContent: 'center',
+                            mr: 1.5,
+                            width: 40,
+                            height: 40,
+                            borderRadius: '50%',
+                            backgroundColor: alpha(theme.palette.info.main, 0.1),
+                          }}>
+                            <Box component="span" sx={{ 
+                              color: theme.palette.info.main,
+                              fontSize: 20,
+                              fontWeight: 'bold'
+                            }}>
+                              🔒
+                            </Box>
+                          </Box>
+                        ),
+                      }}
+                      sx={{ 
+                        '& .MuiOutlinedInput-root': {
+                          borderRadius: 2
+                        },
+                        '& .MuiInputBase-root': {
+                          alignItems: 'center',
+                        }
+                      }}
+                    />
+                  )}
                   
                   <TextField
                     fullWidth

@@ -21,6 +21,7 @@ interface AuthContextType {
   logout: () => void;
   register: (username: string, email: string, password: string) => Promise<any>;
   checkAuth: () => Promise<boolean>;
+  updateUser: (userId: number, userData: any) => Promise<any>;
 }
 
 // Create context
@@ -239,6 +240,39 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // Add updateUser method
+  const updateUser = async (userId: number, userData: any) => {
+    try {
+      setIsLoading(true);
+      const result = await authService.updateUser(userId, userData);
+      
+      // If update was successful and includes user information, update the local user state
+      if (result && result.status === 1 && user) {
+        // Update only the fields that were returned in the response
+        const updatedUser = {
+          ...user,
+          username: userData.username || user.username,
+          email: userData.email || user.email,
+          role: userData.role || user.role
+        };
+        
+        setUser(updatedUser);
+      }
+      
+      return result;
+    } catch (error: any) {
+      console.error('Error updating user:', error);
+      
+      if (error.response?.data?.message) {
+        return { success: false, message: error.response.data.message };
+      }
+      
+      return { success: false, message: 'An error occurred during user update' };
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // Only provide the context value if client-side
   const contextValue = {
     user,
@@ -246,7 +280,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     login,
     logout,
     register,
-    checkAuth
+    checkAuth,
+    updateUser
   };
 
   return (
