@@ -187,6 +187,7 @@ export default function GamePage() {
   const [otherPlayers, setOtherPlayers] = useState<any[]>([]);
   const [playerData, setPlayerData] = useState<any>(null); // To store the player data from API
   const [gameMode, setGameMode] = useState<'solo' | 'team'>('solo'); // Add explicit game mode state
+  const [feedbackColor, setFeedbackColor] = useState<'correct' | 'incorrect' | null>(null); // Add state for feedback color
   
   // Hardcoded data for demonstration (will be used if real data fails to load)
   const hardcodedQuestion = {
@@ -213,11 +214,16 @@ export default function GamePage() {
         const playerData = JSON.parse(playerInfoStr);
         setPlayerInfo(playerData);
         
-        // Try to get game mode from sessionStorage first (most reliable)
+        // Try to get game mode from sessionStorage (most reliable source)
+        // This should be consistently set in create-game, play-game, and quizService
         const storedGameMode = sessionStorage.getItem('gameMode');
+        console.log("Game mode from sessionStorage:", storedGameMode);
+        
         if (storedGameMode) {
-          console.log("Found game mode in sessionStorage:", storedGameMode);
-          setGameMode(storedGameMode as 'solo' | 'team');
+          // Normalize to ensure valid values only
+          const normalizedGameMode = storedGameMode.trim().toLowerCase() === 'team' ? 'team' : 'solo';
+          console.log(`Using normalized game mode from sessionStorage: ${normalizedGameMode}`);
+          setGameMode(normalizedGameMode as 'solo' | 'team');
         }
 
         try {
@@ -233,11 +239,11 @@ export default function GamePage() {
             const quizInfo = quizResponseData.data;
             console.log("Quiz info:", quizInfo);
             
-            // Process and normalize the game mode
-            let processedGameMode: 'solo' | 'team' = 'solo';
-            
-            // Only override the previously set gameMode if we don't have one from sessionStorage
+            // Only process game mode from API if not already set from sessionStorage
             if (!storedGameMode) {
+              // Process and normalize the game mode
+              let processedGameMode: 'solo' | 'team' = 'solo';
+              
               const apiGameMode = quizInfo.gameMode;
               console.log("API game mode:", apiGameMode, "type:", typeof apiGameMode);
               
@@ -253,7 +259,9 @@ export default function GamePage() {
                   processedGameMode = apiGameMode === 0 ? 'solo' : 'team';
                 }
                 
-                console.log("Processed game mode:", processedGameMode);
+                console.log("Processed game mode from API:", processedGameMode);
+                // Always store in sessionStorage for consistency across components
+                sessionStorage.setItem('gameMode', processedGameMode);
                 setGameMode(processedGameMode);
               }
             }
@@ -293,11 +301,14 @@ export default function GamePage() {
                 };
               });
               
+              // Get the current game mode from state (may have been set from sessionStorage or API)
+              const currentGameMode = gameMode;
+              
               const completeQuizData = {
                 ...quizInfo,
                 questions: formattedQuestions,
                 // Ensure game mode is set correctly in quiz data
-                gameMode: storedGameMode || processedGameMode || quizInfo.gameMode || 'solo'
+                gameMode: currentGameMode
               };
               
               console.log("Final quiz data with processed gameMode:", completeQuizData);
@@ -381,6 +392,7 @@ export default function GamePage() {
       const playerInfoStr = sessionStorage.getItem('currentPlayer');
       const playerInfo = playerInfoStr ? JSON.parse(playerInfoStr) : null;
       
+      // Create a more detailed game results object
       const gameResults = {
         score: stats.totalScore,
         correctAnswers: stats.correctAnswers,
@@ -395,18 +407,45 @@ export default function GamePage() {
         quizId: quizData?.id || 0
       };
       
-      sessionStorage.setItem('gameResults', JSON.stringify([{
-        name: playerInfo?.name || 'Player',
-        score: stats.totalScore,
-        correctAnswers: stats.correctAnswers,
-        totalQuestions: stats.totalQuestions,
-        timeBonus: Math.floor(stats.totalScore / 10),
-        averageAnswerTime: answersRecord.reduce((sum, a) => sum + a.timeTaken, 0) / answersRecord.length,
-        avatar: playerInfo?.avatar || 'dog',
-        group: playerInfo?.team || null
-      }]));
-      
-      router.push('/game-results');
+      // Store player results in the format expected by the game-results page
+      try {
+        const playerResultData = [{
+          name: playerInfo?.name || 'Player',
+          score: stats.totalScore,
+          correctAnswers: stats.correctAnswers,
+          totalQuestions: stats.totalQuestions,
+          timeBonus: Math.floor(stats.totalScore / 10),
+          averageAnswerTime: answersRecord.length > 0 ? 
+            answersRecord.reduce((sum, a) => sum + a.timeTaken, 0) / answersRecord.length : 0,
+          avatar: playerInfo?.avatar || 'dog',
+          group: playerInfo?.team || null
+        }];
+        
+        console.log("Saving game results:", playerResultData);
+        
+        // Clear previous results first to avoid any possible corruption
+        sessionStorage.removeItem('gameResults');
+        
+        // Store the new results
+        sessionStorage.setItem('gameResults', JSON.stringify(playerResultData));
+        
+        // Also store the complete game data for reference
+        sessionStorage.setItem('completeGameData', JSON.stringify(gameResults));
+        
+        // Store current quiz data for reference on results page
+        if (quizData) {
+          sessionStorage.setItem('currentQuiz', JSON.stringify(quizData));
+        }
+        
+        // Redirect to results page after a small delay to ensure data is stored
+        setTimeout(() => {
+          router.push('/game-results');
+        }, 100);
+      } catch (error) {
+        console.error("Error saving game results:", error);
+        // If there's an error, still try to redirect
+        router.push('/game-results');
+      }
     }
   }, [showResults, answersRecord, quizData, router]);
 
@@ -439,6 +478,7 @@ export default function GamePage() {
     // Check if answer is correct
     const isAnswerCorrect = index === currentQuestion.correctAnswer;
     setIsCorrect(isAnswerCorrect);
+    setFeedbackColor(isAnswerCorrect ? 'correct' : 'incorrect'); // Set feedback color based on answer
     
     // Calculate points based on speed and correctness
     const pointsForQuestion = currentQuestion.points || 100;
@@ -519,6 +559,7 @@ export default function GamePage() {
     // Handle when time runs out (player didn't select an answer)
     setIsFeedbackShown(true);
     setIsCorrect(false);
+    setFeedbackColor('incorrect'); // Always incorrect when time is up
     
     try {
       // Extract playerId more carefully
@@ -588,6 +629,7 @@ export default function GamePage() {
       setIsFeedbackShown(false);
       setShowCorrectAnswer(false);
       setWaitingState(false);
+      setFeedbackColor(null); // Reset feedback color
       
       // Move to next question 
       setCurrentQuestionIndex(prev => prev + 1);
@@ -1002,7 +1044,7 @@ export default function GamePage() {
             borderRadius: 4,
             boxShadow: 24,
             maxWidth: 450,
-            backgroundImage: isCorrect === true
+            backgroundImage: feedbackColor === 'correct'
               ? 'linear-gradient(to bottom right, #4CAF50, #8BC34A)'
               : 'linear-gradient(to bottom right, #F44336, #FF9800)',
             color: 'white',

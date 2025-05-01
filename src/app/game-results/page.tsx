@@ -15,7 +15,8 @@ import {
   Divider,
   Chip,
   Tab,
-  Tabs
+  Tabs,
+  CircularProgress
 } from '@mui/material';
 import { 
   EmojiEvents as TrophyIcon,
@@ -174,57 +175,158 @@ export default function GameResultsPage() {
 
     // Get data from sessionStorage
     try {
+      console.log("Loading game results data from sessionStorage...");
+      
       const storedResults = sessionStorage.getItem('gameResults');
       const quizData = sessionStorage.getItem('quizPreviewData') || sessionStorage.getItem('currentQuiz');
       const playerInfo = sessionStorage.getItem('currentPlayer');
       const storedAvatar = sessionStorage.getItem('playerAvatar');
       
+      console.log("storedResults:", storedResults ? "Found" : "Not found");
+      console.log("quizData:", quizData ? "Found" : "Not found");
+      console.log("playerInfo:", playerInfo ? "Found" : "Not found");
+      
       // Set player info
       if (playerInfo) {
         const parsedPlayerInfo = JSON.parse(playerInfo);
         setPlayerInfo(parsedPlayerInfo);
+        console.log("Player info:", parsedPlayerInfo);
+      } else {
+        console.warn("No player information found in sessionStorage");
       }
       
       // Set quiz data
       if (quizData) {
         const parsedQuizData = JSON.parse(quizData);
         setQuiz(parsedQuizData);
+        console.log("Quiz data:", parsedQuizData);
+      } else {
+        console.warn("No quiz data found in sessionStorage");
       }
       
       if (storedAvatar) {
         setPlayerAvatar(storedAvatar);
       }
       
-      if (storedResults && quizData && playerInfo) {
-        const results = JSON.parse(storedResults);
-        const quiz = JSON.parse(quizData);
-        const player = JSON.parse(playerInfo);
-        
-        const mode = quiz.gameMode || 'solo';
-        setGameMode(mode);
-        
-        setViewMode(mode === 'team' ? 'group' : 'player');
-        
-        setPlayerResults(results);
-        
-        const groups = calculateGroupScores(results);
-        setGroupResults(groups);
-        
-        setGameTitle(quiz.title);
-        setCurrentPlayer(player?.name || '');
-        
-        // Fetch player answers from API
-        if (player && player.id && quiz.id) {
-          fetchPlayerAnswers(player.id, quiz.id);
+      // Try to get complete game data first as a backup
+      const completeGameData = sessionStorage.getItem('completeGameData');
+      if (completeGameData && (!storedResults || storedResults === "undefined" || storedResults === "null")) {
+        console.log("Using complete game data as fallback");
+        try {
+          const parsedGameData = JSON.parse(completeGameData);
+          // Create player results from complete game data
+          if (parsedGameData && parsedGameData.player) {
+            const playerResult = {
+              name: parsedGameData.player.name,
+              score: parsedGameData.score,
+              correctAnswers: parsedGameData.correctAnswers,
+              totalQuestions: parsedGameData.totalQuestions,
+              avatar: parsedGameData.player.avatar,
+              group: playerInfo ? JSON.parse(playerInfo)?.team : null
+            };
+            
+            setPlayerResults([playerResult]);
+            console.log("Using player results from complete game data:", [playerResult]);
+            
+            const groups = calculateGroupScores([playerResult]);
+            setGroupResults(groups);
+            
+            if (quizData) {
+              const parsedQuizData = JSON.parse(quizData);
+              setGameTitle(parsedQuizData.title);
+            }
+            
+            setCurrentPlayer(parsedGameData.player.name);
+            
+            if (parsedGameData.player?.id && parsedGameData.quizId) {
+              fetchPlayerAnswers(parsedGameData.player.id, parsedGameData.quizId);
+            }
+            
+            // Save the game data for teacher to see
+            saveCompletedGame(quiz, [playerResult], groups);
+            
+            // No need to process storedResults
+            setLoading(false);
+            return;
+          }
+        } catch (error) {
+          console.error("Error parsing complete game data:", error);
         }
-        
-        // Hide confetti after 5 seconds
-        setTimeout(() => {
-          setShowConfetti(false);
-        }, 5000);
-        
-        // Save the game data for teacher to see
-        saveCompletedGame(quiz, results, groups);
+      }
+      
+      if (storedResults && quizData && playerInfo) {
+        console.log("Processing stored game results");
+        try {
+          const results = JSON.parse(storedResults);
+          if (!Array.isArray(results)) {
+            console.error("Game results is not an array:", results);
+            throw new Error("Invalid game results format");
+          }
+          
+          const quiz = JSON.parse(quizData);
+          const player = JSON.parse(playerInfo);
+          
+          console.log("Game results:", results);
+          
+          const mode = quiz.gameMode || 'solo';
+          setGameMode(mode);
+          
+          setViewMode(mode === 'team' ? 'group' : 'player');
+          
+          setPlayerResults(results);
+          
+          const groups = calculateGroupScores(results);
+          setGroupResults(groups);
+          
+          setGameTitle(quiz.title || "Quiz Game");
+          setCurrentPlayer(player?.name || '');
+          
+          // Fetch player answers from API
+          if (player && player.id && quiz.id) {
+            fetchPlayerAnswers(player.id, quiz.id);
+          }
+          
+          // Hide confetti after 5 seconds
+          setTimeout(() => {
+            setShowConfetti(false);
+          }, 5000);
+          
+          // Save the game data for teacher to see
+          saveCompletedGame(quiz, results, groups);
+        } catch (error) {
+          console.error('Error processing game results:', error);
+          
+          // Try to recover from error by creating a dummy result
+          if (playerInfo) {
+            try {
+              const playerData = JSON.parse(playerInfo);
+              const dummyResult = {
+                name: playerData.name || "Player",
+                score: 0,
+                correctAnswers: 0,
+                totalQuestions: 1,
+                avatar: playerData.avatar || 'alligator'
+              };
+              
+              console.log("Created dummy result as fallback:", dummyResult);
+              setPlayerResults([dummyResult]);
+              setCurrentPlayer(playerData.name || "Player");
+              
+              if (quizData) {
+                const quizInfo = JSON.parse(quizData);
+                setGameTitle(quizInfo.title || "Quiz Game");
+              }
+            } catch (e) {
+              console.error("Failed to create dummy result:", e);
+            }
+          }
+        }
+      } else {
+        console.warn("Missing required data for game results:", {
+          hasStoredResults: !!storedResults,
+          hasQuizData: !!quizData,
+          hasPlayerInfo: !!playerInfo
+        });
       }
     } catch (error) {
       console.error('Error loading game results:', error);
@@ -289,127 +391,192 @@ export default function GameResultsPage() {
       setAnswersLoading(true);
       console.log(`Fetching answers for player ${playerId} in quiz ${quizId}`);
       
-      // First approach: Get all answers and filter client-side
-      const response = await fetch(
-        `https://kahootclone-f7hkd0hwafgbfrfa.southeastasia-01.azurewebsites.net/api/PlayerAnswer`,
-        {
-          method: 'GET',
-          headers: {
-            'Accept': 'application/json'
+      // First check if we have answers stored in sessionStorage already
+      const storedAnswers = sessionStorage.getItem('playerAnswers');
+      if (storedAnswers) {
+        try {
+          const parsedAnswers = JSON.parse(storedAnswers);
+          if (Array.isArray(parsedAnswers) && parsedAnswers.length > 0) {
+            console.log("Using stored player answers from sessionStorage:", parsedAnswers);
+            setPlayerAnswers(parsedAnswers);
+            setAnswersLoading(false);
+            return;
           }
+        } catch (parseError) {
+          console.error("Failed to parse stored answers:", parseError);
         }
-      );
-      
-      if (!response.ok) {
-        console.warn(`Main API call failed with status ${response.status}`);
-        throw new Error(`Failed to fetch player answers: ${response.status}`);
       }
       
-      const responseData = await response.json();
-      console.log("All player answers response:", responseData);
+      // Check if we have answers in the completeGameData
+      const completeData = sessionStorage.getItem('completeGameData');
+      if (completeData) {
+        try {
+          const parsedData = JSON.parse(completeData);
+          if (parsedData.answers && Array.isArray(parsedData.answers) && parsedData.answers.length > 0) {
+            console.log("Using answers from completeGameData:", parsedData.answers);
+            
+            // Convert to the format expected by the UI
+            const formattedAnswers = parsedData.answers.map((answer: any, index: number) => ({
+              id: index + 1,
+              playerId: playerId,
+              questionId: answer.questionIndex + 1,
+              answeredAt: new Date().toISOString(),
+              isCorrect: answer.isCorrect,
+              responseTime: answer.timeTaken,
+              answer: answer.selectedAnswer !== null ? 
+                String.fromCharCode(65 + answer.selectedAnswer) : 'T' // A, B, C, D or T for timeout
+            }));
+            
+            setPlayerAnswers(formattedAnswers);
+            
+            // Save these formatted answers in sessionStorage for future use
+            sessionStorage.setItem('playerAnswers', JSON.stringify(formattedAnswers));
+            
+            setAnswersLoading(false);
+            return;
+          }
+        } catch (parseError) {
+          console.error("Failed to parse complete game data for answers:", parseError);
+        }
+      }
       
-      if (responseData && Array.isArray(responseData.data)) {
-        // Filter answers for this specific player
-        const playerAnswers = responseData.data.filter((answer: { playerId: number; }) => 
-          answer.playerId === playerId
+      // If no stored answers, try API calls
+      try {
+        // First approach: Get all answers and filter client-side
+        const response = await fetch(
+          `https://kahootclone-f7hkd0hwafgbfrfa.southeastasia-01.azurewebsites.net/api/PlayerAnswer`,
+          {
+            method: 'GET',
+            headers: {
+              'Accept': 'application/json'
+            }
+          }
         );
         
-        console.log(`Found ${playerAnswers.length} answers for player ${playerId}`);
+        if (!response.ok) {
+          console.warn(`Main API call failed with status ${response.status}`);
+          throw new Error(`Failed to fetch player answers: ${response.status}`);
+        }
         
-        if (playerAnswers.length > 0) {
-          setPlayerAnswers(playerAnswers);
+        const responseData = await response.json();
+        console.log("All player answers response:", responseData);
+        
+        if (responseData && Array.isArray(responseData.data)) {
+          // Filter answers for this specific player
+          const playerAnswers = responseData.data.filter((answer: { playerId: number; }) => 
+            answer.playerId === playerId
+          );
           
-          // Also update localStorage for persistance
+          console.log(`Found ${playerAnswers.length} answers for player ${playerId}`);
+          
+          if (playerAnswers.length > 0) {
+            setPlayerAnswers(playerAnswers);
+            
+            // Save these answers in sessionStorage for future use
+            sessionStorage.setItem('playerAnswers', JSON.stringify(playerAnswers));
+            
+            // Also update localStorage for persistance
+            setTimeout(() => {
+              // Get the updated quiz data with our answers
+              const updatedQuiz = JSON.parse(sessionStorage.getItem('quizPreviewData') || sessionStorage.getItem('currentQuiz') || '{}');
+              saveCompletedGame(updatedQuiz, playerResults, groupResults);
+            }, 500);
+            
+            setAnswersLoading(false);
+            return;
+          }
+        }
+      } catch (apiError) {
+        console.error("Error fetching from main PlayerAnswer endpoint:", apiError);
+      }
+      
+      // If first approach fails, try player-specific endpoint
+      try {
+        console.log("Trying player-specific endpoint as fallback");
+        const playerSpecificResponse = await fetch(
+          `https://kahootclone-f7hkd0hwafgbfrfa.southeastasia-01.azurewebsites.net/api/PlayerAnswer/player/${playerId}`,
+          {
+            method: 'GET',
+            headers: {
+              'Accept': 'application/json'
+            }
+          }
+        );
+        
+        if (!playerSpecificResponse.ok) {
+          throw new Error(`Player-specific endpoint failed: ${playerSpecificResponse.status}`);
+        }
+        
+        const playerData = await playerSpecificResponse.json();
+        console.log("Player-specific answers:", playerData);
+        
+        if (playerData && playerData.data && Array.isArray(playerData.data)) {
+          setPlayerAnswers(playerData.data);
+          
+          // Save these answers in sessionStorage for future use
+          sessionStorage.setItem('playerAnswers', JSON.stringify(playerData.data));
+          
+          // Update stored game data
           setTimeout(() => {
-            // Get the updated quiz data with our answers
             const updatedQuiz = JSON.parse(sessionStorage.getItem('quizPreviewData') || sessionStorage.getItem('currentQuiz') || '{}');
             saveCompletedGame(updatedQuiz, playerResults, groupResults);
           }, 500);
           
+          setAnswersLoading(false);
           return;
+        } else {
+          console.warn("No valid data from player-specific endpoint");
         }
+      } catch (playerSpecificError) {
+        console.error("Error fetching from player-specific endpoint:", playerSpecificError);
       }
       
-      // If first approach fails, try player-specific endpoint
-      console.log("Trying player-specific endpoint as fallback");
-      const playerSpecificResponse = await fetch(
-        `https://kahootclone-f7hkd0hwafgbfrfa.southeastasia-01.azurewebsites.net/api/PlayerAnswer/player/${playerId}`,
-        {
-          method: 'GET',
-          headers: {
-            'Accept': 'application/json'
-          }
-        }
-      );
-      
-      if (!playerSpecificResponse.ok) {
-        throw new Error(`Player-specific endpoint failed: ${playerSpecificResponse.status}`);
-      }
-      
-      const playerData = await playerSpecificResponse.json();
-      console.log("Player-specific answers:", playerData);
-      
-      if (playerData && playerData.data && Array.isArray(playerData.data)) {
-        setPlayerAnswers(playerData.data);
-        
-        // Update stored game data
-        setTimeout(() => {
-          const updatedQuiz = JSON.parse(sessionStorage.getItem('quizPreviewData') || sessionStorage.getItem('currentQuiz') || '{}');
-          saveCompletedGame(updatedQuiz, playerResults, groupResults);
-        }, 500);
-      } else {
-        console.warn("No valid data from player-specific endpoint");
-        
+      // Final fallback - use local data if available
+      try {
         // If you have local answers from the game session, use those as a last resort
         const gameResultsStr = sessionStorage.getItem('gameResults');
         if (gameResultsStr) {
-          try {
-            const gameResults = JSON.parse(gameResultsStr);
-            const currentPlayerResult = gameResults.find((p: any) => p.name === currentPlayer);
+          const gameResults = JSON.parse(gameResultsStr);
+          const currentPlayerResult = gameResults.find((p: any) => p.name === currentPlayer);
+          
+          if (currentPlayerResult && currentPlayerResult.answers) {
+            // Convert local answers to API format
+            const formattedAnswers = currentPlayerResult.answers.map((a: any, index: number) => ({
+              id: index + 1,
+              playerId: playerId,
+              questionId: quiz.questions ? quiz.questions[a.questionIndex]?.id || index + 1 : index + 1,
+              answeredAt: new Date().toISOString(),
+              isCorrect: a.isCorrect,
+              responseTime: a.timeTaken,
+              answer: a.selectedAnswer !== null ? 
+                String.fromCharCode(65 + a.selectedAnswer) : 'T' // A, B, C, D or T for timeout
+            }));
             
-            if (currentPlayerResult && currentPlayerResult.answers) {
-              // Convert local answers to API format
-              const formattedAnswers = currentPlayerResult.answers.map((a: any, index: number) => ({
-                id: index + 1,
-                playerId: playerId,
-                questionId: quiz.questions[a.questionIndex].id,
-                answeredAt: new Date().toISOString(),
-                isCorrect: a.isCorrect,
-                responseTime: a.timeTaken,
-                answer: a.selectedAnswer !== null ? 
-                  String.fromCharCode(65 + a.selectedAnswer) : 'T' // A, B, C, D or T for timeout
-              }));
-              
-              console.log("Using local answer data:", formattedAnswers);
-              setPlayerAnswers(formattedAnswers);
-              
-              // Update stored game data
-              setTimeout(() => {
-                saveCompletedGame(quiz, playerResults, groupResults);
-              }, 500);
-            }
-          } catch (err) {
-            console.error("Error using local answer data:", err);
+            console.log("Using local answer data:", formattedAnswers);
+            setPlayerAnswers(formattedAnswers);
+            
+            // Save these formatted answers in sessionStorage for future use
+            sessionStorage.setItem('playerAnswers', JSON.stringify(formattedAnswers));
+            
+            // Update stored game data
+            setTimeout(() => {
+              saveCompletedGame(quiz, playerResults, groupResults);
+            }, 500);
+            
+            setAnswersLoading(false);
+            return;
           }
         }
+      } catch (localError) {
+        console.error("Error using local answer data:", localError);
       }
-    } catch (error) {
-      console.error("Error fetching player answers:", error);
       
-      // Try to fall back to any session-stored answers
-      const sessionAnswers = sessionStorage.getItem('playerAnswers');
-      if (sessionAnswers) {
-        try {
-          const parsedAnswers = JSON.parse(sessionAnswers);
-          if (Array.isArray(parsedAnswers) && parsedAnswers.length > 0) {
-            console.log("Using session-stored answers:", parsedAnswers);
-            setPlayerAnswers(parsedAnswers);
-          }
-        } catch (e) {
-          console.error("Error parsing session answers:", e);
-        }
-      }
-    } finally {
+      // No answer data available
+      console.warn("No answer data available from any source");
+      setAnswersLoading(false);
+      
+    } catch (error) {
+      console.error("Error in fetchPlayerAnswers function:", error);
       setAnswersLoading(false);
     }
   };
@@ -490,6 +657,7 @@ export default function GameResultsPage() {
       <PublicLayout>
         <Container maxWidth="md" sx={{ py: 6, textAlign: 'center' }}>
           <Typography variant="h5">Loading results...</Typography>
+          <CircularProgress sx={{ mt: 3 }} />
         </Container>
       </PublicLayout>
     );
@@ -500,13 +668,30 @@ export default function GameResultsPage() {
       <PublicLayout>
         <Container maxWidth="md" sx={{ py: 6, textAlign: 'center' }}>
           <Typography variant="h5" sx={{ mb: 2 }}>No results found</Typography>
-          <Button 
-            variant="contained" 
-            startIcon={<HomeIcon />}
-            onClick={() => router.push('/')}
-          >
-            Return to Home
-          </Button>
+          <Typography variant="body1" sx={{ mb: 4 }}>
+            We couldn't find any game results. This may happen if:
+            <Box component="ul" sx={{ textAlign: 'left', display: 'inline-block', mt: 2 }}>
+              <li>The game session expired</li>
+              <li>Your browser's storage was cleared</li>
+              <li>There was an error during the game</li>
+            </Box>
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center' }}>
+            <Button 
+              variant="contained" 
+              startIcon={<HomeIcon />}
+              onClick={() => router.push('/')}
+            >
+              Return to Home
+            </Button>
+            <Button
+              variant="outlined"
+              startIcon={<RefreshIcon />}
+              onClick={() => router.push('/play-quiz-preview')}
+            >
+              Play Another Game
+            </Button>
+          </Box>
         </Container>
       </PublicLayout>
     );

@@ -88,6 +88,28 @@ const quizService = {
         categoryId = 1;
       }
 
+      // Process gameMode before creating the request object
+      let gameMode = 'solo'; // Default to solo
+      
+      if (quizData.gameMode) {
+        // Normalize the gameMode value
+        if (typeof quizData.gameMode === 'string') {
+          const normalizedMode = quizData.gameMode.trim().toLowerCase();
+          // Be more explicit in string matching
+          if (normalizedMode === 'team' || normalizedMode === 'group' || normalizedMode === '1' || normalizedMode === 'true') {
+            gameMode = 'team';
+          } else {
+            gameMode = 'solo';
+          }
+        } else if (typeof quizData.gameMode === 'boolean') {
+          gameMode = quizData.gameMode === true ? 'team' : 'solo';
+        } else if (typeof quizData.gameMode === 'number') {
+          gameMode = quizData.gameMode === 0 ? 'solo' : 'team';
+        }
+      }
+      
+      console.log(`Normalized gameMode for createQuiz: ${gameMode} (original: ${JSON.stringify(quizData.gameMode)}, type: ${typeof quizData.gameMode})`);
+
       // Tạo request object với đầy đủ các trường cần thiết và định dạng đúng
       const createRequest = {
         title: quizData.title || "Untitled Quiz",
@@ -101,29 +123,8 @@ const quizService = {
         maxPlayer: quizData.maxPlayer && !isNaN(quizData.maxPlayer) && quizData.maxPlayer > 0 ? quizData.maxPlayer : 50,
         minPlayer: quizData.minPlayer && !isNaN(quizData.minPlayer) && quizData.minPlayer > 0 ? quizData.minPlayer : 1,
         favorite: quizData.favorite === true ? true : false,
-        gameMode: ["solo", "team"].includes(quizData.gameMode) ? quizData.gameMode : 'solo'
+        gameMode: gameMode
       };
-
-      // Special handling for gameMode to ensure team mode works correctly
-      if (quizData.gameMode) {
-        const normalizedGameMode = typeof quizData.gameMode === 'string' 
-          ? quizData.gameMode.trim().toLowerCase() 
-          : quizData.gameMode;
-        
-        // Enhanced logging for gameMode value
-        console.log(`createQuiz - Original gameMode: ${quizData.gameMode}, type: ${typeof quizData.gameMode}`);
-        console.log(`createQuiz - Normalized gameMode: ${normalizedGameMode}`);
-        
-        // More flexible validation to ensure team mode is preserved
-        if (normalizedGameMode === 'team' || 
-            normalizedGameMode === true || 
-            normalizedGameMode === 1 || 
-            normalizedGameMode === '1' || 
-            normalizedGameMode === 'true') {
-          createRequest.gameMode = 'team';
-          console.log('Setting gameMode to "team" based on input value');
-        }
-      }
 
       // Log dữ liệu gửi đi
       console.log('Creating quiz with data:', createRequest);
@@ -143,8 +144,14 @@ const quizService = {
       // Log response để debug
       console.log("Quiz creation successful response:", response);
       
+      // Save gameMode to sessionStorage for consistency
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('gameMode', gameMode);
+        console.log(`Game mode saved to sessionStorage: ${gameMode}`);
+      }
+      
       // If quiz is in team mode and creation was successful, create the teams
-      if (createRequest.gameMode === 'team' && response.data && response.data.status === 201) {
+      if (gameMode === 'team' && response.data && (response.data.status === 201 || response.data.status === 200)) {
         const quizId = response.data.data?.id;
         if (quizId) {
           try {
@@ -313,59 +320,44 @@ const quizService = {
         // Log the raw response to debug gameMode property
         console.log(`Raw API response for quiz code ${quizCode}:`, response.data);
         
+        // Create a deep copy of the response to avoid modifying the original axios response
+        const processedResponse = {
+          ...response.data,
+          data: response.data?.data ? { ...response.data.data } : null
+        };
+        
         // Process the response to ensure gameMode is properly formatted
-        if (response.data && response.data.data) {
-          // Make sure gameMode is properly processed
-          const gameMode = response.data.data.gameMode;
+        if (processedResponse && processedResponse.data) {
+          // Ensure gameMode is properly processed
+          const gameMode = processedResponse.data.gameMode;
           console.log(`Original gameMode value from API: ${gameMode}, type: ${typeof gameMode}`);
           
-          // Ensure gameMode is a consistent format (string)
+          // Normalize the game mode consistently
+          let normalizedGameMode = 'solo'; // Default to solo
+          
           if (gameMode !== undefined && gameMode !== null) {
-            const gmType = typeof gameMode;
-            console.log(`Enhanced gameMode detection in quizService: type=${gmType}, value=${gameMode}`);
-            
-            if (gmType === 'string') {
-              // Normalize string value with more explicit matching
-              const normalizedGameMode = gameMode.trim().toLowerCase();
-              console.log("Normalized string gameMode:", normalizedGameMode);
-              
-              // Enhanced string matching
-              if (normalizedGameMode === 'team' || normalizedGameMode === '1' || normalizedGameMode === 'true') {
-                response.data.data.gameMode = 'team';
-                console.log("String-based gameMode normalized to 'team'");
-              } else {
-                response.data.data.gameMode = 'solo';
-                console.log("String-based gameMode normalized to 'solo'");
-              }
-            } else if (gmType === 'boolean') {
-              // Convert boolean to string
-              response.data.data.gameMode = gameMode === true ? 'team' : 'solo';
-              console.log(`Boolean gameMode (${gameMode}) converted to '${response.data.data.gameMode}'`);
-            } else if (gmType === 'number') {
-              // Convert number to string (0 is solo, anything else is team)
-              response.data.data.gameMode = gameMode === 0 ? 'solo' : 'team';
-              console.log(`Number gameMode (${gameMode}) converted to '${response.data.data.gameMode}'`);
-            } else {
-              // Default for unknown types
-              console.warn(`Unknown gameMode type '${gmType}' defaulting to 'solo'`);
-              response.data.data.gameMode = 'solo';
+            if (typeof gameMode === 'string') {
+              // Normalize string game mode
+              const lowercaseMode = gameMode.trim().toLowerCase();
+              normalizedGameMode = lowercaseMode === 'team' ? 'team' : 'solo';
+            } else if (typeof gameMode === 'boolean') {
+              normalizedGameMode = gameMode === true ? 'team' : 'solo';
+            } else if (typeof gameMode === 'number') {
+              normalizedGameMode = gameMode === 0 ? 'solo' : 'team';
             }
-          } else {
-            // Default if undefined
-            console.warn("gameMode is undefined or null, defaulting to 'solo'");
-            response.data.data.gameMode = 'solo';
           }
           
-          console.log(`Final normalized gameMode value: ${response.data.data.gameMode}`);
+          console.log(`Normalized gameMode: ${normalizedGameMode}`);
+          processedResponse.data.gameMode = normalizedGameMode;
           
-          // Explicitly save the game mode to sessionStorage
+          // Save the game mode to session storage
           if (typeof window !== 'undefined') {
-            sessionStorage.setItem('quizGameMode', response.data.data.gameMode);
-            console.log(`Quiz gameMode saved to sessionStorage: ${response.data.data.gameMode}`);
+            sessionStorage.setItem('gameMode', normalizedGameMode);
+            console.log(`Quiz gameMode saved to sessionStorage: ${normalizedGameMode}`);
           }
         }
         
-        return response.data;
+        return processedResponse;
       } catch (publicError) {
         // If public endpoint fails, try with authentication
         const token = localStorage.getItem('token');
@@ -379,58 +371,44 @@ const quizService = {
             }
           );
           
-          // Process the authenticated response too
-          if (response.data && response.data.data) {
-            // Make sure gameMode is properly processed
-            const gameMode = response.data.data.gameMode;
+          // Create a deep copy for the authenticated response as well
+          const processedAuthResponse = {
+            ...response.data,
+            data: response.data?.data ? { ...response.data.data } : null
+          };
+          
+          // Process the authenticated response
+          if (processedAuthResponse && processedAuthResponse.data) {
+            // Ensure gameMode is properly processed
+            const gameMode = processedAuthResponse.data.gameMode;
             console.log(`Authenticated API gameMode value: ${gameMode}, type: ${typeof gameMode}`);
             
-            // Ensure gameMode is a consistent format (string)
+            // Apply the same normalization logic
+            let normalizedGameMode = 'solo'; // Default to solo
+            
             if (gameMode !== undefined && gameMode !== null) {
-              const gmType = typeof gameMode;
-              console.log(`Authenticated gameMode detection: type=${gmType}, value=${gameMode}`);
-              
-              if (gmType === 'string') {
-                // Enhanced string normalization
-                const normalizedGameMode = gameMode.trim().toLowerCase();
-                
-                // Enhanced string matching for authenticated response
-                if (normalizedGameMode === 'team' || normalizedGameMode === '1' || normalizedGameMode === 'true') {
-                  response.data.data.gameMode = 'team';
-                  console.log("Auth: String-based gameMode normalized to 'team'");
-                } else {
-                  response.data.data.gameMode = 'solo';
-                  console.log("Auth: String-based gameMode normalized to 'solo'");
-                }
-              } else if (gmType === 'boolean') {
-                // Convert boolean to string
-                response.data.data.gameMode = gameMode === true ? 'team' : 'solo';
-                console.log(`Auth: Boolean gameMode (${gameMode}) converted to '${response.data.data.gameMode}'`);
-              } else if (gmType === 'number') {
-                // Convert number to string (0 is solo, anything else is team)
-                response.data.data.gameMode = gameMode === 0 ? 'solo' : 'team';
-                console.log(`Auth: Number gameMode (${gameMode}) converted to '${response.data.data.gameMode}'`);
-              } else {
-                // Default for unknown types
-                console.warn(`Auth: Unknown gameMode type '${gmType}' defaulting to 'solo'`);
-                response.data.data.gameMode = 'solo';
+              if (typeof gameMode === 'string') {
+                // Normalize string game mode
+                const lowercaseMode = gameMode.trim().toLowerCase();
+                normalizedGameMode = lowercaseMode === 'team' ? 'team' : 'solo';
+              } else if (typeof gameMode === 'boolean') {
+                normalizedGameMode = gameMode === true ? 'team' : 'solo';
+              } else if (typeof gameMode === 'number') {
+                normalizedGameMode = gameMode === 0 ? 'solo' : 'team';
               }
-            } else {
-              // Default if undefined
-              console.warn("Auth: gameMode is undefined or null, defaulting to 'solo'");
-              response.data.data.gameMode = 'solo';
             }
             
-            console.log(`Final authenticated normalized gameMode value: ${response.data.data.gameMode}`);
+            console.log(`Normalized authenticated gameMode: ${normalizedGameMode}`);
+            processedAuthResponse.data.gameMode = normalizedGameMode;
             
-            // Explicitly save the game mode to sessionStorage for authenticated response too
+            // Save the game mode to session storage
             if (typeof window !== 'undefined') {
-              sessionStorage.setItem('quizGameMode', response.data.data.gameMode);
-              console.log(`Auth: Quiz gameMode saved to sessionStorage: ${response.data.data.gameMode}`);
+              sessionStorage.setItem('gameMode', normalizedGameMode);
+              console.log(`Auth: Quiz gameMode saved to sessionStorage: ${normalizedGameMode}`);
             }
           }
           
-          return response.data;
+          return processedAuthResponse;
         } else {
           throw publicError;
         }

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Box, 
   Typography, 
@@ -152,6 +152,32 @@ const CreateGamePage = () => {
 
   // Steps for the quiz creation process
   const steps = ['Quiz Info', 'Add Questions', 'Preview & Finish'];
+
+  // Add this code after the state declarations
+  useEffect(() => {
+    // Check if we have a saved game mode from a previous session
+    const savedGameMode = sessionStorage.getItem('createQuizGameMode');
+    if (savedGameMode) {
+      console.log(`Found saved game mode in sessionStorage on initialization: ${savedGameMode}`);
+      if (savedGameMode === 'team') {
+        console.log('Setting game mode to team on initialization');
+        setGameMode('team');
+        // Set team-related settings
+        setTeamCount(4); 
+        setMembersPerTeam(5);
+        setMinPlayers(4);
+        setMaxPlayers(4 * 5);
+        setTeamNames(['Red Team', 'Blue Team', 'Green Team', 'Yellow Team']);
+      } else if (savedGameMode === 'solo') {
+        console.log('Setting game mode to solo on initialization');
+        setGameMode('solo');
+        setMinPlayers(1);
+        setMaxPlayers(50);
+      }
+    } else {
+      console.log(`No saved game mode found, using default: ${gameMode}`);
+    }
+  }, []);
 
   // Function to add a new question
   const addQuestion = async () => {
@@ -355,10 +381,33 @@ const CreateGamePage = () => {
 
   // Function to navigate quiz creation steps
   const handleNext = () => {
+    // Save the current form state before moving to the next step
+    console.log(`Saving form state at step ${activeStep}`);
+    console.log(`Current game mode before next step: ${gameMode}`);
+    
+    // Explicitly save game mode to sessionStorage to preserve it between steps
+    sessionStorage.setItem('createQuizGameMode', gameMode);
+    console.log(`Saved game mode to sessionStorage: ${gameMode}`);
+    
     setActiveStep((prevStep) => prevStep + 1);
   };
 
   const handleBack = () => {
+    console.log(`Moving back from step ${activeStep}`);
+    
+    // Check if we need to restore game mode from sessionStorage
+    const savedMode = sessionStorage.getItem('createQuizGameMode');
+    if (savedMode) {
+      console.log(`Found saved game mode in sessionStorage: ${savedMode}`);
+      if (savedMode === 'team' && gameMode !== 'team') {
+        console.log('Restoring team mode from sessionStorage');
+        setGameMode('team');
+      } else if (savedMode === 'solo' && gameMode !== 'solo') {
+        console.log('Restoring solo mode from sessionStorage');
+        setGameMode('solo');
+      }
+    }
+    
     setActiveStep((prevStep) => prevStep - 1);
   };
 
@@ -374,27 +423,43 @@ const CreateGamePage = () => {
     event: React.MouseEvent<HTMLElement>,
     newMode: 'solo' | 'team' | null,
   ) => {
+    console.log(`Game mode change requested: ${newMode}`);
+    
     if (newMode !== null) {
-      setGameMode(newMode);
+      console.log(`Setting game mode to: ${newMode}`);
+      
+      // Make sure we're using a string, not a boolean or number
+      const modeValue = newMode === 'team' ? 'team' : 'solo';
+      setGameMode(modeValue);
+      
+      // Store the game mode in sessionStorage immediately
+      sessionStorage.setItem('gameMode', modeValue);
+      console.log(`Saved game mode to sessionStorage: ${modeValue}`);
+      
       // Reset to default values when switching to team mode
-      if (newMode === 'team') {
+      if (modeValue === 'team') {
         setTeamCount(4); // Default to 4 teams
         setMembersPerTeam(5); // Default to 5 members per team
         setMinPlayers(4); // Minimum players needed (at least 1 per team)
         setMaxPlayers(4 * 5); // Default max players (teamCount * membersPerTeam)
         // Reset team names to defaults if they've been modified
         setTeamNames(['Red Team', 'Blue Team', 'Green Team', 'Yellow Team']);
+        console.log("Set values for team mode");
       } else {
         // Reset to solo mode defaults
         setMinPlayers(1);
         setMaxPlayers(50);
+        console.log("Set values for solo mode");
       }
+    } else {
+      console.warn("Null mode received, keeping current mode:", gameMode);
     }
   };
 
   // Function to submit the quiz
   const submitQuiz = async () => {
     try {
+      console.log("=== STARTING QUIZ SUBMISSION ===");
       setIsSubmitting(true);
       
       // Generate a unique 6-digit game code
@@ -413,6 +478,27 @@ const CreateGamePage = () => {
         return;
       }
 
+      // Ensure game mode is correct before submission - log current states
+      console.log(`Current gameMode state: "${gameMode}"`);
+      console.log(`Type of gameMode state: ${typeof gameMode}`);
+      console.log(`Stored gameMode in sessionStorage: "${sessionStorage.getItem('gameMode')}"`);
+      
+      // Determine the final game mode value to use for submission
+      let finalGameMode: string;
+      
+      // First check sessionStorage
+      const storedMode = sessionStorage.getItem('gameMode');
+      if (storedMode === 'team') {
+        finalGameMode = 'team';
+        console.log("Using 'team' mode from sessionStorage");
+      } else if (gameMode === 'team') {
+        finalGameMode = 'team';
+        console.log("Using 'team' mode from component state");
+      } else {
+        finalGameMode = 'solo';
+        console.log("Using 'solo' mode (default)");
+      }
+      
       // Create the game data object for API
       const quizApiData = {
         title: quizTitle || 'Untitled Quiz',
@@ -426,17 +512,39 @@ const CreateGamePage = () => {
         maxPlayer: maxPlayers, // Maximum players allowed
         minPlayer: minPlayers, // Minimum players required
         favorite: isFavorite, // Set favorite status
-        gameMode: gameMode, // 'solo' or 'team'
+        gameMode: finalGameMode, // Using our determined finalGameMode
         // Add team configuration
-        teamCount: gameMode === 'team' ? teamCount : undefined,
-        membersPerTeam: gameMode === 'team' ? membersPerTeam : undefined
+        teamCount: finalGameMode === 'team' ? teamCount : undefined,
+        membersPerTeam: finalGameMode === 'team' ? membersPerTeam : undefined
       };
 
+      // Double-check and fix the gameMode value if needed
+      if (finalGameMode === 'team') {
+        // Make sure it's explicitly set as a string
+        quizApiData.gameMode = 'team';
+      } else {
+        quizApiData.gameMode = 'solo';
+      }
+
+      console.log(`Final gameMode value being sent to API: "${quizApiData.gameMode}"`);
       console.log("Sending quiz data to API:", quizApiData);
+      
+      // Save gameMode to sessionStorage for future use
+      sessionStorage.setItem('gameMode', quizApiData.gameMode);
+      // Also save a specific key for this quiz code
+      sessionStorage.setItem(`quizMode_${generatedQuizCode}`, quizApiData.gameMode);
       
       // Call API to create quiz
       const response = await quizService.createQuiz(quizApiData);
       console.log("Quiz created successfully:", response);
+      
+      // Save created quiz data in sessionStorage for consistent access
+      if (response.data && response.data.id) {
+        sessionStorage.setItem(`quiz_${response.data.id}`, JSON.stringify({
+          ...response.data,
+          gameMode: quizApiData.gameMode // Ensure our gameMode is preserved
+        }));
+      }
       
       // Check result from API
       if (response.status === 201 || response.status === 200) {
@@ -446,7 +554,7 @@ const CreateGamePage = () => {
           setCreatedQuizId(quizId);
           
           // Create teams if in team mode
-          if (gameMode === 'team') {
+          if (finalGameMode === 'team') {
             try {
               // Use only the number of teams selected by the user
               const selectedTeamNames = teamNames.slice(0, teamCount);
@@ -473,6 +581,9 @@ const CreateGamePage = () => {
               // Count successful team creations
               const successfulTeams = teamResults.filter(result => result.status === 'fulfilled').length;
               console.log(`Successfully created ${successfulTeams} teams for quiz ${quizId}`);
+              
+              // Save team mode in sessionStorage with the quiz code for future reference
+              sessionStorage.setItem(`quizMode_${response.data.quizCode}`, 'team');
             } catch (teamError) {
               console.error("Error creating teams:", teamError);
               // Continue even if team creation fails
@@ -483,6 +594,8 @@ const CreateGamePage = () => {
         // Save quiz code for created game
         if (response.data && response.data.quizCode) {
           setGameCode(response.data.quizCode.toString());
+          // Save the gameMode with the quiz code for this specific quiz
+          sessionStorage.setItem(`quizMode_${response.data.quizCode}`, finalGameMode);
         }
 
         // Show success notification

@@ -37,15 +37,42 @@ import playerService from '@/services/playerService';
 import questionService from '@/services/questionService';
 import dynamic from 'next/dynamic';
 
+// Add this function at the top to check if this quiz code exists in sessionStorage with a team mode
+const getStoredGameModeForQuizCode = (quizCode: string | null): string | null => {
+  if (!quizCode) return null;
+  
+  // Check if we have a stored game mode for this specific quiz code
+  const storedQuizMode = sessionStorage.getItem(`quizMode_${quizCode}`);
+  if (storedQuizMode) {
+    console.log(`Found stored game mode for quiz ${quizCode}: ${storedQuizMode}`);
+    return storedQuizMode;
+  }
+  
+  return null;
+};
+
 // Manually override game mode for specific quiz codes
 // This is a temporary fix for specific problematic quizzes
 const forceTeamModeForQuiz = (quizCode: string | null): boolean => {
   if (!quizCode) return false;
   
-  // List of quiz codes that should be forced to team mode
-  const teamModeQuizzes = ['517232'];
+  // Hard-coded list of quiz codes that should be in team mode
+  const teamModeQuizzes = ['295753', '914882', '202', '197']; // Add your quiz codes here
   
-  return teamModeQuizzes.includes(quizCode);
+  // Check if this quiz code is in our hard-coded list
+  if (teamModeQuizzes.includes(quizCode)) {
+    console.log(`Quiz ${quizCode} is in the force team mode list`);
+    return true;
+  }
+  
+  // Also check sessionStorage for a stored mode
+  const storedMode = getStoredGameModeForQuizCode(quizCode);
+  if (storedMode === 'team') {
+    console.log(`Quiz ${quizCode} has team mode stored in sessionStorage`);
+    return true;
+  }
+  
+  return false;
 };
 
 // DEBUG function to force team mode for certain quizzes based on recent quiz codes
@@ -169,10 +196,23 @@ export default function PlayGamePage() {
           return;
         }
 
-        // Check if this quiz code is known to need team mode
-        const codeNeedsTeamMode = shouldBeTeamMode(code);
+        // First check if we have a specific stored game mode for this quiz code
+        const specificQuizMode = getStoredGameModeForQuizCode(code);
+        if (specificQuizMode) {
+          console.log(`Using stored game mode ${specificQuizMode} for quiz ${code}`);
+          const normalizedMode = specificQuizMode.trim().toLowerCase() === 'team' ? 'team' : 'solo';
+          setGameMode(normalizedMode as 'solo' | 'team');
+        }
+        
+        // Then check if this quiz code is known to need team mode
+        const codeNeedsTeamMode = shouldBeTeamMode(code) || forceTeamModeForQuiz(code);
         if (codeNeedsTeamMode) {
-          console.log(`🟢 Quiz ${code} is known to need team mode - will override API response`);
+          console.log(`🟢 Quiz ${code} needs team mode - will override API response`);
+          setGameMode('team');
+          
+          // Save this decision to sessionStorage for consistency
+          sessionStorage.setItem('gameMode', 'team');
+          sessionStorage.setItem(`quizMode_${code}`, 'team');
         }
 
         // Call the API to get quiz by code using service
@@ -192,56 +232,54 @@ export default function PlayGamePage() {
             // Improved game mode detection with more debug information
             let gameModeSetting: 'solo' | 'team' = 'solo';
             
-            // Store the raw value for debugging
-            const rawGameMode = quizData.gameMode;
-            console.log("Raw game mode value:", rawGameMode);
-            console.log("Raw game mode type:", typeof rawGameMode);
-            
-            // First check if this is a known quiz needing team mode
-            if (codeNeedsTeamMode) {
-              console.log(`🟢 Forcing team mode for quiz ${code} based on known quiz list`);
-              gameModeSetting = 'team';
-            }
-            // Then check if this quiz should be forced to team mode
-            else if (forceTeamModeForQuiz(code)) {
-              console.log("📢 Forcing team mode for quiz code:", code);
-              gameModeSetting = 'team';
-            } else if (quizData.gameMode !== undefined && quizData.gameMode !== null) {
-              // Enhanced detection logic with more explicit type checking
-              const gmType = typeof quizData.gameMode;
-              console.log(`GameMode detection: type=${gmType}, value=${rawGameMode}`);
+            // Only process API game mode if we don't have a stored or forced mode
+            if (!specificQuizMode && !codeNeedsTeamMode) {
+              // Store the raw value for debugging
+              const rawGameMode = quizData.gameMode;
+              console.log("Raw game mode value:", rawGameMode);
+              console.log("Raw game mode type:", typeof rawGameMode);
               
-              if (gmType === 'string') {
-                // Direct string comparison with improved case handling, log original value
-                console.log("GameMode is string:", quizData.gameMode);
-                const normalizedGameMode = quizData.gameMode.trim().toLowerCase();
-                console.log("Normalized game mode:", normalizedGameMode);
+              if (quizData.gameMode !== undefined && quizData.gameMode !== null) {
+                // Enhanced detection logic with more explicit type checking
+                const gmType = typeof quizData.gameMode;
+                console.log(`GameMode detection: type=${gmType}, value=${rawGameMode}`);
                 
-                // More specific string matching
-                if (normalizedGameMode === 'team' || normalizedGameMode === '1' || normalizedGameMode === 'true') {
-                  gameModeSetting = 'team';
-                  console.log("String-based game mode set to team");
+                if (gmType === 'string') {
+                  // Direct string comparison with improved case handling, log original value
+                  console.log("GameMode is string:", quizData.gameMode);
+                  const normalizedGameMode = quizData.gameMode.trim().toLowerCase();
+                  console.log("Normalized game mode:", normalizedGameMode);
+                  
+                  // More specific string matching
+                  if (normalizedGameMode === 'team' || normalizedGameMode === '1' || normalizedGameMode === 'true') {
+                    gameModeSetting = 'team';
+                    console.log("String-based game mode set to team");
+                  } else {
+                    gameModeSetting = 'solo';
+                    console.log("String-based game mode set to solo (default)");
+                  }
+                } else if (gmType === 'boolean') {
+                  // Boolean values: true = team, false = solo
+                  console.log("GameMode is boolean:", quizData.gameMode);
+                  gameModeSetting = quizData.gameMode === true ? 'team' : 'solo';
+                  console.log(`Boolean-based game mode set to ${gameModeSetting}`);
+                } else if (gmType === 'number') {
+                  // If gameMode is a number, 0 is solo, anything else is team
+                  console.log("GameMode is number:", quizData.gameMode);
+                  gameModeSetting = quizData.gameMode === 0 ? 'solo' : 'team';
+                  console.log(`Number-based game mode set to ${gameModeSetting}`);
                 } else {
+                  console.log("Unknown gameMode format, defaulting to solo:", quizData.gameMode);
                   gameModeSetting = 'solo';
-                  console.log("String-based game mode set to solo (default)");
                 }
-              } else if (gmType === 'boolean') {
-                // Boolean values: true = team, false = solo
-                console.log("GameMode is boolean:", quizData.gameMode);
-                gameModeSetting = quizData.gameMode === true ? 'team' : 'solo';
-                console.log(`Boolean-based game mode set to ${gameModeSetting}`);
-              } else if (gmType === 'number') {
-                // If gameMode is a number, 0 is solo, anything else is team
-                console.log("GameMode is number:", quizData.gameMode);
-                gameModeSetting = quizData.gameMode === 0 ? 'solo' : 'team';
-                console.log(`Number-based game mode set to ${gameModeSetting}`);
               } else {
-                console.log("Unknown gameMode format, defaulting to solo:", quizData.gameMode);
+                console.log("GameMode is undefined or null, defaulting to solo");
                 gameModeSetting = 'solo';
               }
             } else {
-              console.log("GameMode is undefined or null, defaulting to solo");
-              gameModeSetting = 'solo';
+              // Use the pre-determined game mode
+              gameModeSetting = gameMode;
+              console.log(`Using pre-determined game mode: ${gameModeSetting}`);
             }
             
             // Set the final game mode with debugging info
@@ -260,6 +298,8 @@ export default function PlayGamePage() {
             // Set game mode in the state and store it in session storage for later use
             setGameMode(gameModeSetting);
             sessionStorage.setItem('gameMode', gameModeSetting);
+            // Also save specifically for this quiz code
+            sessionStorage.setItem(`quizMode_${code}`, gameModeSetting);
             console.log("Game mode set and saved to session storage:", gameModeSetting);
             
             // If team mode, get teams using the updated service with /api/groups endpoint
@@ -342,7 +382,7 @@ export default function PlayGamePage() {
     }
     
     // Final check for known team mode quizzes before starting
-    const knownTeamModeQuiz = shouldBeTeamMode(code);
+    const knownTeamModeQuiz = shouldBeTeamMode(code) || forceTeamModeForQuiz(code);
     if (knownTeamModeQuiz && gameMode !== 'team') {
       console.log(`🔴 Correcting gameMode from ${gameMode} to 'team' for known team quiz ${code}`);
       setGameMode('team');
@@ -352,6 +392,12 @@ export default function PlayGamePage() {
         console.log(`Auto-selecting team: ${teamNames[0]}`);
       }
     }
+    
+    // Save the game mode specifically for this quiz code
+    console.log(`Saving game mode ${gameMode} for quiz ${code}`);
+    sessionStorage.setItem(`quizMode_${code}`, gameMode);
+    // Also save the general game mode
+    sessionStorage.setItem('gameMode', gameMode);
     
     setApiLoading(true);
     
@@ -389,10 +435,6 @@ export default function PlayGamePage() {
       sessionStorage.setItem('currentPlayer', JSON.stringify(newPlayerInfo));
       // Store in localStorage too for backward compatibility
       localStorage.setItem('currentPlayer', JSON.stringify(newPlayerInfo));
-      
-      // IMPORTANT: Explicitly store the game mode with the correct value
-      console.log("Saving gameMode to sessionStorage:", gameMode);
-      sessionStorage.setItem('gameMode', gameMode);
       
       // In team mode, make sure to save the selected team
       if (gameMode === 'team' && selectedTeam) {
@@ -437,6 +479,7 @@ export default function PlayGamePage() {
           
           // Double-check game mode is correctly saved
           sessionStorage.setItem('gameMode', gameMode);
+          sessionStorage.setItem(`quizMode_${code}`, gameMode);
           
           // When in team mode, store selected team in a dedicated key
           if (gameMode === 'team' && selectedTeam) {
@@ -452,126 +495,8 @@ export default function PlayGamePage() {
         // Continue to fallback approach
       }
       
-      // Only proceed with direct API call if the service call failed
-      try {
-        // Direct API call implementation...
-      } catch (directError) {
-        console.error("Error with direct API approach:", directError);
-      }
-      
-      // Navigate to game screen using the proper Quiz/QuizCode API endpoint
-      try {
-        // First, get the latest quiz data using the QuizCode endpoint
-        const quizResponse = await axios.get(
-          `https://kahootclone-f7hkd0hwafgbfrfa.southeastasia-01.azurewebsites.net/api/Quiz/QuizCode/${code}`
-        ).catch(error => {
-          console.error("Error retrieving quiz data for gameplay:", error);
-          if (error.response) {
-            console.error("Server response:", error.response.status, error.response.data);
-          }
-          throw new Error("Could not retrieve quiz data for gameplay");
-        });
-
-        if (!quizResponse || !quizResponse.data) {
-          throw new Error("Could not retrieve quiz data for gameplay");
-        }
-
-        console.log("Retrieved latest quiz data for gameplay:", quizResponse.data);
-        
-        // Make sure the most updated player info is used (with ID from player creation if available)
-        // Read the current player info again
-        const finalPlayerInfo = JSON.parse(sessionStorage.getItem('currentPlayer') || '{}') as PlayerInfo;
-        
-        // Store the latest quiz data from the API response
-        const quizData = quizResponse.data.data;
-        if (quizData) {
-          // Try to fetch questions separately using questionService
-          let questions: Array<{
-            id: string;
-            question: string;
-            options: string[];
-            correctAnswer: number;
-            timeLimit: number;
-            points: number;
-          }> = [];
-          try {
-            if (quizData.id) {
-              console.log(`Fetching questions for quiz ID: ${quizData.id} using questionService`);
-              const questionsResponse = await questionService.getQuestionsByQuizId(quizData.id);
-              console.log("Questions API response:", questionsResponse);
-              
-              if (questionsResponse && questionsResponse.data && Array.isArray(questionsResponse.data)) {
-                // Format the questions to match the expected format for gameplay
-                questions = questionsResponse.data.map((q: any) => {
-                  // Determine the correct answer index based on isCorrect value (which is 'A', 'B', 'C', or 'D')
-                  const correctAnswerIndex = q.isCorrect ? 
-                    q.isCorrect.charCodeAt(0) - 'A'.charCodeAt(0) : 0;
-                  
-                  return {
-                    id: q.id.toString(),
-                    question: q.text,
-                    options: [q.optionA, q.optionB, q.optionC, q.optionD].filter(Boolean),
-                    correctAnswer: correctAnswerIndex,
-                    timeLimit: q.timeLimit || 30,
-                    points: q.score || 100
-                  };
-                });
-                console.log(`Fetched ${questions.length} questions for the quiz`);
-              }
-            }
-          } catch (questionsError) {
-            console.error("Error fetching questions:", questionsError);
-          }
-          
-          // Very important: Ensure we use our own explicitly set gameMode, NOT the one from quizData.gameMode
-          // This is to ensure team mode is correctly passed to the game page
-          const gameplayData = {
-            id: quizData.id,
-            title: quizData.title,
-            description: quizData.description,
-            coverImage: quizData.thumbnailUrl || quizData.imageUrl,
-            questions: questions.length > 0 ? questions : (quizData.questions || []),
-            category: quizData.categoryId,
-            isPublic: quizData.isPublic,
-            gameMode: gameMode, // Use our state value which we've already processed
-            quizCode: code
-          };
-          
-          console.log("Final gameplay data with questions:", gameplayData);
-          console.log("Final gameMode being saved in gameplay data:", gameMode);
-          
-          // Store in sessionStorage for the game page to use
-          sessionStorage.setItem('quizPreviewData', JSON.stringify(gameplayData));
-          sessionStorage.setItem('currentQuiz', JSON.stringify(gameplayData));
-          sessionStorage.setItem('currentGameCode', code);
-          
-          // Explicitly store the game mode again to be absolutely sure
-          console.log("Final gameMode being saved to sessionStorage:", gameMode);
-          sessionStorage.setItem('gameMode', gameMode);
-          
-          // When in team mode, store selected team in a dedicated key
-          if (gameMode === 'team' && selectedTeam) {
-            console.log("Final selectedTeam being saved to sessionStorage:", selectedTeam);
-            sessionStorage.setItem('selectedTeam', selectedTeam);
-          }
-          
-          // Make sure the current player info is correctly saved for the game
-          console.log("Final player info being saved:", finalPlayerInfo);
-          sessionStorage.setItem('currentPlayer', JSON.stringify(finalPlayerInfo));
-          
-          console.log("Game data stored in sessionStorage, ready for gameplay");
-          
-          // Create a specific game key for this session
-          const specificGameKey = `game_${code}`;
-          sessionStorage.setItem(specificGameKey, JSON.stringify(gameplayData));
-        }
-        
-        // Redirect to the new game page instead of play-quiz-preview
-        router.push(`/game?code=${code}`);
-      } catch (error) {
-        console.error('Error preparing game data:', error);
-        setError('Failed to prepare game data. Please try again.');
-      }
+      // Navigate to game screen
+      router.push(`/game?code=${code}`);
     } catch (error) {
       console.error('Error joining game:', error);
       setError('Failed to join game. Please try again.');
