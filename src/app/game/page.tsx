@@ -33,6 +33,10 @@ import PublicLayout from '../components/PublicLayout';
 import quizService from '@/services/quizService';
 import playerService from '@/services/playerService';
 import questionService from '@/services/questionService';
+import dynamic from 'next/dynamic';
+
+// Import Animal component with dynamic import to avoid SSR issues
+const Animal = dynamic(() => import('react-animals'), { ssr: false });
 
 // Default timer duration per question in seconds
 const DEFAULT_TIMER_DURATION = 20;
@@ -67,23 +71,39 @@ const wobbleAnimation = {
   transition: { duration: 0.6, ease: "easeInOut", type: "tween" }
 };
 
+// Constants for animals and colors
+const ANIMALS = ["alligator", "beaver", "dolphin", "elephant", "fox", "penguin", "tiger", "turtle"]; // Use animals supported by the library
+
+// Map animals to colors for visual consistency
+const animalColorMap = {
+  alligator: "green",
+  beaver: "red",
+  dolphin: "blue",
+  elephant: "purple",
+  fox: "orange",
+  penguin: "purple",
+  tiger: "yellow",
+  turtle: "green"
+};
+
+// Valid colors for the react-animals library
+const VALID_COLORS = ["red", "blue", "green", "yellow", "orange", "purple", "pink", "brown"];
+
 // CustomAnimal component for avatars
 const CustomAnimal = ({ animal, size, showBorder = false }: { animal: string, size: string, showBorder?: boolean }) => {
-  // Define valid animals (these are the ones confirmed to work)
-  const validAnimals = ["alligator", "anteater", "armadillo", "auroch", "badger", 
-                        "bat", "beaver", "buffalo", "camel", "capybara", "chameleon", 
-                        "cheetah", "cicada", "clam", "crab", "crayfish", "crow", 
-                        "dinosaur", "dolphin", "elephant", "flamingo", "goat", 
-                        "grasshopper", "guppy", "honeybee", "kangaroo", "lemur", 
-                        "leopard", "llama", "lobster", "manatee", "mink", "monkey", 
-                        "narwhal", "orangutan", "otter", "panda", "platypus", "pumpkin", 
-                        "python", "quagga", "rabbit", "raccoon", "rhino", "sheep", 
-                        "shrimp", "squirrel", "sunfish", "tadpole", "turtle", "walrus", 
-                        "wolf", "wolverine", "wombat"];
-
-  // Fallback to a working animal if the given one isn't valid
-  const safeAnimal = validAnimals.includes(animal) ? animal : "panda";
+  // Determine if the provided name is a valid animal name
+  const isValidAnimal = ANIMALS.includes(animal);
+  const animalName = isValidAnimal ? animal : 'alligator'; // Fallback to alligator if invalid
   
+  // Use color from the map, ensuring it's valid
+  const mappedColor = animalColorMap[animalName as keyof typeof animalColorMap];
+  let animalColor = mappedColor || 'orange';
+  
+  // Make sure color is valid
+  if (!VALID_COLORS.includes(animalColor)) {
+    animalColor = 'orange'; // Fallback to a known valid color
+  }
+
   try {
     return (
       <Box sx={{ 
@@ -93,27 +113,20 @@ const CustomAnimal = ({ animal, size, showBorder = false }: { animal: string, si
         overflow: 'hidden',
         border: showBorder ? '3px solid white' : 'none',
         boxShadow: showBorder ? '0 0 10px rgba(0,0,0,0.2)' : 'none',
-        backgroundColor: 'blue',
+        backgroundColor: 'white',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
       }}>
-        {/* Render a fallback UI instead of Animal component */}
-        <Box sx={{
-          width: '100%',
-          height: '100%',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: 'white',
-          fontWeight: 'bold',
-          fontSize: `calc(${size} * 0.3)`,
-        }}>
-          {animal?.charAt(0)?.toUpperCase() || 'A'}
-        </Box>
+        <Animal
+          name={animalName}
+          color={animalColor}
+          size="100%"
+        />
       </Box>
     );
   } catch (e) {
+    // Fallback UI if Animal component fails
     return (
       <Box sx={{ 
         width: size, 
@@ -173,6 +186,7 @@ export default function GamePage() {
   const [waitingState, setWaitingState] = useState(false);
   const [otherPlayers, setOtherPlayers] = useState<any[]>([]);
   const [playerData, setPlayerData] = useState<any>(null); // To store the player data from API
+  const [gameMode, setGameMode] = useState<'solo' | 'team'>('solo'); // Add explicit game mode state
   
   // Hardcoded data for demonstration (will be used if real data fails to load)
   const hardcodedQuestion = {
@@ -198,15 +212,51 @@ export default function GamePage() {
 
         const playerData = JSON.parse(playerInfoStr);
         setPlayerInfo(playerData);
+        
+        // Try to get game mode from sessionStorage first (most reliable)
+        const storedGameMode = sessionStorage.getItem('gameMode');
+        if (storedGameMode) {
+          console.log("Found game mode in sessionStorage:", storedGameMode);
+          setGameMode(storedGameMode as 'solo' | 'team');
+        }
 
         try {
+          console.log(`Fetching quiz data for code: ${quizCode}`);
           const quizResponse = await fetch(
             `https://kahootclone-f7hkd0hwafgbfrfa.southeastasia-01.azurewebsites.net/api/Quiz/QuizCode/${quizCode}`
           );
           const quizResponseData = await quizResponse.json();
           
+          console.log("Full quiz response:", quizResponseData);
+          
           if (quizResponseData && quizResponseData.status === 200 && quizResponseData.data) {
             const quizInfo = quizResponseData.data;
+            console.log("Quiz info:", quizInfo);
+            
+            // Process and normalize the game mode
+            let processedGameMode: 'solo' | 'team' = 'solo';
+            
+            // Only override the previously set gameMode if we don't have one from sessionStorage
+            if (!storedGameMode) {
+              const apiGameMode = quizInfo.gameMode;
+              console.log("API game mode:", apiGameMode, "type:", typeof apiGameMode);
+              
+              if (apiGameMode !== undefined && apiGameMode !== null) {
+                if (typeof apiGameMode === 'string') {
+                  // Normalize string value
+                  processedGameMode = apiGameMode.trim().toLowerCase() === 'team' ? 'team' : 'solo';
+                } else if (apiGameMode === true || apiGameMode === 1) {
+                  processedGameMode = 'team';
+                } else if (apiGameMode === false || apiGameMode === 0) {
+                  processedGameMode = 'solo';
+                } else if (typeof apiGameMode === 'number') {
+                  processedGameMode = apiGameMode === 0 ? 'solo' : 'team';
+                }
+                
+                console.log("Processed game mode:", processedGameMode);
+                setGameMode(processedGameMode);
+              }
+            }
             
             const quizId = quizInfo.id;
             
@@ -245,9 +295,12 @@ export default function GamePage() {
               
               const completeQuizData = {
                 ...quizInfo,
-                questions: formattedQuestions
+                questions: formattedQuestions,
+                // Ensure game mode is set correctly in quiz data
+                gameMode: storedGameMode || processedGameMode || quizInfo.gameMode || 'solo'
               };
               
+              console.log("Final quiz data with processed gameMode:", completeQuizData);
               setQuizData(completeQuizData);
             } else {
               throw new Error('No questions found for this quiz.');
@@ -256,11 +309,13 @@ export default function GamePage() {
             throw new Error('Quiz not found. Please check the quiz code.');
           }
         } catch (apiError) {
+          console.error("API error:", apiError);
           throw new Error('Failed to load quiz data. Please check the quiz code.');
         }
 
         setLoading(false);
       } catch (error) {
+        console.error("Load game error:", error);
         setError(error instanceof Error ? error.message : 'An unknown error occurred');
         setLoading(false);
       }
@@ -288,6 +343,13 @@ export default function GamePage() {
       setCurrentQuestion(hardcodedQuestion);
     }
   }, [quizData, currentQuestionIndex, hardcodedQuestion]);
+
+  // Add a specific effect to log game mode when it changes
+  useEffect(() => {
+    console.log("Current game mode:", gameMode);
+    console.log("Player info:", playerInfo);
+    console.log("Quiz data game mode:", quizData?.gameMode);
+  }, [gameMode, playerInfo, quizData]);
 
   useEffect(() => {
     if (!gameStarted || showResults || !currentQuestion || isFeedbackShown) return;
@@ -442,8 +504,10 @@ export default function GamePage() {
       
       // Wait before moving to next question
       setTimeout(() => {
+        // Set waiting state but don't change any answer states
         setWaitingState(true);
-        // Simulate others answering
+        
+        // Use a longer timeout for the waiting state
         setTimeout(() => {
           moveToNextQuestion();
         }, 2000);
@@ -500,7 +564,10 @@ export default function GamePage() {
       
       // Wait before moving to next question
       setTimeout(() => {
+        // Set waiting state but don't change any answer states
         setWaitingState(true);
+        
+        // Use a longer timeout for the waiting state
         setTimeout(() => {
           moveToNextQuestion();
         }, 2000);
@@ -509,19 +576,30 @@ export default function GamePage() {
   };
 
   const moveToNextQuestion = () => {
-    // Reset states for next question
-    setSelectedAnswer(null);
-    setSubmittedAnswer(null);
-    setIsCorrect(null);
-    setIsFeedbackShown(false);
-    setShowCorrectAnswer(false);
-    setWaitingState(false);
+    // Store the current isCorrect value before resetting states
+    const wasCorrect = isCorrect;
     
-    // Move to next question or end quiz
+    // Only reset all states if moving to another question
     if (currentQuestionIndex + 1 < (quizData?.questions?.length || 0)) {
+      // Reset states for next question
+      setSelectedAnswer(null);
+      setSubmittedAnswer(null);
+      setIsCorrect(null);
+      setIsFeedbackShown(false);
+      setShowCorrectAnswer(false);
+      setWaitingState(false);
+      
+      // Move to next question 
       setCurrentQuestionIndex(prev => prev + 1);
     } else {
-      setShowResults(true);
+      // For the last question, keep the answer status but close the dialog
+      setIsFeedbackShown(false);
+      setWaitingState(false);
+      
+      // Brief delay before showing results
+      setTimeout(() => {
+        setShowResults(true);
+      }, 500);
     }
   };
 
@@ -601,8 +679,8 @@ export default function GamePage() {
               </Typography>
               
               <Chip 
-                icon={quizData?.gameMode === 'team' ? <GroupsIcon /> : <PersonIcon />}
-                label={quizData?.gameMode === 'team' ? "Team Mode" : "Solo Mode"}
+                icon={gameMode === 'team' ? <GroupsIcon /> : <PersonIcon />}
+                label={gameMode === 'team' ? "Team Mode" : "Solo Mode"}
                 sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: 'white', my: 1 }}
               />
             </Box>
@@ -619,7 +697,8 @@ export default function GamePage() {
                 <Typography variant="h6">
                   {playerInfo?.name || 'Player'}
                 </Typography>
-                {playerInfo?.team && (
+                {/* Only show team information if in team mode */}
+                {gameMode === 'team' && playerInfo?.team && (
                   <Chip 
                     label={playerInfo.team} 
                     size="small" 
@@ -810,26 +889,38 @@ export default function GamePage() {
                   fontSize: '1.2rem',
                   fontWeight: 'bold',
                   justifyContent: 'flex-start',
-                  bgcolor: OPTION_COLORS[index].bg,
+                  bgcolor: showCorrectAnswer && index === currentQuestion.correctAnswer 
+                    ? '#4caf50' // Always show correct answer in green when revealed
+                    : showCorrectAnswer && submittedAnswer === index && index !== currentQuestion.correctAnswer
+                      ? '#f44336' // Show incorrect selected answer in red
+                      : OPTION_COLORS[index].bg, // Default color
                   color: 'white',
                   position: 'relative',
                   overflow: 'hidden',
-                  boxShadow: `0 8px 15px ${OPTION_COLORS[index].shadow}`,
+                  boxShadow: showCorrectAnswer && index === currentQuestion.correctAnswer
+                    ? '0 0 0 4px white, 0 0 0 8px #4caf50' // Highlight correct answer
+                    : submittedAnswer === index && !showCorrectAnswer
+                      ? `0 0 0 4px white, 0 0 0 8px ${OPTION_COLORS[index].bg}` // Highlight selected answer
+                      : `0 8px 15px ${OPTION_COLORS[index].shadow}`, // Default shadow
                   '&:hover': {
-                    bgcolor: OPTION_COLORS[index].hover,
-                    transform: 'translateY(-3px)',
-                    boxShadow: `0 12px 20px ${OPTION_COLORS[index].shadow}`,
+                    bgcolor: showCorrectAnswer ? 
+                      (index === currentQuestion.correctAnswer ? '#4caf50' : 
+                       (submittedAnswer === index ? '#f44336' : OPTION_COLORS[index].hover)) : 
+                      OPTION_COLORS[index].hover,
+                    transform: submittedAnswer === null ? 'translateY(-3px)' : 'none',
+                    boxShadow: submittedAnswer === null ? 
+                      `0 12px 20px ${OPTION_COLORS[index].shadow}` : 
+                      (showCorrectAnswer && index === currentQuestion.correctAnswer) ? 
+                        '0 0 0 4px white, 0 0 0 8px #4caf50' : 
+                        (submittedAnswer === index ? 
+                          `0 0 0 4px white, 0 0 0 8px ${OPTION_COLORS[index].bg}` : 
+                          `0 8px 15px ${OPTION_COLORS[index].shadow}`)
                   },
                   transition: 'all 0.2s',
-                  ...(submittedAnswer === index && {
-                    boxShadow: `0 0 0 4px white, 0 0 0 8px ${OPTION_COLORS[index].bg}`,
-                  }),
-                  ...(showCorrectAnswer && {
-                    bgcolor: index === currentQuestion.correctAnswer 
-                      ? '#4caf50'
-                      : submittedAnswer === index ? '#f44336' : OPTION_COLORS[index].bg,
-                    opacity: index !== currentQuestion.correctAnswer && index !== submittedAnswer ? 0.7 : 1
-                  })
+                  // Apply reduced opacity to non-selected answers when showing correct answer
+                  opacity: showCorrectAnswer && 
+                           index !== currentQuestion.correctAnswer && 
+                           index !== submittedAnswer ? 0.7 : 1
                 }}
               >
                 <Box
@@ -911,7 +1002,7 @@ export default function GamePage() {
             borderRadius: 4,
             boxShadow: 24,
             maxWidth: 450,
-            backgroundImage: isCorrect 
+            backgroundImage: isCorrect === true
               ? 'linear-gradient(to bottom right, #4CAF50, #8BC34A)'
               : 'linear-gradient(to bottom right, #F44336, #FF9800)',
             color: 'white',
@@ -926,7 +1017,7 @@ export default function GamePage() {
             transition={feedbackAnimation.transition}
           >
             <Box sx={{ mb: 3 }}>
-              {isCorrect ? (
+              {isCorrect === true ? (
                 <CorrectIcon sx={{ fontSize: 100, color: 'white' }} />
               ) : (
                 <WrongIcon sx={{ fontSize: 100, color: 'white' }} />
@@ -934,7 +1025,7 @@ export default function GamePage() {
             </Box>
             
             <Typography variant="h4" sx={{ mb: 2, fontWeight: 'bold' }}>
-              {isCorrect ? 'Correct!' : 'Incorrect!'}
+              {isCorrect === true ? 'Correct!' : 'Incorrect!'}
             </Typography>
           </motion.div>
           
@@ -969,7 +1060,17 @@ export default function GamePage() {
               <Typography variant="body1">
                 Waiting for other players...
               </Typography>
-              <LinearProgress sx={{ mt: 2, height: 8, borderRadius: 4 }} />
+              <LinearProgress 
+                sx={{ 
+                  mt: 2, 
+                  height: 8, 
+                  borderRadius: 4,
+                  bgcolor: 'rgba(255,255,255,0.2)',
+                  '& .MuiLinearProgress-bar': {
+                    bgcolor: 'rgba(255,255,255,0.6)'
+                  }
+                }} 
+              />
             </Box>
           )}
         </DialogContent>
@@ -977,3 +1078,4 @@ export default function GamePage() {
     </Box>
   );
 }
+

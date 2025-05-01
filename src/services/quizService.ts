@@ -288,6 +288,38 @@ const quizService = {
         const response = await axios.get(
           `${API_BASE_URL}/api/Quiz/QuizCode/${quizCode}`
         );
+        
+        // Log the raw response to debug gameMode property
+        console.log(`Raw API response for quiz code ${quizCode}:`, response.data);
+        
+        // Process the response to ensure gameMode is properly formatted
+        if (response.data && response.data.data) {
+          // Make sure gameMode is properly processed
+          const gameMode = response.data.data.gameMode;
+          console.log(`Original gameMode value from API: ${gameMode}, type: ${typeof gameMode}`);
+          
+          // Ensure gameMode is a consistent format (string)
+          if (gameMode !== undefined && gameMode !== null) {
+            if (typeof gameMode === 'string') {
+              // Normalize string value
+              response.data.data.gameMode = gameMode.trim().toLowerCase();
+            } else if (gameMode === true || gameMode === 1) {
+              // Convert boolean/number to string
+              response.data.data.gameMode = 'team';
+            } else if (gameMode === false || gameMode === 0) {
+              response.data.data.gameMode = 'solo';
+            } else if (typeof gameMode === 'number') {
+              // Convert number to string (0 is solo, anything else is team)
+              response.data.data.gameMode = gameMode === 0 ? 'solo' : 'team';
+            }
+          } else {
+            // Default if undefined
+            response.data.data.gameMode = 'solo';
+          }
+          
+          console.log(`Normalized gameMode value: ${response.data.data.gameMode}`);
+        }
+        
         return response.data;
       } catch (publicError) {
         // If public endpoint fails, try with authentication
@@ -301,6 +333,35 @@ const quizService = {
               }
             }
           );
+          
+          // Process the authenticated response too
+          if (response.data && response.data.data) {
+            // Make sure gameMode is properly processed
+            const gameMode = response.data.data.gameMode;
+            console.log(`Authenticated API gameMode value: ${gameMode}, type: ${typeof gameMode}`);
+            
+            // Ensure gameMode is a consistent format (string)
+            if (gameMode !== undefined && gameMode !== null) {
+              if (typeof gameMode === 'string') {
+                // Normalize string value
+                response.data.data.gameMode = gameMode.trim().toLowerCase();
+              } else if (gameMode === true || gameMode === 1) {
+                // Convert boolean/number to string
+                response.data.data.gameMode = 'team';
+              } else if (gameMode === false || gameMode === 0) {
+                response.data.data.gameMode = 'solo';
+              } else if (typeof gameMode === 'number') {
+                // Convert number to string (0 is solo, anything else is team)
+                response.data.data.gameMode = gameMode === 0 ? 'solo' : 'team';
+              }
+            } else {
+              // Default if undefined
+              response.data.data.gameMode = 'solo';
+            }
+            
+            console.log(`Normalized authenticated gameMode value: ${response.data.data.gameMode}`);
+          }
+          
           return response.data;
         } else {
           throw publicError;

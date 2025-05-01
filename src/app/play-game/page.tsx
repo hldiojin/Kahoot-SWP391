@@ -37,6 +37,17 @@ import playerService from '@/services/playerService';
 import questionService from '@/services/questionService';
 import dynamic from 'next/dynamic';
 
+// Manually override game mode for specific quiz codes
+// This is a temporary fix for specific problematic quizzes
+const forceTeamModeForQuiz = (quizCode: string | null): boolean => {
+  if (!quizCode) return false;
+  
+  // List of quiz codes that should be forced to team mode
+  const teamModeQuizzes = ['517232'];
+  
+  return teamModeQuizzes.includes(quizCode);
+};
+
 // Import Animal component with dynamic import to avoid SSR issues
 const Animal = dynamic(() => import('react-animals'), { ssr: false });
 
@@ -149,21 +160,47 @@ export default function PlayGamePage() {
           const quizResponse = await quizService.getQuizByQuizCode(code);
           
           console.log("Quiz API Response:", quizResponse);
+          console.log("Raw gameMode value from API:", quizResponse?.data?.gameMode);
+          console.log("Type of gameMode:", typeof quizResponse?.data?.gameMode);
           
           if (quizResponse && quizResponse.data) {
             const quizData = quizResponse.data;
             console.log("Quiz data:", quizData);
             
-            // Determine game mode
+            // Improved game mode detection with more debug information
             let gameModeSetting: 'solo' | 'team' = 'solo';
-            if (quizData.gameMode && typeof quizData.gameMode === 'string') {
-              gameModeSetting = quizData.gameMode.toLowerCase() === 'team' ? 'team' : 'solo';
-            } else if (quizData.gameMode === true || quizData.gameMode === 1) {
+            
+            // Store the raw value for debugging
+            const rawGameMode = quizData.gameMode;
+            console.log("Raw game mode value:", rawGameMode);
+            console.log("Raw game mode type:", typeof rawGameMode);
+            
+            // Check if this quiz should be forced to team mode
+            if (forceTeamModeForQuiz(code)) {
+              console.log("📢 Forcing team mode for quiz code:", code);
               gameModeSetting = 'team';
+            } else if (quizData.gameMode !== undefined && quizData.gameMode !== null) {
+              if (typeof quizData.gameMode === 'string') {
+                // Direct string comparison with improved case handling, log original value
+                console.log("GameMode is string:", quizData.gameMode);
+                const normalizedGameMode = quizData.gameMode.trim().toLowerCase();
+                console.log("Normalized game mode:", normalizedGameMode);
+                gameModeSetting = normalizedGameMode === 'team' ? 'team' : 'solo';
+              } else if (quizData.gameMode === true || quizData.gameMode === 1) {
+                console.log("GameMode is true/1, setting to team");
+                gameModeSetting = 'team';
+              } else if (typeof quizData.gameMode === 'number') {
+                // If gameMode is a number, 0 is solo, anything else is team
+                console.log("GameMode is number:", quizData.gameMode);
+                gameModeSetting = quizData.gameMode === 0 ? 'solo' : 'team';
+              } else {
+                console.log("Unknown gameMode format, defaulting to solo:", quizData.gameMode);
+              }
+            } else {
+              console.log("GameMode is undefined or null, defaulting to solo");
             }
             
-            console.log("Game mode:", gameModeSetting);
-            
+            console.log("Final determined game mode:", gameModeSetting);
             setGameData({
               id: parseInt(quizData.id || (code || '0')),
               title: quizData.title || `Quiz ${code}`,
@@ -296,16 +333,18 @@ export default function PlayGamePage() {
       try {
         console.log("Creating player using playerService");
         
-        // Create player data object
+        // Add team information to the player data for team mode games
         const playerData = playerService.formatPlayerData(
           playerName,
           gameData.id,
           selectedAnimal,
           selectedColor,
-          user?.id ? parseInt(user.id) : 0
+          user?.id ? parseInt(user.id) : 0,
+          gameMode === 'team' ? selectedTeam : null // Pass team name directly
         );
         
-        console.log("Formatted player data:", playerData);
+        // Log full player data for debugging
+        console.log("Formatted player data with team info:", playerData);
         
         // Create player in the backend
         const playerResponse = await playerService.createPlayer(playerData);
@@ -324,6 +363,14 @@ export default function PlayGamePage() {
           // Save to sessionStorage
           sessionStorage.setItem('currentPlayer', JSON.stringify(playerInfoWithId));
           localStorage.setItem('currentPlayer', JSON.stringify(playerInfoWithId));
+          
+          // Store game mode in session for game page to know it's team mode
+          sessionStorage.setItem('gameMode', gameMode);
+          
+          // When in team mode, store selected team in a dedicated key
+          if (gameMode === 'team' && selectedTeam) {
+            sessionStorage.setItem('selectedTeam', selectedTeam);
+          }
           
           // Navigate directly to the game without trying the second approach
           router.push(`/game?code=${code}`);
@@ -405,7 +452,7 @@ export default function PlayGamePage() {
             console.error("Error fetching questions:", questionsError);
           }
           
-          // Format the data appropriately
+          // Ensure we're using the correct game mode from our earlier detection
           const gameplayData = {
             id: quizData.id,
             title: quizData.title,
@@ -414,7 +461,7 @@ export default function PlayGamePage() {
             questions: questions.length > 0 ? questions : (quizData.questions || []),
             category: quizData.categoryId,
             isPublic: quizData.isPublic,
-            gameMode: quizData.gameMode,
+            gameMode: gameMode, // Use our state value which we've already processed
             quizCode: code
           };
           
@@ -424,6 +471,14 @@ export default function PlayGamePage() {
           sessionStorage.setItem('quizPreviewData', JSON.stringify(gameplayData));
           sessionStorage.setItem('currentQuiz', JSON.stringify(gameplayData));
           sessionStorage.setItem('currentGameCode', code);
+          
+          // Explicitly store the game mode
+          sessionStorage.setItem('gameMode', gameMode);
+          
+          // When in team mode, store selected team in a dedicated key
+          if (gameMode === 'team' && selectedTeam) {
+            sessionStorage.setItem('selectedTeam', selectedTeam);
+          }
           
           // Make sure the current player info is correctly saved for the game
           console.log("Final player info being saved:", finalPlayerInfo);
@@ -481,6 +536,35 @@ export default function PlayGamePage() {
 
   return (
     <PublicLayout>
+      {/* Debug banner - Only visible during development */}
+      <Box sx={{ 
+        p: 1.5,
+        bgcolor: gameMode === 'team' ? 'success.main' : 'info.main', 
+        color: 'white',
+        textAlign: 'center',
+        fontWeight: 'bold',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 1.5
+      }}>
+        <Typography variant="body1">
+          Current Game Mode: <span style={{ textDecoration: 'underline' }}>{gameMode}</span>
+        </Typography>
+        <Typography variant="body2" sx={{ opacity: 0.8 }}>
+          Quiz ID: {gameData?.id || 'unknown'} | Code: {code}
+        </Typography>
+        {gameMode === 'team' && (
+          <Chip 
+            label={`${teamNames.length} Teams Available`} 
+            color="warning" 
+            size="small" 
+            variant="outlined"
+            sx={{ color: 'white', borderColor: 'white' }}
+          />
+        )}
+      </Box>
+      
       <Container maxWidth="md" sx={{ py: 4 }}>
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -500,6 +584,37 @@ export default function PlayGamePage() {
             <Typography variant="h4" sx={{ mb: 2, fontWeight: 'bold' }}>
               {gameData?.title || 'Loading...'}
             </Typography>
+            
+            {/* Game Mode Badge - Make it very visible */}
+            <Box sx={{ 
+              display: 'flex', 
+              justifyContent: 'center', 
+              mb: 3 
+            }}>
+              <Paper
+                elevation={3}
+                sx={{ 
+                  px: 3, 
+                  py: 1.5, 
+                  borderRadius: '20px',
+                  background: gameMode === 'team' 
+                    ? 'linear-gradient(45deg, #3f51b5 30%, #2196f3 90%)' 
+                    : 'linear-gradient(45deg, #ff9800 30%, #f44336 90%)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 1
+                }}
+              >
+                {gameMode === 'team' ? (
+                  <GroupsIcon sx={{ color: 'white' }} />
+                ) : (
+                  <PersonIcon sx={{ color: 'white' }} />
+                )}
+                <Typography variant="h6" sx={{ color: 'white', fontWeight: 'bold' }}>
+                  {gameMode === 'team' ? 'TEAM MODE' : 'SOLO MODE'}
+                </Typography>
+              </Paper>
+            </Box>
             
             {gameData?.imageUrl && (
               <Box sx={{ maxWidth: 300, mx: 'auto', mb: 3, borderRadius: 2, overflow: 'hidden' }}>
@@ -667,36 +782,100 @@ export default function PlayGamePage() {
 
               {/* Team Selection (Only shown for team mode) */}
               {gameMode === 'team' && (
-                <Box sx={{ mb: 3 }}>
-                  <FormControl fullWidth variant="outlined">
-                    <InputLabel id="team-select-label">
-                      Select Your Team
-                    </InputLabel>
-                    <Select
-                      labelId="team-select-label"
-                      value={selectedTeam}
-                      onChange={handleTeamChange}
-                      label="Select Your Team"
-                      sx={{
-                        bgcolor: 'background.paper',
+                <Box sx={{ mb: 4 }}>
+                  <Typography 
+                    variant="h5" 
+                    gutterBottom 
+                    sx={{ 
+                      display: 'flex', 
+                      alignItems: 'center',
+                      color: 'primary.main',
+                      fontWeight: 'bold',
+                      justifyContent: 'center', 
+                      mb: 2
+                    }}
+                  >
+                    <GroupsIcon sx={{ mr: 1.5, fontSize: '1.8rem' }} />
+                    Team Selection
+                  </Typography>
+                  
+                  <Paper 
+                    elevation={3} 
+                    sx={{ 
+                      p: 3, 
+                      bgcolor: 'rgba(66, 165, 245, 0.08)', 
+                      borderRadius: 3,
+                      border: '1px solid rgba(66, 165, 245, 0.5)',
+                      boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
+                    }}
+                  >
+                    <Typography 
+                      variant="subtitle1" 
+                      sx={{ 
+                        mb: 2, 
+                        textAlign: 'center', 
+                        color: 'text.secondary',
+                        fontStyle: 'italic'
                       }}
-                      startAdornment={<GroupsIcon sx={{ mr: 1, color: 'text.secondary' }} />}
                     >
+                      Choose your team to join this quiz in team mode
+                    </Typography>
+                    
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, mb: 3, justifyContent: 'center' }}>
                       {teamNames.map((team, index) => (
-                        <MenuItem key={index} value={team}>
-                          <Chip 
-                            avatar={
-                              <Avatar sx={{ bgcolor: ['red', 'blue', 'green', 'orange'][index % 4] }}>
-                                {team.charAt(0)}
-                              </Avatar>
-                            } 
-                            label={team} 
-                            variant="outlined" 
-                          />
-                        </MenuItem>
+                        <Paper
+                          key={index}
+                          sx={{
+                            p: 2,
+                            borderRadius: 2,
+                            border: team === selectedTeam ? '2px solid' : '1px solid',
+                            borderColor: team === selectedTeam ? 'primary.main' : 'rgba(0,0,0,0.1)', 
+                            cursor: 'pointer',
+                            width: 'calc(50% - 16px)',
+                            bgcolor: team === selectedTeam ? 'rgba(33,150,243,0.1)' : 'white',
+                            textAlign: 'center',
+                            transition: 'all 0.2s ease',
+                            transform: team === selectedTeam ? 'scale(1.03)' : 'scale(1)',
+                            boxShadow: team === selectedTeam ? '0 5px 15px rgba(0,0,0,0.1)' : 'none',
+                            '&:hover': {
+                              bgcolor: 'rgba(33,150,243,0.05)',
+                              borderColor: 'primary.main',
+                              transform: 'translateY(-3px)',
+                              boxShadow: '0 5px 15px rgba(0,0,0,0.1)'
+                            }
+                          }}
+                          onClick={() => setSelectedTeam(team)}
+                        >
+                          <Avatar 
+                            sx={{ 
+                              width: 56, 
+                              height: 56, 
+                              margin: '0 auto 12px',
+                              bgcolor: ['#f44336', '#2196f3', '#4caf50', '#ff9800'][index % 4],
+                              boxShadow: '0 4px 8px rgba(0,0,0,0.1)'
+                            }}
+                          >
+                            {team.charAt(0)}
+                          </Avatar>
+                          <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+                            {team}
+                          </Typography>
+                          {team === selectedTeam && (
+                            <Chip 
+                              size="small" 
+                              label="Selected" 
+                              color="primary" 
+                              sx={{ mt: 1 }}
+                            />
+                          )}
+                        </Paper>
                       ))}
-                    </Select>
-                  </FormControl>
+                    </Box>
+                    
+                    <Typography variant="caption" sx={{ display: 'block', mt: 2, textAlign: 'center', color: 'text.secondary' }}>
+                      In team mode, your score will contribute to your team's total. Teams compete against each other for the highest combined score.
+                    </Typography>
+                  </Paper>
                 </Box>
               )}
 

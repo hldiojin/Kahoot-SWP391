@@ -151,6 +151,7 @@ const playerService = {
    * @param animalName Name of the animal avatar
    * @param animalColor Color of the animal avatar
    * @param userId Optional user ID if player is logged in
+   * @param teamName Optional team name for team mode
    * @returns Formatted player data for API
    */
   formatPlayerData: (
@@ -158,8 +159,9 @@ const playerService = {
     sessionId: number,
     animalName: string = 'alligator',
     animalColor: string = 'orange',
-    userId: number = 0
-  ): PlayerData => {
+    userId: number = 0,
+    teamName: string | null = null
+  ): PlayerData & { teamName?: string, groupName?: string, team?: string } => {
     // Use a more stable approach for playerCode
     // Instead of Math.random(), use a hash of the nickname + sessionId
     const hashCode = (str: string): number => {
@@ -173,7 +175,8 @@ const playerService = {
     
     const playerCode = hashCode(`${nickname}-${sessionId}-${Date.now()}`);
     
-    return {
+    // Create the base player data
+    const playerData: PlayerData & { teamName?: string, groupName?: string, team?: string } = {
       id: 0, // The server will assign an ID
       userId: userId,
       nickname: nickname,
@@ -182,6 +185,16 @@ const playerService = {
       score: 0, // Initial score is 0
       sessionId: sessionId
     };
+    
+    // Add team information if provided
+    if (teamName) {
+      // Add team information using multiple field names for compatibility
+      playerData.teamName = teamName;
+      playerData.groupName = teamName;
+      playerData.team = teamName;
+    }
+    
+    return playerData;
   },
 
   /**

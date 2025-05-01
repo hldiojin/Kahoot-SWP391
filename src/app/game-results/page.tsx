@@ -200,17 +200,13 @@ export default function GameResultsPage() {
         const quiz = JSON.parse(quizData);
         const player = JSON.parse(playerInfo);
         
-        // Get game mode from quiz data or default to solo
         const mode = quiz.gameMode || 'solo';
         setGameMode(mode);
         
-        // Set initial view mode based on game mode
         setViewMode(mode === 'team' ? 'group' : 'player');
         
-        // Set player results
         setPlayerResults(results);
         
-        // Calculate group scores
         const groups = calculateGroupScores(results);
         setGroupResults(groups);
         
