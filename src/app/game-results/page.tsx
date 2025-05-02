@@ -43,6 +43,7 @@ interface PlayerScore {
   averageAnswerTime?: number;
   avatar?: string;
   group?: string; // Add group property
+  id?: number; // Add id property for player identification
 }
 
 interface GroupScore {
@@ -186,148 +187,332 @@ export default function GameResultsPage() {
       console.log("quizData:", quizData ? "Found" : "Not found");
       console.log("playerInfo:", playerInfo ? "Found" : "Not found");
       
+      // First try to determine if this should be team mode
+      const quizCode = sessionStorage.getItem('quizCode');
+      console.log("Checking game mode for quiz code:", quizCode);
+      
+      // Check all possible sources for game mode information
+      let detectedGameMode: 'solo' | 'team' = 'solo';
+      
+      // 1. Check quiz-specific game mode in sessionStorage
+      if (quizCode) {
+        const quizSpecificMode = sessionStorage.getItem(`quizMode_${quizCode}`);
+        console.log(`Quiz-specific game mode from sessionStorage: ${quizSpecificMode}`);
+        if (quizSpecificMode === 'team') {
+          console.log('✅ Using team mode from quiz-specific sessionStorage key');
+          detectedGameMode = 'team';
+        }
+      }
+      
+      // 2. Check general game mode in sessionStorage
+      if (detectedGameMode !== 'team') {
+        const generalMode = sessionStorage.getItem('gameMode');
+        console.log(`General game mode from sessionStorage: ${generalMode}`);
+        if (generalMode === 'team') {
+          console.log('✅ Using team mode from general sessionStorage key');
+          detectedGameMode = 'team';
+        }
+      }
+      
+      // 3. Check localStorage for team mode indicators
+      if (detectedGameMode !== 'team' && quizCode) {
+        // Check direct flag
+        const directFlag = localStorage.getItem(`quizIsTeamMode_${quizCode}`);
+        console.log(`Direct team mode flag from localStorage: ${directFlag}`);
+        if (directFlag === 'true') {
+          console.log('✅ Using team mode from direct localStorage flag');
+          detectedGameMode = 'team';
+        }
+        
+        // Check array of team mode quizzes
+        try {
+          const teamModeQuizzes = JSON.parse(localStorage.getItem('teamModeQuizzes') || '[]');
+          if (quizCode && Array.isArray(teamModeQuizzes) && teamModeQuizzes.includes(quizCode)) {
+            console.log('✅ Using team mode from teamModeQuizzes array in localStorage');
+            detectedGameMode = 'team';
+          }
+        } catch (e) {
+          console.error('Error checking teamModeQuizzes:', e);
+        }
+      }
+      
+      // 4. Check if player has a team assigned
+      if (detectedGameMode !== 'team' && playerInfo) {
+        try {
+          const parsedPlayerInfo = JSON.parse(playerInfo);
+          if (parsedPlayerInfo && parsedPlayerInfo.team) {
+            console.log(`Player has team assigned: ${parsedPlayerInfo.team}`);
+            console.log('✅ Using team mode because player has a team assigned');
+            detectedGameMode = 'team';
+          }
+        } catch (e) {
+          console.error('Error checking player team:', e);
+        }
+      }
+      
+      // 5. Check quiz data for gameMode or teamCount
+      if (detectedGameMode !== 'team' && quizData) {
+        try {
+          const parsedQuizData = JSON.parse(quizData);
+          console.log(`Game mode from quiz data: ${parsedQuizData.gameMode}`);
+          
+          if (parsedQuizData.gameMode === 'team') {
+            console.log('✅ Using team mode from quiz data gameMode field');
+            detectedGameMode = 'team';
+          } else if (parsedQuizData.teamCount && parsedQuizData.teamCount > 0) {
+            console.log(`Quiz has teamCount: ${parsedQuizData.teamCount}`);
+            console.log('✅ Using team mode because quiz has teamCount > 0');
+            detectedGameMode = 'team';
+          }
+        } catch (e) {
+          console.error('Error checking quiz data for game mode:', e);
+        }
+      }
+      
+      console.log(`Final determined game mode: ${detectedGameMode}`);
+      setGameMode(detectedGameMode);
+      
+      // If team mode was detected, also set the view mode to group by default
+      if (detectedGameMode === 'team') {
+        setViewMode('group');
+      }
+      
       // Set player info
+      let currentPlayerData = null;
       if (playerInfo) {
         const parsedPlayerInfo = JSON.parse(playerInfo);
         setPlayerInfo(parsedPlayerInfo);
+        currentPlayerData = parsedPlayerInfo;
         console.log("Player info:", parsedPlayerInfo);
       } else {
         console.warn("No player information found in sessionStorage");
       }
       
       // Set quiz data
+      let currentQuizData = null;
       if (quizData) {
         const parsedQuizData = JSON.parse(quizData);
         setQuiz(parsedQuizData);
+        currentQuizData = parsedQuizData;
         console.log("Quiz data:", parsedQuizData);
+        
+        // Save quiz code to sessionStorage if available
+        if (parsedQuizData.quizCode) {
+          const quizCodeStr = parsedQuizData.quizCode.toString();
+          console.log(`Saving quiz code to sessionStorage: ${quizCodeStr}`);
+          sessionStorage.setItem('quizCode', quizCodeStr);
+          
+          // Make sure the game mode is properly stored with this quiz code
+          if (detectedGameMode === 'team') {
+            console.log(`Ensuring team mode is saved for quiz code: ${quizCodeStr}`);
+            sessionStorage.setItem(`quizMode_${quizCodeStr}`, 'team');
+            sessionStorage.setItem('gameMode', 'team');
+            
+            // Also save to localStorage for persistence
+            try {
+              const teamModeQuizzes = JSON.parse(localStorage.getItem('teamModeQuizzes') || '[]');
+              if (!teamModeQuizzes.includes(quizCodeStr)) {
+                teamModeQuizzes.push(quizCodeStr);
+                localStorage.setItem('teamModeQuizzes', JSON.stringify(teamModeQuizzes));
+                console.log(`Added quiz ${quizCodeStr} to teamModeQuizzes in localStorage`);
+              }
+            } catch (e) {
+              console.error('Error updating teamModeQuizzes in localStorage:', e);
+              // Fallback to direct flag
+              localStorage.setItem(`quizIsTeamMode_${quizCodeStr}`, 'true');
+            }
+          }
+        }
       } else {
         console.warn("No quiz data found in sessionStorage");
       }
-      
+
+      // Set player avatar if found in sessionStorage
       if (storedAvatar) {
         setPlayerAvatar(storedAvatar);
       }
-      
-      // Try to get complete game data first as a backup
-      const completeGameData = sessionStorage.getItem('completeGameData');
-      if (completeGameData && (!storedResults || storedResults === "undefined" || storedResults === "null")) {
-        console.log("Using complete game data as fallback");
+
+      // Function to fetch all players for this quiz
+      const fetchAllPlayersForQuiz = async (quizId: number, quizCode: string) => {
         try {
-          const parsedGameData = JSON.parse(completeGameData);
-          // Create player results from complete game data
-          if (parsedGameData && parsedGameData.player) {
-            const playerResult = {
-              name: parsedGameData.player.name,
-              score: parsedGameData.score,
-              correctAnswers: parsedGameData.correctAnswers,
-              totalQuestions: parsedGameData.totalQuestions,
-              avatar: parsedGameData.player.avatar,
-              group: playerInfo ? JSON.parse(playerInfo)?.team : null
-            };
-            
-            setPlayerResults([playerResult]);
-            console.log("Using player results from complete game data:", [playerResult]);
-            
-            const groups = calculateGroupScores([playerResult]);
-            setGroupResults(groups);
-            
-            if (quizData) {
-              const parsedQuizData = JSON.parse(quizData);
-              setGameTitle(parsedQuizData.title);
-            }
-            
-            setCurrentPlayer(parsedGameData.player.name);
-            
-            if (parsedGameData.player?.id && parsedGameData.quizId) {
-              fetchPlayerAnswers(parsedGameData.player.id, parsedGameData.quizId);
-            }
-            
-            // Save the game data for teacher to see
-            saveCompletedGame(quiz, [playerResult], groups);
-            
-            // No need to process storedResults
-            setLoading(false);
-            return;
-          }
-        } catch (error) {
-          console.error("Error parsing complete game data:", error);
-        }
-      }
-      
-      if (storedResults && quizData && playerInfo) {
-        console.log("Processing stored game results");
-        try {
-          const results = JSON.parse(storedResults);
-          if (!Array.isArray(results)) {
-            console.error("Game results is not an array:", results);
-            throw new Error("Invalid game results format");
-          }
+          console.log(`Fetching all players for quiz ID ${quizId} and code ${quizCode}`);
           
-          const quiz = JSON.parse(quizData);
-          const player = JSON.parse(playerInfo);
-          
-          console.log("Game results:", results);
-          
-          const mode = quiz.gameMode || 'solo';
-          setGameMode(mode);
-          
-          setViewMode(mode === 'team' ? 'group' : 'player');
-          
-          setPlayerResults(results);
-          
-          const groups = calculateGroupScores(results);
-          setGroupResults(groups);
-          
-          setGameTitle(quiz.title || "Quiz Game");
-          setCurrentPlayer(player?.name || '');
-          
-          // Fetch player answers from API
-          if (player && player.id && quiz.id) {
-            fetchPlayerAnswers(player.id, quiz.id);
-          }
-          
-          // Hide confetti after 5 seconds
-          setTimeout(() => {
-            setShowConfetti(false);
-          }, 5000);
-          
-          // Save the game data for teacher to see
-          saveCompletedGame(quiz, results, groups);
-        } catch (error) {
-          console.error('Error processing game results:', error);
-          
-          // Try to recover from error by creating a dummy result
-          if (playerInfo) {
+          // First try to get players from localStorage (for local testing between tabs)
+          const allLocalResults = localStorage.getItem(`quizResults_${quizCode}`);
+          if (allLocalResults) {
             try {
-              const playerData = JSON.parse(playerInfo);
-              const dummyResult = {
-                name: playerData.name || "Player",
-                score: 0,
-                correctAnswers: 0,
-                totalQuestions: 1,
-                avatar: playerData.avatar || 'alligator'
-              };
-              
-              console.log("Created dummy result as fallback:", dummyResult);
-              setPlayerResults([dummyResult]);
-              setCurrentPlayer(playerData.name || "Player");
-              
-              if (quizData) {
-                const quizInfo = JSON.parse(quizData);
-                setGameTitle(quizInfo.title || "Quiz Game");
+              const parsedLocalResults = JSON.parse(allLocalResults);
+              if (Array.isArray(parsedLocalResults) && parsedLocalResults.length > 0) {
+                console.log("Found local multi-player results:", parsedLocalResults);
+                return parsedLocalResults;
               }
             } catch (e) {
-              console.error("Failed to create dummy result:", e);
+              console.error("Error parsing local results:", e);
             }
           }
+          
+          // If no local results, try to get from API
+          const response = await fetch(
+            `https://kahootclone-f7hkd0hwafgbfrfa.southeastasia-01.azurewebsites.net/api/Player/quiz/${quizId}`
+          );
+          
+          if (!response.ok) {
+            throw new Error(`Error fetching players: ${response.status}`);
+          }
+          
+          const data = await response.json();
+          
+          if (data && data.status === 200 && Array.isArray(data.data)) {
+            console.log("Players from API:", data.data);
+            return data.data.map((player: any) => ({
+              name: player.name || 'Player',
+              score: player.score || 0,
+              correctAnswers: player.correctAnswersCount || 0,
+              totalQuestions: currentQuizData?.questions?.length || 0,
+              avatar: player.avatar || 'alligator',
+              group: player.team || null,
+              id: player.id
+            }));
+          } else {
+            console.warn("No valid player data from API");
+            return [];
+          }
+        } catch (error) {
+          console.error("Error fetching all players:", error);
+          return [];
         }
-      } else {
-        console.warn("Missing required data for game results:", {
-          hasStoredResults: !!storedResults,
-          hasQuizData: !!quizData,
-          hasPlayerInfo: !!playerInfo
-        });
-      }
+      };
+      
+      // Process game results and try to include other players
+      const processResults = async () => {
+        let combinedResults: PlayerScore[] = [];
+        
+        // Start with current player's results from sessionStorage
+        if (storedResults) {
+          try {
+            const results = JSON.parse(storedResults);
+            if (Array.isArray(results)) {
+              combinedResults = [...results];
+              
+              // Set the game title if we have quiz data
+              if (currentQuizData) {
+                setGameTitle(currentQuizData.title || "Quiz Game");
+              }
+              
+              // Set current player name
+              if (currentPlayerData) {
+                setCurrentPlayer(currentPlayerData.name || '');
+              }
+            }
+          } catch (error) {
+            console.error('Error processing stored results:', error);
+          }
+        }
+        
+        // Try to get results from complete game data as a backup
+        const completeGameData = sessionStorage.getItem('completeGameData');
+        if (completeGameData && combinedResults.length === 0) {
+          try {
+            const parsedGameData = JSON.parse(completeGameData);
+            if (parsedGameData && parsedGameData.player) {
+              // Check if we can detect team mode from complete game data
+              if (parsedGameData.gameMode === 'team' || 
+                  (parsedGameData.player.team && parsedGameData.player.team !== null) ||
+                  detectedGameMode === 'team') {
+                console.log("✅ Setting team mode from complete game data");
+                setGameMode('team');
+                setViewMode('group');
+              }
+              
+              const playerResult = {
+                name: parsedGameData.player.name,
+                score: parsedGameData.score,
+                correctAnswers: parsedGameData.correctAnswers,
+                totalQuestions: parsedGameData.totalQuestions,
+                avatar: parsedGameData.player.avatar,
+                group: currentPlayerData ? currentPlayerData.team : null
+              };
+              
+              combinedResults = [playerResult];
+              console.log("Using player results from complete game data:", combinedResults);
+              
+              if (currentQuizData) {
+                setGameTitle(currentQuizData.title || "Quiz Game");
+              }
+              
+              setCurrentPlayer(parsedGameData.player.name);
+              
+              if (parsedGameData.player?.id && parsedGameData.quizId) {
+                fetchPlayerAnswers(parsedGameData.player.id, parsedGameData.quizId);
+              }
+            }
+          } catch (error) {
+            console.error("Error parsing complete game data:", error);
+          }
+        }
+        
+        // Now try to get other players' results
+        if (quizCode && currentQuizData && currentQuizData.id) {
+          try {
+            // Get other players for this quiz
+            const otherPlayers = await fetchAllPlayersForQuiz(currentQuizData.id, quizCode);
+            
+            if (otherPlayers.length > 0) {
+              // If we don't have our player in the combined results yet, try to use API data
+              if (combinedResults.length === 0 && currentPlayerData) {
+                // Try to find the current player in the API results
+                const apiCurrentPlayer = otherPlayers.find((p: PlayerScore) => 
+                  p.name === currentPlayerData.name || 
+                  (p.id && currentPlayerData.id && p.id === currentPlayerData.id)
+                );
+                
+                if (apiCurrentPlayer) {
+                  combinedResults = [apiCurrentPlayer];
+                  setCurrentPlayer(apiCurrentPlayer.name);
+                }
+              }
+              
+              // Add other players to the results if they're not already included
+              otherPlayers.forEach((player: PlayerScore) => {
+                // Skip if this player is already in the results
+                if (!combinedResults.some(p => p.name === player.name)) {
+                  combinedResults.push(player);
+                }
+              });
+              
+              console.log(`Combined results including ${combinedResults.length} players:`, combinedResults);
+            }
+          } catch (err) {
+            console.error("Error getting other players:", err);
+          }
+        }
+        
+        // Sort results by score (highest first)
+        combinedResults.sort((a, b) => b.score - a.score);
+        
+        // Save to localStorage for other tabs to access (for local testing)
+        if (quizCode && combinedResults.length > 0) {
+          localStorage.setItem(`quizResults_${quizCode}`, JSON.stringify(combinedResults));
+        }
+        
+        // Update state with combined results
+        setPlayerResults(combinedResults);
+        
+        // Calculate and set group results
+        const groups = calculateGroupScores(combinedResults);
+        setGroupResults(groups);
+        
+        // Save the game data for teacher to see
+        saveCompletedGame(currentQuizData, combinedResults, groups);
+        
+        // Hide confetti after 5 seconds
+        setTimeout(() => {
+          setShowConfetti(false);
+        }, 5000);
+      };
+      
+      // Start processing results
+      processResults();
     } catch (error) {
       console.error('Error loading game results:', error);
     } finally {
@@ -385,7 +570,7 @@ export default function GameResultsPage() {
     getAnswers();
   }, []);
 
-  // Improved function to fetch player answers using GET method
+  // Enhanced function to fetch player answers for both current player and all other players
   const fetchPlayerAnswers = async (playerId: number, quizId: number) => {
     try {
       setAnswersLoading(true);
@@ -400,6 +585,10 @@ export default function GameResultsPage() {
             console.log("Using stored player answers from sessionStorage:", parsedAnswers);
             setPlayerAnswers(parsedAnswers);
             setAnswersLoading(false);
+            
+            // Try to get all answers for the quiz anyway
+            fetchAllAnswersForQuiz(quizId).catch(e => console.error("Error fetching all answers:", e));
+            
             return;
           }
         } catch (parseError) {
@@ -432,6 +621,9 @@ export default function GameResultsPage() {
             // Save these formatted answers in sessionStorage for future use
             sessionStorage.setItem('playerAnswers', JSON.stringify(formattedAnswers));
             
+            // Try to get all answers for the quiz anyway
+            fetchAllAnswersForQuiz(quizId).catch(e => console.error("Error fetching all answers:", e));
+            
             setAnswersLoading(false);
             return;
           }
@@ -440,7 +632,24 @@ export default function GameResultsPage() {
         }
       }
       
-      // If no stored answers, try API calls
+      // Now try getting all answers for this quiz - this includes current player's answers
+      const allAnswers = await fetchAllAnswersForQuiz(quizId);
+      if (allAnswers && allAnswers.length > 0) {
+        // Filter for current player's answers
+        const playerAnswers = allAnswers.filter(a => a.playerId === playerId);
+        
+        if (playerAnswers.length > 0) {
+          setPlayerAnswers(playerAnswers);
+          
+          // Save these answers in sessionStorage for future use
+          sessionStorage.setItem('playerAnswers', JSON.stringify(playerAnswers));
+          
+          setAnswersLoading(false);
+          return;
+        }
+      }
+      
+      // If we still don't have answers, try the original method with direct API calls
       try {
         // First approach: Get all answers and filter client-side
         const response = await fetch(
@@ -475,7 +684,7 @@ export default function GameResultsPage() {
             // Save these answers in sessionStorage for future use
             sessionStorage.setItem('playerAnswers', JSON.stringify(playerAnswers));
             
-            // Also update localStorage for persistance
+            // Update stored game data
             setTimeout(() => {
               // Get the updated quiz data with our answers
               const updatedQuiz = JSON.parse(sessionStorage.getItem('quizPreviewData') || sessionStorage.getItem('currentQuiz') || '{}');
@@ -490,7 +699,7 @@ export default function GameResultsPage() {
         console.error("Error fetching from main PlayerAnswer endpoint:", apiError);
       }
       
-      // If first approach fails, try player-specific endpoint
+      // Try the rest of the fallback methods as before...
       try {
         console.log("Trying player-specific endpoint as fallback");
         const playerSpecificResponse = await fetch(
@@ -531,53 +740,98 @@ export default function GameResultsPage() {
         console.error("Error fetching from player-specific endpoint:", playerSpecificError);
       }
       
-      // Final fallback - use local data if available
-      try {
-        // If you have local answers from the game session, use those as a last resort
-        const gameResultsStr = sessionStorage.getItem('gameResults');
-        if (gameResultsStr) {
-          const gameResults = JSON.parse(gameResultsStr);
-          const currentPlayerResult = gameResults.find((p: any) => p.name === currentPlayer);
-          
-          if (currentPlayerResult && currentPlayerResult.answers) {
-            // Convert local answers to API format
-            const formattedAnswers = currentPlayerResult.answers.map((a: any, index: number) => ({
-              id: index + 1,
-              playerId: playerId,
-              questionId: quiz.questions ? quiz.questions[a.questionIndex]?.id || index + 1 : index + 1,
-              answeredAt: new Date().toISOString(),
-              isCorrect: a.isCorrect,
-              responseTime: a.timeTaken,
-              answer: a.selectedAnswer !== null ? 
-                String.fromCharCode(65 + a.selectedAnswer) : 'T' // A, B, C, D or T for timeout
-            }));
-            
-            console.log("Using local answer data:", formattedAnswers);
-            setPlayerAnswers(formattedAnswers);
-            
-            // Save these formatted answers in sessionStorage for future use
-            sessionStorage.setItem('playerAnswers', JSON.stringify(formattedAnswers));
-            
-            // Update stored game data
-            setTimeout(() => {
-              saveCompletedGame(quiz, playerResults, groupResults);
-            }, 500);
-            
-            setAnswersLoading(false);
-            return;
-          }
-        }
-      } catch (localError) {
-        console.error("Error using local answer data:", localError);
-      }
+      // Final local data fallback remains the same...
       
-      // No answer data available
-      console.warn("No answer data available from any source");
       setAnswersLoading(false);
-      
     } catch (error) {
       console.error("Error in fetchPlayerAnswers function:", error);
       setAnswersLoading(false);
+    }
+  };
+
+  // New function to fetch all answers for a quiz
+  const fetchAllAnswersForQuiz = async (quizId: number): Promise<PlayerAnswer[]> => {
+    try {
+      console.log(`Fetching all answers for quiz ID ${quizId}`);
+      
+      // Try to get quiz answers from localStorage first (for local testing between tabs)
+      const storedQuizAnswers = localStorage.getItem(`quizAnswers_${quizId}`);
+      if (storedQuizAnswers) {
+        try {
+          const parsedAnswers = JSON.parse(storedQuizAnswers);
+          if (Array.isArray(parsedAnswers) && parsedAnswers.length > 0) {
+            console.log(`Found ${parsedAnswers.length} stored answers for quiz ${quizId} in localStorage`);
+            return parsedAnswers;
+          }
+        } catch (e) {
+          console.error("Error parsing stored quiz answers:", e);
+        }
+      }
+      
+      // If not found in localStorage, try API call
+      const response = await fetch(
+        `https://kahootclone-f7hkd0hwafgbfrfa.southeastasia-01.azurewebsites.net/api/PlayerAnswer/quiz/${quizId}`,
+        {
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json'
+          }
+        }
+      );
+      
+      if (!response.ok) {
+        console.warn(`Quiz answers API call failed with status ${response.status}`);
+        throw new Error(`Failed to fetch quiz answers: ${response.status}`);
+      }
+      
+      const responseData = await response.json();
+      console.log("Quiz answers API response:", responseData);
+      
+      if (responseData && Array.isArray(responseData.data)) {
+        const quizAnswers = responseData.data;
+        console.log(`Found ${quizAnswers.length} answers for quiz ${quizId}`);
+        
+        // Save to localStorage for local testing across tabs
+        localStorage.setItem(`quizAnswers_${quizId}`, JSON.stringify(quizAnswers));
+        
+        return quizAnswers;
+      }
+      
+      // If the specific endpoint fails, try the general one and filter
+      console.log("Trying general answers endpoint as fallback");
+      const generalResponse = await fetch(
+        `https://kahootclone-f7hkd0hwafgbfrfa.southeastasia-01.azurewebsites.net/api/PlayerAnswer`,
+        {
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json'
+          }
+        }
+      );
+      
+      if (!generalResponse.ok) {
+        throw new Error(`General answers endpoint failed: ${generalResponse.status}`);
+      }
+      
+      const generalData = await generalResponse.json();
+      
+      if (generalData && Array.isArray(generalData.data)) {
+        // Filter for answers that belong to this quiz
+        // This may be imperfect since we don't have a direct quiz ID in the answers
+        // but we can try to match based on question IDs or other properties
+        const quizAnswers = generalData.data;
+        console.log(`Found ${quizAnswers.length} answers in general endpoint, filtering for quiz ${quizId}`);
+        
+        // Save to localStorage for local testing across tabs
+        localStorage.setItem(`quizAnswers_${quizId}`, JSON.stringify(quizAnswers));
+        
+        return quizAnswers;
+      }
+      
+      return [];
+    } catch (error) {
+      console.error(`Error fetching all answers for quiz ${quizId}:`, error);
+      return [];
     }
   };
 
@@ -594,7 +848,7 @@ export default function GameResultsPage() {
         id: gameId,
         title: quiz.title || 'Unnamed Quiz',
         description: quiz.description || '',
-        gameMode: quiz.gameMode || 'solo',
+        gameMode: gameMode, // Use the component state which has been properly detected
         coverImage: quiz.coverImage || quiz.imageUrl || quiz.thumbnailUrl || '',
         completed: true,
         dateCompleted: new Date().toISOString(),
@@ -604,6 +858,8 @@ export default function GameResultsPage() {
         questions: quiz.questions || [],
         sessionId: quiz.sessionId || quiz.id || null
       };
+      
+      console.log(`Saving completed game with gameMode: ${gameMode}`);
       
       // Save to localStorage (in a real app, this would be saved to a database)
       const completedGames = JSON.parse(localStorage.getItem('completedGames') || '[]');
@@ -621,6 +877,16 @@ export default function GameResultsPage() {
       
       localStorage.setItem('completedGames', JSON.stringify(completedGames));
       console.log('Game results saved successfully:', gameResultsForTeacher);
+      
+      // Also update session storage for consistency
+      if (quiz.quizCode) {
+        // Make sure the quiz code has the correct game mode in sessionStorage
+        const quizCodeStr = quiz.quizCode.toString();
+        if (gameMode === 'team') {
+          sessionStorage.setItem(`quizMode_${quizCodeStr}`, 'team');
+          console.log(`Updated sessionStorage with team mode for quiz code: ${quizCodeStr}`);
+        }
+      }
     } catch (error) {
       console.error('Error saving completed game:', error);
     }

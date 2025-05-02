@@ -120,17 +120,10 @@ const Sidebar = () => {
         sx={{
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'space-between',
           p: 2,
           borderBottom: '1px solid rgba(255, 255, 255, 0.12)',
         }}
       >
-        <IconButton
-          onClick={() => setIsOpen(!isOpen)}
-          sx={{ color: 'white' }}
-        >
-          {isOpen ? <ChevronLeftIcon /> : <ChevronRightIcon />}
-        </IconButton>
         {isOpen && (
           <Typography
             variant="h6"
@@ -141,11 +134,18 @@ const Sidebar = () => {
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',
               fontSize: '25px',
+              marginRight: 'auto'
             }}
           >
             Kahoot_Clone
           </Typography>
         )}
+        <IconButton
+          onClick={() => setIsOpen(!isOpen)}
+          sx={{ color: 'white' }}
+        >
+          {isOpen ? <ChevronLeftIcon /> : <ChevronRightIcon />}
+        </IconButton>
       </Box>
 
       <List sx={{ px: 2, mt: 2 }}>

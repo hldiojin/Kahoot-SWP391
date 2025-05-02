@@ -188,6 +188,24 @@ const quizService = {
           try {
             console.log("Retrying with minimal data set");
             
+            // Extract the original gameMode or use a default if not available
+            let retryGameMode = 'solo';
+            
+            // If we had already determined a gameMode in the try block above, use that
+            // Otherwise, reprocess the original quizData to determine the game mode
+            if (quizData.gameMode) {
+              if (typeof quizData.gameMode === 'string') {
+                const normalizedMode = quizData.gameMode.trim().toLowerCase();
+                if (normalizedMode === 'team' || normalizedMode === 'group' || normalizedMode === '1' || normalizedMode === 'true') {
+                  retryGameMode = 'team';
+                }
+              } else if (quizData.gameMode === true || quizData.gameMode === 1) {
+                retryGameMode = 'team';
+              }
+            }
+            
+            console.log(`Retrying with gameMode: ${retryGameMode} (preserving original mode)`);
+            
             const minimalRequest = {
               title: quizData.title || "Untitled Quiz",
               description: quizData.description || "",
@@ -199,7 +217,7 @@ const quizService = {
               maxPlayer: 50,
               minPlayer: 1,
               favorite: false,
-              gameMode: "solo"
+              gameMode: retryGameMode // Use the preserved game mode instead of hardcoded "solo"
             };
             
             console.log("Minimal request:", minimalRequest);
@@ -217,6 +235,20 @@ const quizService = {
             );
             
             console.log("Retry successful:", retryResponse);
+            
+            // Ensure we save the correct gameMode to sessionStorage
+            if (typeof window !== 'undefined') {
+              sessionStorage.setItem('gameMode', retryGameMode);
+              console.log(`Retry: Game mode saved to sessionStorage: ${retryGameMode}`);
+              
+              // Also save for the specific quiz code
+              if (retryResponse.data && retryResponse.data.data && retryResponse.data.data.quizCode) {
+                const quizCode = retryResponse.data.data.quizCode.toString();
+                sessionStorage.setItem(`quizMode_${quizCode}`, retryGameMode);
+                console.log(`Retry: Quiz-specific game mode saved: quizMode_${quizCode} = ${retryGameMode}`);
+              }
+            }
+            
             return retryResponse.data;
           } catch (retryError) {
             console.error("Retry also failed:", retryError);

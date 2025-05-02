@@ -155,6 +155,15 @@ const CreateGamePage = () => {
 
   // Add this code after the state declarations
   useEffect(() => {
+    // Clear any previous quiz code's game mode when first loading this page
+    // This ensures we don't have leftover state from previous quiz creations
+    if (localStorage.getItem('clearingCreateQuizState') !== 'true') {
+      console.log('Clearing previous quiz creation state');
+      sessionStorage.removeItem('createQuizGameMode');
+      sessionStorage.removeItem('gameMode');
+      localStorage.setItem('clearingCreateQuizState', 'true');
+    }
+    
     // Check if we have a saved game mode from a previous session
     const savedGameMode = sessionStorage.getItem('createQuizGameMode');
     if (savedGameMode) {
@@ -177,6 +186,11 @@ const CreateGamePage = () => {
     } else {
       console.log(`No saved game mode found, using default: ${gameMode}`);
     }
+
+    // Cleanup function to remove the clearing flag when leaving the page
+    return () => {
+      localStorage.removeItem('clearingCreateQuizState');
+    };
   }, []);
 
   // Function to add a new question
@@ -387,6 +401,8 @@ const CreateGamePage = () => {
     
     // Explicitly save game mode to sessionStorage to preserve it between steps
     sessionStorage.setItem('createQuizGameMode', gameMode);
+    // Make sure the general gameMode is also set consistently
+    sessionStorage.setItem('gameMode', gameMode);
     console.log(`Saved game mode to sessionStorage: ${gameMode}`);
     
     setActiveStep((prevStep) => prevStep + 1);
@@ -432,9 +448,18 @@ const CreateGamePage = () => {
       const modeValue = newMode === 'team' ? 'team' : 'solo';
       setGameMode(modeValue);
       
+      // Clear createQuizGameMode first to avoid interference from previous quiz creations
+      sessionStorage.removeItem('createQuizGameMode');
+      
       // Store the game mode in sessionStorage immediately
       sessionStorage.setItem('gameMode', modeValue);
       console.log(`Saved game mode to sessionStorage: ${modeValue}`);
+      
+      // Also update the quiz-specific game mode in case we're in the process of creating a quiz
+      if (gameCode) {
+        sessionStorage.setItem(`quizMode_${gameCode}`, modeValue);
+        console.log(`Updated quizMode_${gameCode} to ${modeValue}`);
+      }
       
       // Reset to default values when switching to team mode
       if (modeValue === 'team') {
@@ -481,23 +506,16 @@ const CreateGamePage = () => {
       // Ensure game mode is correct before submission - log current states
       console.log(`Current gameMode state: "${gameMode}"`);
       console.log(`Type of gameMode state: ${typeof gameMode}`);
-      console.log(`Stored gameMode in sessionStorage: "${sessionStorage.getItem('gameMode')}"`);
       
-      // Determine the final game mode value to use for submission
-      let finalGameMode: string;
+      // Clear any potential outdated quiz-specific game modes
+      // This is important to avoid carrying over from previous quiz creations
+      sessionStorage.removeItem('createQuizGameMode');
+      console.log("Cleared createQuizGameMode to ensure fresh state");
       
-      // First check sessionStorage
-      const storedMode = sessionStorage.getItem('gameMode');
-      if (storedMode === 'team') {
-        finalGameMode = 'team';
-        console.log("Using 'team' mode from sessionStorage");
-      } else if (gameMode === 'team') {
-        finalGameMode = 'team';
-        console.log("Using 'team' mode from component state");
-      } else {
-        finalGameMode = 'solo';
-        console.log("Using 'solo' mode (default)");
-      }
+      // Always use the current component state for game mode
+      // It's the most up-to-date representation of user selection
+      const finalGameMode = gameMode === 'team' ? 'team' : 'solo';
+      console.log(`Using finalGameMode: ${finalGameMode} from component state`);
       
       // Create the game data object for API
       const quizApiData = {
@@ -518,21 +536,17 @@ const CreateGamePage = () => {
         membersPerTeam: finalGameMode === 'team' ? membersPerTeam : undefined
       };
 
-      // Double-check and fix the gameMode value if needed
-      if (finalGameMode === 'team') {
-        // Make sure it's explicitly set as a string
-        quizApiData.gameMode = 'team';
-      } else {
-        quizApiData.gameMode = 'solo';
-      }
-
       console.log(`Final gameMode value being sent to API: "${quizApiData.gameMode}"`);
       console.log("Sending quiz data to API:", quizApiData);
       
-      // Save gameMode to sessionStorage for future use
-      sessionStorage.setItem('gameMode', quizApiData.gameMode);
-      // Also save a specific key for this quiz code
-      sessionStorage.setItem(`quizMode_${generatedQuizCode}`, quizApiData.gameMode);
+      // Save all game mode information to sessionStorage to ensure consistency
+      // 1. General gameMode (used by components that don't check quiz-specific mode)
+      sessionStorage.setItem('gameMode', finalGameMode);
+      console.log(`Set general gameMode: ${finalGameMode}`);
+      
+      // 2. Quiz-specific game mode tied to this quiz code
+      sessionStorage.setItem(`quizMode_${generatedQuizCode}`, finalGameMode);
+      console.log(`Set quiz-specific mode for ${generatedQuizCode}: ${finalGameMode}`);
       
       // Call API to create quiz
       const response = await quizService.createQuiz(quizApiData);
@@ -540,12 +554,65 @@ const CreateGamePage = () => {
       
       // Save created quiz data in sessionStorage for consistent access
       if (response.data && response.data.id) {
-        sessionStorage.setItem(`quiz_${response.data.id}`, JSON.stringify({
+        // Save with the correct mode to ensure consistency
+        const savedData = {
           ...response.data,
-          gameMode: quizApiData.gameMode // Ensure our gameMode is preserved
-        }));
+          gameMode: finalGameMode // Ensure our gameMode is preserved
+        };
+        
+        sessionStorage.setItem(`quiz_${response.data.id}`, JSON.stringify(savedData));
+        
+        // Verify that the API actually saved the game mode correctly
+        // If the returned game mode doesn't match what we sent, we need to try updating it
+        if (response.data.gameMode !== finalGameMode) {
+          console.log(`⚠️ API returned different game mode: ${response.data.gameMode}, but we want: ${finalGameMode}`);
+          
+          try {
+            console.log(`Attempting to fix the game mode by updating the quiz...`);
+            
+            // Create an update request with the correct game mode
+            const updateData = {
+              ...response.data,
+              gameMode: finalGameMode
+            };
+            
+            // Call the API to update the quiz
+            const updateResponse = await quizService.updateQuiz(response.data.id, updateData);
+            console.log(`Quiz update response:`, updateResponse);
+            
+            if (updateResponse.status === 200) {
+              console.log(`✅ Quiz updated successfully with correct game mode: ${finalGameMode}`);
+              
+              // Update our local data with the corrected information
+              response.data.gameMode = finalGameMode;
+            } else {
+              console.warn(`Failed to update quiz with correct game mode. Status: ${updateResponse.status}`);
+            }
+          } catch (updateError) {
+            console.error(`Error trying to fix game mode:`, updateError);
+            // Continue even if update fails - we'll rely on session storage
+          }
+        }
+        
+        // If the API provided a different quiz code than what we generated,
+        // make sure to save the game mode for that code as well
+        if (response.data.quizCode && response.data.quizCode !== generatedQuizCode) {
+          const apiQuizCode = response.data.quizCode.toString();
+          sessionStorage.setItem(`quizMode_${apiQuizCode}`, finalGameMode);
+          console.log(`API returned different quiz code ${apiQuizCode}, saved mode as: ${finalGameMode}`);
+        }
       }
       
+      // Save quiz code for created game
+      if (response.data && response.data.quizCode) {
+        const finalQuizCode = response.data.quizCode.toString();
+        setGameCode(finalQuizCode);
+        
+        // Double-check that this quiz code has the right game mode
+        sessionStorage.setItem(`quizMode_${finalQuizCode}`, finalGameMode);
+        console.log(`Final check: Set quizMode_${finalQuizCode} to ${finalGameMode}`);
+      }
+
       // Check result from API
       if (response.status === 201 || response.status === 200) {
         // Save new quiz ID
@@ -581,9 +648,6 @@ const CreateGamePage = () => {
               // Count successful team creations
               const successfulTeams = teamResults.filter(result => result.status === 'fulfilled').length;
               console.log(`Successfully created ${successfulTeams} teams for quiz ${quizId}`);
-              
-              // Save team mode in sessionStorage with the quiz code for future reference
-              sessionStorage.setItem(`quizMode_${response.data.quizCode}`, 'team');
             } catch (teamError) {
               console.error("Error creating teams:", teamError);
               // Continue even if team creation fails
@@ -591,19 +655,38 @@ const CreateGamePage = () => {
           }
         }
         
-        // Save quiz code for created game
-        if (response.data && response.data.quizCode) {
-          setGameCode(response.data.quizCode.toString());
-          // Save the gameMode with the quiz code for this specific quiz
-          sessionStorage.setItem(`quizMode_${response.data.quizCode}`, finalGameMode);
-        }
-
         // Show success notification
         setNotification({
           open: true,
           message: "Quiz created successfully!",
           type: "success"
         });
+        
+        // Make sure we have the quiz code saved correctly
+        if (response.data && response.data.quizCode) {
+          const finalQuizCode = response.data.quizCode.toString();
+          setGameCode(finalQuizCode);
+          
+          // Double-check that the quiz-specific game mode is saved correctly
+          sessionStorage.setItem(`quizMode_${finalQuizCode}`, finalGameMode);
+          console.log(`Final check: Set quizMode_${finalQuizCode} to ${finalGameMode}`);
+          
+          // Also add this quiz code to our list of known team mode quizzes if needed
+          if (finalGameMode === 'team') {
+            try {
+              const knownTeamQuizzes = JSON.parse(localStorage.getItem('teamModeQuizzes') || '[]');
+              if (!knownTeamQuizzes.includes(finalQuizCode)) {
+                knownTeamQuizzes.push(finalQuizCode);
+                localStorage.setItem('teamModeQuizzes', JSON.stringify(knownTeamQuizzes));
+                console.log(`Added quiz ${finalQuizCode} to known team mode quizzes`);
+              }
+            } catch (e) {
+              console.error('Error updating team mode quizzes list:', e);
+              // Fallback to simple storage
+              localStorage.setItem(`quizIsTeamMode_${finalQuizCode}`, 'true');
+            }
+          }
+        }
         
         // Show success dialog with code
         setSuccessDialogOpen(true);

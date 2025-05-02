@@ -330,7 +330,7 @@ export default function LandingPage() {
         <StyledAppBar position="static">
           <Toolbar>
             <LogoTypography variant="h6">
-              Blooket
+              Kahoot_Clone
             </LogoTypography>
             <Box sx={{ flexGrow: 1 }} />
             <Button
@@ -387,7 +387,7 @@ export default function LandingPage() {
       <StyledAppBar position="static">
         <Toolbar>
           <LogoTypography variant="h6">
-            Blooket
+            Kahoot_Clone
           </LogoTypography>
           <Box sx={{ flexGrow: 1 }} />
           <Button

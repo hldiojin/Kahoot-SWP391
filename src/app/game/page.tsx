@@ -465,8 +465,13 @@ export default function GamePage() {
   const handleSelectAnswer = (index: number) => {
     if (submittedAnswer !== null || isFeedbackShown) return;
     
+    // Set all the initial state at once to avoid flicker
+    const isAnswerCorrect = index === currentQuestion.correctAnswer;
     setSelectedAnswer(index);
     setSubmittedAnswer(index);
+    setIsCorrect(isAnswerCorrect);
+    setFeedbackColor(isAnswerCorrect ? 'correct' : 'incorrect');
+    setIsFeedbackShown(true);
     
     // Calculate elapsed time
     const elapsedTime = Math.min(
@@ -474,11 +479,6 @@ export default function GamePage() {
       currentQuestion.timeLimit || DEFAULT_TIMER_DURATION
     );
     setAnswerTime(parseFloat(elapsedTime.toFixed(1)));
-    
-    // Check if answer is correct
-    const isAnswerCorrect = index === currentQuestion.correctAnswer;
-    setIsCorrect(isAnswerCorrect);
-    setFeedbackColor(isAnswerCorrect ? 'correct' : 'incorrect'); // Set feedback color based on answer
     
     // Calculate points based on speed and correctness
     const pointsForQuestion = currentQuestion.points || 100;
@@ -490,9 +490,6 @@ export default function GamePage() {
       pointsEarned = Math.round(pointsForQuestion * timeMultiplier);
       setScore(prevScore => prevScore + pointsEarned);
     }
-    
-    // Show feedback UI
-    setIsFeedbackShown(true);
     
     // Convert index to letter (A, B, C, D)
     const answerLetter = String.fromCharCode(65 + index);
@@ -544,7 +541,7 @@ export default function GamePage() {
       
       // Wait before moving to next question
       setTimeout(() => {
-        // Set waiting state but don't change any answer states
+        // Use a single state change to avoid rendering jumps
         setWaitingState(true);
         
         // Use a longer timeout for the waiting state
@@ -605,7 +602,7 @@ export default function GamePage() {
       
       // Wait before moving to next question
       setTimeout(() => {
-        // Set waiting state but don't change any answer states
+        // Use a single state change to avoid rendering jumps
         setWaitingState(true);
         
         // Use a longer timeout for the waiting state
@@ -617,11 +614,12 @@ export default function GamePage() {
   };
 
   const moveToNextQuestion = () => {
-    // Store the current isCorrect value before resetting states
+    // Store the current answer status before resetting states
     const wasCorrect = isCorrect;
+    const questionResultShown = isFeedbackShown;
     
-    // Only reset all states if moving to another question
-    if (currentQuestionIndex + 1 < (quizData?.questions?.length || 0)) {
+    // Complete cleanup function to ensure smooth transitions
+    const cleanupAndMoveOn = () => {
       // Reset states for next question
       setSelectedAnswer(null);
       setSubmittedAnswer(null);
@@ -630,18 +628,35 @@ export default function GamePage() {
       setShowCorrectAnswer(false);
       setWaitingState(false);
       setFeedbackColor(null); // Reset feedback color
-      
-      // Move to next question 
-      setCurrentQuestionIndex(prev => prev + 1);
-    } else {
-      // For the last question, keep the answer status but close the dialog
-      setIsFeedbackShown(false);
+    };
+    
+    // Only reset all states if moving to another question
+    if (currentQuestionIndex + 1 < (quizData?.questions?.length || 0)) {
+      // First turn off the waiting state, but keep the rest of the dialog the same
+      // This prevents the dialog from flashing between states
       setWaitingState(false);
       
-      // Brief delay before showing results
+      // Use a small timeout to ensure smooth transition between questions
       setTimeout(() => {
-        setShowResults(true);
-      }, 500);
+        // Reset all states at once to avoid flicker
+        cleanupAndMoveOn();
+        
+        // Then set the next question index
+        setCurrentQuestionIndex(prev => prev + 1);
+      }, 100);
+    } else {
+      // For the last question, close everything cleanly
+      setWaitingState(false);
+      
+      // Use same cleanup approach for consistency
+      setTimeout(() => {
+        cleanupAndMoveOn();
+        
+        // Brief delay before showing results
+        setTimeout(() => {
+          setShowResults(true);
+        }, 300);
+      }, 100);
     }
   };
 
@@ -1051,6 +1066,9 @@ export default function GamePage() {
             overflow: 'hidden'
           }
         }}
+        keepMounted
+        disableEscapeKeyDown
+        onClose={() => {}}
       >
         <DialogContent sx={{ p: 5, textAlign: 'center' }}>
           <motion.div
