@@ -24,7 +24,12 @@ import {
   TableHead,
   TableBody,
   TableRow,
-  TableCell
+  TableCell,
+  ToggleButtonGroup,
+  ToggleButton,
+  Card,
+  CardContent,
+  CardHeader
 } from '@mui/material';
 import { 
   EmojiEvents as TrophyIcon,
@@ -314,9 +319,13 @@ export default function GameResultsPage() {
       console.log(`Final determined game mode: ${detectedGameMode}`);
       setGameMode(detectedGameMode);
       
-      // If team mode was detected, also set the view mode to group by default
+      // If team mode was detected, set the view mode to group by default
+      // Otherwise, force view mode to player for solo mode
       if (detectedGameMode === 'team') {
         setViewMode('group');
+      } else {
+        // For solo mode, always use player view mode
+        setViewMode('player');
       }
       
       // Set player info
@@ -1360,7 +1369,10 @@ export default function GameResultsPage() {
   };
 
   const handleViewModeChange = (event: React.SyntheticEvent, newValue: 'player' | 'group') => {
-    setViewMode(newValue);
+    // Only allow changing to group view if in team mode
+    if (gameMode === 'team' || newValue === 'player') {
+      setViewMode(newValue);
+    }
   };
 
   // Add a new function to fetch detailed player answer data for the question summary
@@ -1763,139 +1775,424 @@ export default function GameResultsPage() {
         <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
           Top scorers!
         </Typography>
-        
-        {/* "Next" button in top right */}
-        <Box sx={{ position: 'absolute', top: 16, right: 16 }}>
-          <Button 
-            variant="contained" 
-            sx={{ 
-              bgcolor: '#32c4e1', // Kahoot blue
-              '&:hover': { bgcolor: '#25a7c1' },
-              fontWeight: 'bold',
-              textTransform: 'none',
-              px: 2
-            }}
-            onClick={handlePlayAgain}
-          >
-            Next
-          </Button>
-        </Box>
+            
+        {/* Add game mode toggle ONLY if in team mode */}
+        {gameMode === 'team' && (
+          <Box sx={{ mt: 3, display: 'flex', justifyContent: 'center' }}>
+            <ToggleButtonGroup
+              value={viewMode}
+              exclusive
+              onChange={handleViewModeChange}
+              aria-label="view mode"
+              sx={{
+                backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                '& .MuiToggleButton-root': {
+                  color: 'white',
+                  px: 3,
+                  py: 1,
+                  borderColor: 'rgba(255, 255, 255, 0.3)',
+                  textTransform: 'none',
+                  fontWeight: 'medium',
+                },
+                '& .MuiToggleButton-root.Mui-selected': {
+                  backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                  color: '#46178f',
+                  fontWeight: 'bold',
+                  '&:hover': {
+                    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+                  }
+                }
+              }}
+            >
+              <ToggleButton value="player" aria-label="individual">
+                <PersonIcon sx={{ mr: 1 }} />
+                Individual
+              </ToggleButton>
+              <ToggleButton value="group" aria-label="team">
+                <GroupsIcon sx={{ mr: 1 }} />
+                Team
+              </ToggleButton>
+            </ToggleButtonGroup>
+          </Box>
+        )}
       </Box>
       
       {/* Main podium section */}
       <Container maxWidth="md" sx={{ mt: 2, mb: 6 }}>
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.8 }}
-        >
-          {/* Create podium visualization for top 3 players */}
-          <Box sx={{ 
-            display: 'flex', 
-            justifyContent: 'center',
-            alignItems: 'flex-end',
-            height: 350,
-            position: 'relative',
-            mx: 2
-          }}>
-            {/* Limit to just showing top 3 players */}
-            {playerResults.slice(0, 3).map((player, index) => {
-              // Define positions and heights for 1st, 2nd, 3rd place
-              const positions = [
-                { order: 1, height: 220, left: '50%', transform: 'translateX(-50%)' }, // 1st (center)
-                { order: 0, height: 180, left: '15%', transform: 'translateX(-50%)' },  // 2nd (left)
-                { order: 2, height: 140, left: '85%', transform: 'translateX(-50%)' }   // 3rd (right)
-              ];
-              
-              // Get the correct position data based on index
-              const pos = positions[index];
-              const animalInfo = getAnimalAvatar(player.avatar || getRandomAvatar());
-              
-              return (
-                <Box 
-                  key={index}
-                  sx={{
-                    position: 'absolute',
-                    left: pos.left,
-                    transform: pos.transform,
-                    bottom: 0,
-                    width: '30%',
-                    maxWidth: 175,
-                    zIndex: 3 - index // First place on top
-                  }}
-                >
-                  {/* Player name at top */}
-                  <Typography 
-                    align="center" 
-                    sx={{ 
-                      mb: 1, 
-                      fontWeight: 'bold',
-                      fontSize: '1.1rem'
-                    }}
-                  >
-                    {player.name}
-                  </Typography>
-                  
-                  {/* Player avatar */}
+        {/* Show individual players section if in individual view or not team mode */}
+        {(viewMode === 'player' || gameMode !== 'team') && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.8 }}
+          >
+            {/* Create podium visualization for top 3 players */}
+            <Box sx={{ 
+              display: 'flex', 
+              justifyContent: 'center',
+              alignItems: 'flex-end',
+              height: 350,
+              position: 'relative',
+              mx: 2
+            }}>
+              {/* Limit to just showing top 3 players */}
+              {playerResults.slice(0, 3).map((player, index) => {
+                // Define positions and heights for 1st, 2nd, 3rd place
+                const positions = [
+                  { order: 1, height: 220, left: '50%', transform: 'translateX(-50%)' }, // 1st (center)
+                  { order: 0, height: 180, left: '15%', transform: 'translateX(-50%)' },  // 2nd (left)
+                  { order: 2, height: 140, left: '85%', transform: 'translateX(-50%)' }   // 3rd (right)
+                ];
+                
+                // Get the correct position data based on index
+                const pos = positions[index];
+                const animalInfo = getAnimalAvatar(player.avatar || getRandomAvatar());
+                
+                return (
                   <Box 
-                    sx={{ 
-                      width: '60px', 
-                      height: '60px', 
-                      mx: 'auto',
-                      mb: 1,
-                      bgcolor: '#ffffff',
-                      borderRadius: '50%',
-                      overflow: 'hidden',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center'
+                    key={index}
+                    sx={{
+                      position: 'absolute',
+                      left: pos.left,
+                      transform: pos.transform,
+                      bottom: 0,
+                      width: '30%',
+                      maxWidth: 175,
+                      zIndex: 3 - index // First place on top
                     }}
                   >
-                    <Animal
-                      name={animalInfo.name}
-                      color={animalInfo.color}
-                      size="60px"
-                    />
-                  </Box>
-                  
-                  {/* Podium block */}
-                  <Paper 
-                    sx={{ 
-                      bgcolor: 'rgba(255, 255, 255, 0.15)', 
-                      height: pos.height,
-                      borderRadius: 2,
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      p: 2,
-                      pt: 3
-                    }}
-                  >
-                    {/* Score */}
+                    {/* Player name at top */}
                     <Typography 
-                      variant="h5" 
+                      align="center" 
                       sx={{ 
+                        mb: 1, 
                         fontWeight: 'bold',
-                        mb: 1 
+                        fontSize: '1.1rem'
                       }}
                     >
-                      {player.score} points
+                      {player.name}
                     </Typography>
                     
-                    {/* Correct answer count */}
-                    <Typography 
-                      variant="body2"
-                      sx={{ opacity: 0.9 }}
+                    {/* Player avatar */}
+                    <Box 
+                      sx={{ 
+                        width: '60px', 
+                        height: '60px', 
+                        mx: 'auto',
+                        mb: 1,
+                        bgcolor: '#ffffff',
+                        borderRadius: '50%',
+                        overflow: 'hidden',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}
                     >
-                      {player.correctAnswers} out of {player.totalQuestions}
+                      <Animal
+                        name={animalInfo.name}
+                        color={animalInfo.color}
+                        size="60px"
+                      />
+                    </Box>
+                    
+                    {/* Podium block */}
+                    <Paper 
+                      sx={{ 
+                        bgcolor: 'rgba(255, 255, 255, 0.15)', 
+                        height: pos.height,
+                        borderRadius: 2,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        p: 2,
+                        pt: 3
+                      }}
+                    >
+                      {/* Score */}
+                      <Typography 
+                        variant="h5" 
+                        sx={{ 
+                          fontWeight: 'bold',
+                          mb: 1,
+                          color: 'white'
+                        }}
+                      >
+                        {player.score} points
+                      </Typography>
+                      
+                      {/* Correct answer count */}
+                      <Typography 
+                        variant="body2"
+                        sx={{ opacity: 0.9, color: 'white' }}
+                      >
+                        {player.correctAnswers} out of {player.totalQuestions}
+                      </Typography>
+                    </Paper>
+                  </Box>
+                );
+              })}
+            </Box>
+          </motion.div>
+        )}
+        
+        {/* Show team scores section ONLY if in team mode AND group view is selected */}
+        {gameMode === 'team' && viewMode === 'group' && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.8 }}
+          >
+            {/* Team podiums */}
+            <Box sx={{ 
+              display: 'flex', 
+              justifyContent: 'center',
+              alignItems: 'flex-end',
+              height: 400,
+              position: 'relative',
+              mx: 2
+            }}>
+              {/* Limit to just showing top 3 teams */}
+              {groupResults.slice(0, 3).map((team, index) => {
+                // Define positions and heights for 1st, 2nd, 3rd place
+                const positions = [
+                  { order: 1, height: 250, left: '50%', transform: 'translateX(-50%)' }, // 1st (center)
+                  { order: 0, height: 200, left: '15%', transform: 'translateX(-50%)' },  // 2nd (left)
+                  { order: 2, height: 170, left: '85%', transform: 'translateX(-50%)' }   // 3rd (right)
+                ];
+                
+                // Get the correct position data based on index
+                const pos = positions[index];
+                
+                // Team colors
+                const teamColors = ['#f44336', '#2196f3', '#4caf50', '#ff9800'];
+                const teamColor = teamColors[index % teamColors.length];
+                
+                return (
+                  <Box 
+                    key={index}
+                    sx={{
+                      position: 'absolute',
+                      left: pos.left,
+                      transform: pos.transform,
+                      bottom: 0,
+                      width: '30%',
+                      maxWidth: 220,
+                      minWidth: 180,
+                      zIndex: 3 - index // First place on top
+                    }}
+                  >
+                    {/* Team name at top */}
+                    <Typography 
+                      align="center" 
+                      sx={{ 
+                        mb: 1, 
+                        fontWeight: 'bold',
+                        fontSize: '1.2rem',
+                        color: teamColor
+                      }}
+                    >
+                      {team.name}
                     </Typography>
-                  </Paper>
-                </Box>
-              );
-            })}
-          </Box>
-        </motion.div>
+                    
+                    {/* Team avatar/Trophy */}
+                    <Box 
+                      sx={{ 
+                        width: '70px', 
+                        height: '70px', 
+                        mx: 'auto',
+                        mb: 1,
+                        bgcolor: index === 0 ? '#FFD700' : index === 1 ? '#C0C0C0' : '#CD7F32',
+                        borderRadius: '50%',
+                        overflow: 'hidden',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        boxShadow: 3
+                      }}
+                    >
+                      <TrophyIcon sx={{ fontSize: 40, color: 'white' }} />
+                    </Box>
+                    
+                    {/* Podium block */}
+                    <Paper 
+                      sx={{ 
+                        bgcolor: 'rgba(255, 255, 255, 0.15)', 
+                        height: pos.height,
+                        borderRadius: 2,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        p: 2,
+                      }}
+                    >
+                      {/* Score */}
+                      <Typography 
+                        variant="h5" 
+                        sx={{ 
+                          fontWeight: 'bold',
+                          mb: 1,
+                          color: 'white',
+                          mt: 2
+                        }}
+                      >
+                        {team.score} points
+                      </Typography>
+                      
+                      {/* Member count */}
+                      <Typography 
+                        variant="body2"
+                        sx={{ color: 'white', mb: 2 }}
+                      >
+                        {team.memberCount} team members
+                      </Typography>
+                      
+                      {/* Show up to 3 top members */}
+                      <Box sx={{ width: '100%' }}>
+                        <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.7)', display: 'block', mb: 1, textAlign: 'center' }}>
+                          Top Members
+                        </Typography>
+                        <Divider sx={{ mb: 1, backgroundColor: 'rgba(255,255,255,0.2)' }} />
+                        <List dense disablePadding sx={{ 
+                          maxHeight: 120, 
+                          overflow: 'auto',
+                          '::-webkit-scrollbar': {
+                            width: '8px',
+                          },
+                          '::-webkit-scrollbar-thumb': {
+                            backgroundColor: 'rgba(255,255,255,0.2)',
+                            borderRadius: '4px',
+                          },
+                        }}>
+                          {team.members
+                            .sort((a, b) => b.score - a.score)
+                            .slice(0, 3)
+                            .map((member, i) => (
+                              <ListItem 
+                                key={i}
+                                disableGutters
+                                disablePadding
+                                sx={{ mb: 0.5 }}
+                              >
+                                <Box sx={{ 
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  width: '100%',
+                                  color: 'white',
+                                  fontSize: '0.8rem',
+                                }}>
+                                  <Box 
+                                    sx={{ 
+                                      width: 20, 
+                                      height: 20, 
+                                      borderRadius: '50%', 
+                                      bgcolor: 'rgba(255,255,255,0.9)',
+                                      mr: 1,
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      fontSize: '0.7rem',
+                                      fontWeight: 'bold',
+                                      color: '#46178f'
+                                    }}
+                                  >
+                                    {i+1}
+                                  </Box>
+                                  {member.name}
+                                  <Box sx={{ ml: 'auto', fontWeight: 'bold' }}>
+                                    {member.score}
+                                  </Box>
+                                </Box>
+                              </ListItem>
+                            ))}
+                        </List>
+                      </Box>
+                    </Paper>
+                  </Box>
+                );
+              })}
+            </Box>
+            
+            {/* Team leaderboard table */}
+            <Box sx={{ mt: 4, px: 2 }}>
+              <Paper sx={{ 
+                borderRadius: 2, 
+                overflow: 'hidden', 
+                bgcolor: 'rgba(255,255,255,0.1)',
+                border: '1px solid rgba(255,255,255,0.2)'
+              }}>
+                <Typography 
+                  variant="h6" 
+                  sx={{ 
+                    p: 2, 
+                    bgcolor: 'rgba(255,255,255,0.2)', 
+                    color: 'white',
+                    fontWeight: 'bold',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1
+                  }}
+                >
+                  <GroupsIcon />
+                  All Teams
+                </Typography>
+                
+                <TableContainer>
+                  <Table 
+                    sx={{ 
+                      '& .MuiTableCell-root': { 
+                        borderColor: 'rgba(255,255,255,0.1)',
+                        color: 'white'
+                      }
+                    }}
+                  >
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>#</TableCell>
+                        <TableCell>Team Name</TableCell>
+                        <TableCell align="center">Members</TableCell>
+                        <TableCell align="right">Total Score</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {groupResults.map((team, index) => (
+                        <TableRow 
+                          key={index}
+                          sx={{ 
+                            bgcolor: index < 3 ? `rgba(255,255,255,${0.15 - index * 0.03})` : undefined,
+                            '&:hover': { bgcolor: 'rgba(255,255,255,0.15)' }
+                          }}
+                        >
+                          <TableCell>
+                            <Box 
+                              sx={{ 
+                                width: 24, 
+                                height: 24, 
+                                borderRadius: '50%', 
+                                bgcolor: index === 0 ? '#FFD700' : index === 1 ? '#C0C0C0' : index === 2 ? '#CD7F32' : 'rgba(255,255,255,0.5)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontWeight: 'bold',
+                                color: index < 3 ? '#000' : '#fff',
+                                fontSize: '0.8rem'
+                              }}
+                            >
+                              {index + 1}
+                            </Box>
+                          </TableCell>
+                          <TableCell>{team.name}</TableCell>
+                          <TableCell align="center">{team.memberCount}</TableCell>
+                          <TableCell align="right" sx={{ fontWeight: 'bold' }}>{team.score}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              </Paper>
+            </Box>
+          </motion.div>
+        )}
         
         {/* Bottom button */}
         <Box sx={{ textAlign: 'center', mt: 4 }}>
@@ -1921,126 +2218,218 @@ export default function GameResultsPage() {
       
       {/* Show detailed results in a modal or a section below */}
       <Collapse in={showAnswerDetails}>
-        <Container maxWidth="md" sx={{ mt: 4 }}>
-          <Paper sx={{ p: 3, borderRadius: 2, bgcolor: 'rgba(255, 255, 255, 0.9)', color: '#333' }}>
-            <Typography variant="h5" sx={{ mb: 3, textAlign: 'center', fontWeight: 'bold' }}>
-              Detailed Results
-            </Typography>
+        <Container maxWidth="md" sx={{ mt: 2, mb: 6 }}>
+          <Paper sx={{ 
+            p: 4, 
+            borderRadius: 2, 
+            bgcolor: 'rgba(255, 255, 255, 0.95)', 
+            color: '#333',
+            boxShadow: '0 8px 24px rgba(0,0,0,0.15)'
+          }}>
+            <Box sx={{ mb: 4, textAlign: 'center' }}>
+              <Typography variant="h5" sx={{ fontWeight: 'bold', mb: 1 }}>
+                Detailed Results
+              </Typography>
+              <Typography variant="body1" color="text.secondary">
+                See how everyone performed on each question
+              </Typography>
+            </Box>
             
-            {/* Question details go here */}
+            {/* Question details */}
             {Object.keys(questionMap).length > 0 ? (
-              <Stack spacing={2}>
+              <Stack spacing={3}>
                 {Object.keys(questionMap).sort((a, b) => {
                   const qA = questionMap[a];
                   const qB = questionMap[b];
                   return (qA.index || 0) - (qB.index || 0);
-                }).map(questionId => {
+                }).map((questionId, qIndex) => {
                   const question = questionMap[questionId];
                   const questionAnswers = playerAnswerMap[questionId] || {};
                   
+                  // Colors for the question cards
+                  const questionColors = [
+                    '#ff9c37', // orange
+                    '#a531a9', // purple
+                    '#0074ba', // blue
+                    '#46bd00', // green
+                    '#ff3355', // red
+                  ];
+                  const questionColor = questionColors[qIndex % questionColors.length];
+                  
                   return (
-                    <Paper key={questionId} sx={{ p: 3, borderRadius: 2 }}>
-                      <Typography variant="subtitle1" fontWeight="bold">
-                        Question {question.number}: {question.text}
-                      </Typography>
+                    <Paper 
+                      key={questionId} 
+                      sx={{ 
+                        p: 0, 
+                        borderRadius: 2,
+                        overflow: 'hidden',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.08)'
+                      }}
+                    >
+                      {/* Question header */}
+                      <Box sx={{ 
+                        p: 3, 
+                        bgcolor: questionColor,
+                        color: 'white'
+                      }}>
+                        <Typography variant="h6" fontWeight="bold">
+                          Question {question.number}
+                        </Typography>
+                        <Typography variant="body1" sx={{ mt: 1 }}>
+                          {question.text}
+                        </Typography>
+                        
+                        {question.options && question.options.length > 0 && (
+                          <Box sx={{ 
+                            mt: 2, 
+                            p: 2, 
+                            bgcolor: 'rgba(255,255,255,0.15)',
+                            borderRadius: 1
+                          }}>
+                            <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
+                              Correct answer: {String.fromCharCode(65 + question.correctAnswer)} - {question.options[question.correctAnswer]}
+                            </Typography>
+                          </Box>
+                        )}
+                      </Box>
                       
-                      {question.options && question.options.length > 0 && (
-                        <Box sx={{ mt: 1, mb: 2 }}>
-                          <Typography variant="body2" color="text.secondary">
-                            Correct answer: {String.fromCharCode(65 + question.correctAnswer)} - {question.options[question.correctAnswer]}
-                          </Typography>
-                        </Box>
-                      )}
-                      
-                      <Divider sx={{ my: 2 }} />
-                      
-                      <Typography variant="subtitle2" sx={{ mb: 1 }}>Player Answers:</Typography>
-                      
-                      <TableContainer component={Paper} elevation={0} sx={{ backgroundColor: 'rgba(248, 249, 250, 0.7)' }}>
-                        <Table size="small">
-                          <TableHead>
-                            <TableRow>
-                              <TableCell>Player</TableCell>
-                              <TableCell>Answer</TableCell>
-                              <TableCell align="center">Correct?</TableCell>
-                              <TableCell align="right">Response Time</TableCell>
-                            </TableRow>
-                          </TableHead>
-                          <TableBody>
-                            {Object.keys(questionAnswers).length > 0 ? (
-                              Object.entries(questionAnswers).map(([playerId, answer]) => {
-                                // Find player information
-                                const player = playerResults.find(p => p.id?.toString() === playerId);
-                                const playerName = player?.name || `Player ${playerId}`;
-                                
-                                // Format the answer letter
-                                let answerText = answer.answer || '';
-                                if (answerText === 'T') {
-                                  answerText = 'Time Out';
-                                } else if (question.options && answer.answer) {
-                                  const answerIndex = answer.answer.charCodeAt(0) - 65; // Convert A->0, B->1, etc.
-                                  if (answerIndex >= 0 && answerIndex < question.options.length) {
-                                    answerText = `${answer.answer} - ${question.options[answerIndex]}`;
-                                  }
-                                }
-                                
-                                return (
-                                  <TableRow key={playerId}>
-                                    <TableCell>
-                                      <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                                        {player?.avatar && (
-                                          <Box sx={{ mr: 1, width: 24, height: 24 }}>
-                                            <Animal
-                                              name={getAnimalAvatar(player.avatar).name}
-                                              color={getAnimalAvatar(player.avatar).color}
-                                              size="24px"
-                                            />
-                                          </Box>
-                                        )}
-                                        {playerName === currentPlayer ? (
-                                          <Typography variant="body2" fontWeight="bold">{playerName} (You)</Typography>
-                                        ) : (
-                                          <Typography variant="body2">{playerName}</Typography>
-                                        )}
-                                      </Box>
-                                    </TableCell>
-                                    <TableCell>{answerText}</TableCell>
-                                    <TableCell align="center">
-                                      {answer.isCorrect ? (
-                                        <CheckCircleIcon color="success" fontSize="small" />
-                                      ) : (
-                                        <CancelIcon color="error" fontSize="small" />
-                                      )}
-                                    </TableCell>
-                                    <TableCell align="right">{answer.responseTime.toFixed(1)}s</TableCell>
-                                  </TableRow>
-                                );
-                              })
-                            ) : (
+                      {/* Answers section */}
+                      <Box sx={{ p: 3 }}>
+                        <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 'bold', color: '#555' }}>
+                          Player Answers:
+                        </Typography>
+                        
+                        <TableContainer component={Box} sx={{ borderRadius: 1, overflow: 'hidden' }}>
+                          <Table size="small" sx={{ 
+                            '& .MuiTableCell-root': { 
+                              borderColor: 'rgba(224, 224, 224, 0.7)',
+                              py: 1.5
+                            },
+                            '& .MuiTableCell-head': {
+                              bgcolor: '#f5f5f5',
+                              fontWeight: 'bold'
+                            }
+                          }}>
+                            <TableHead>
                               <TableRow>
-                                <TableCell colSpan={4} align="center">No answers recorded for this question</TableCell>
+                                <TableCell>Player</TableCell>
+                                <TableCell>Answer</TableCell>
+                                <TableCell align="center">Correct?</TableCell>
+                                <TableCell align="right">Response Time</TableCell>
                               </TableRow>
-                            )}
-                          </TableBody>
-                        </Table>
-                      </TableContainer>
+                            </TableHead>
+                            <TableBody>
+                              {Object.keys(questionAnswers).length > 0 ? (
+                                Object.entries(questionAnswers).map(([playerId, answer]) => {
+                                  // Find player information
+                                  const player = playerResults.find(p => p.id?.toString() === playerId);
+                                  const playerName = player?.name || `Player ${playerId}`;
+                                  
+                                  // Format the answer letter
+                                  let answerText = answer.answer || '';
+                                  if (answerText === 'T') {
+                                    answerText = 'Time Out';
+                                  } else if (question.options && answer.answer) {
+                                    const answerIndex = answer.answer.charCodeAt(0) - 65; // Convert A->0, B->1, etc.
+                                    if (answerIndex >= 0 && answerIndex < question.options.length) {
+                                      answerText = `${answer.answer} - ${question.options[answerIndex]}`;
+                                    }
+                                  }
+                                  
+                                  return (
+                                    <TableRow 
+                                      key={playerId}
+                                      sx={{ 
+                                        bgcolor: answer.isCorrect ? 'rgba(76, 175, 80, 0.04)' : 'rgba(244, 67, 54, 0.04)',
+                                        '&:hover': { bgcolor: answer.isCorrect ? 'rgba(76, 175, 80, 0.08)' : 'rgba(244, 67, 54, 0.08)' }
+                                      }}
+                                    >
+                                      <TableCell>
+                                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                          {player?.avatar && (
+                                            <Box sx={{ mr: 1, width: 24, height: 24 }}>
+                                              <Animal
+                                                name={getAnimalAvatar(player.avatar).name}
+                                                color={getAnimalAvatar(player.avatar).color}
+                                                size="24px"
+                                              />
+                                            </Box>
+                                          )}
+                                          {playerName === currentPlayer ? (
+                                            <Typography variant="body2" fontWeight="bold">{playerName} (You)</Typography>
+                                          ) : (
+                                            <Typography variant="body2">{playerName}</Typography>
+                                          )}
+                                        </Box>
+                                      </TableCell>
+                                      <TableCell>{answerText}</TableCell>
+                                      <TableCell align="center">
+                                        <Box sx={{ 
+                                          width: 20, 
+                                          height: 20, 
+                                          borderRadius: '50%', 
+                                          bgcolor: answer.isCorrect ? '#4caf50' : '#f44336',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'center',
+                                          mx: 'auto'
+                                        }}>
+                                          {answer.isCorrect ? (
+                                            <CheckCircleIcon sx={{ color: 'white', fontSize: 16 }} />
+                                          ) : (
+                                            <CancelIcon sx={{ color: 'white', fontSize: 16 }} />
+                                          )}
+                                        </Box>
+                                      </TableCell>
+                                      <TableCell align="right">
+                                        <Chip 
+                                          label={`${answer.responseTime.toFixed(1)}s`}
+                                          size="small"
+                                          sx={{ 
+                                            bgcolor: answer.isCorrect ? 'rgba(76, 175, 80, 0.1)' : 'rgba(244, 67, 54, 0.1)',
+                                            color: answer.isCorrect ? '#2e7d32' : '#c62828',
+                                            fontWeight: 'medium',
+                                            fontSize: '0.75rem'
+                                          }}
+                                        />
+                                      </TableCell>
+                                    </TableRow>
+                                  );
+                                })
+                              ) : (
+                                <TableRow>
+                                  <TableCell colSpan={4} align="center">No answers recorded for this question</TableCell>
+                                </TableRow>
+                              )}
+                            </TableBody>
+                          </Table>
+                        </TableContainer>
+                      </Box>
                     </Paper>
                   );
                 })}
               </Stack>
             ) : (
-              <Paper sx={{ p: 3, textAlign: 'center' }}>
+              <Paper sx={{ p: 4, textAlign: 'center', bgcolor: '#f9f9f9' }}>
                 <Typography variant="body1">No answer data available</Typography>
               </Paper>
             )}
             
-            {/* Back to top button */}
-            <Box sx={{ textAlign: 'center', mt: 3 }}>
+            {/* Back to home button */}
+            <Box sx={{ textAlign: 'center', mt: 4 }}>
               <Button
-                variant="outlined"
-                color="primary"
+                variant="contained"
+                startIcon={<HomeIcon />}
                 onClick={handleNewGame}
-                sx={{ borderRadius: 1 }}
+                sx={{ 
+                  bgcolor: '#46178f',
+                  '&:hover': { bgcolor: '#3b1378' },
+                  fontWeight: 'bold',
+                  borderRadius: 1,
+                  px: 3,
+                  py: 1,
+                  textTransform: 'none' 
+                }}
               >
                 Return Home
               </Button>

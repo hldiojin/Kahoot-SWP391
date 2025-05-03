@@ -53,6 +53,41 @@ interface QuizResponse {
   status: number;
 }
 
+// Utility function to fetch with retry for transient errors
+const fetchWithRetry = async (apiCall: () => Promise<any>, maxRetries: number = 3, delay: number = 1000): Promise<any> => {
+  let lastError;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await apiCall();
+    } catch (error: any) {
+      console.log(`API call failed (attempt ${attempt}/${maxRetries}):`, error.message);
+      
+      // Only retry on 500 errors that might be transient
+      if (error.response && error.response.status === 500 && 
+          error.response.data && 
+          error.response.data.message && 
+          error.response.data.message.includes('transient failure')) {
+        lastError = error;
+        
+        if (attempt < maxRetries) {
+          console.log(`Retrying in ${delay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          // Increase delay for next attempt - exponential backoff
+          delay *= 1.5;
+          continue;
+        }
+      }
+      
+      // For other errors, or if we've exhausted retries, throw the error
+      throw error;
+    }
+  }
+  
+  // If we've exhausted retries, throw the last error
+  throw lastError;
+};
+
 const quizService = {
   /**
    * Create a new quiz
@@ -129,8 +164,8 @@ const quizService = {
       // Log dữ liệu gửi đi
       console.log('Creating quiz with data:', createRequest);
 
-      // Sử dụng URL hardcoded để đảm bảo
-      const response = await axios.post(
+      // Use fetchWithRetry for transient error resilience
+      const response = await fetchWithRetry(() => axios.post(
         'https://kahootclone-f7hkd0hwafgbfrfa.southeastasia-01.azurewebsites.net/api/Quiz', 
         createRequest,
         {
@@ -139,7 +174,7 @@ const quizService = {
             'Content-Type': 'application/json'
           }
         }
-      );
+      ));
       
       // Log response để debug
       console.log("Quiz creation successful response:", response);
@@ -183,78 +218,7 @@ const quizService = {
         console.error('Server error status:', error.response.status);
         console.error('Full server error data:', error.response.data);
         
-        // Thử lại với bộ dữ liệu tối thiểu nếu lỗi 500
-        if (error.response.status === 500) {
-          try {
-            console.log("Retrying with minimal data set");
-            
-            // Extract the original gameMode or use a default if not available
-            let retryGameMode = 'solo';
-            
-            // If we had already determined a gameMode in the try block above, use that
-            // Otherwise, reprocess the original quizData to determine the game mode
-            if (quizData.gameMode) {
-              if (typeof quizData.gameMode === 'string') {
-                const normalizedMode = quizData.gameMode.trim().toLowerCase();
-                if (normalizedMode === 'team' || normalizedMode === 'group' || normalizedMode === '1' || normalizedMode === 'true') {
-                  retryGameMode = 'team';
-                }
-              } else if (quizData.gameMode === true || quizData.gameMode === 1) {
-                retryGameMode = 'team';
-              }
-            }
-            
-            console.log(`Retrying with gameMode: ${retryGameMode} (preserving original mode)`);
-            
-            const minimalRequest = {
-              title: quizData.title || "Untitled Quiz",
-              description: quizData.description || "",
-              createdBy: 1,
-              categoryId: 1,
-              isPublic: true,
-              quizCode: quizService.generateQuizCode(),
-              createdAt: new Date().toISOString(),
-              maxPlayer: 50,
-              minPlayer: 1,
-              favorite: false,
-              gameMode: retryGameMode // Use the preserved game mode instead of hardcoded "solo"
-            };
-            
-            console.log("Minimal request:", minimalRequest);
-            
-            const token = localStorage.getItem('token');
-            const retryResponse = await axios.post(
-              'https://kahootclone-f7hkd0hwafgbfrfa.southeastasia-01.azurewebsites.net/api/Quiz', 
-              minimalRequest,
-              {
-                headers: {
-                  'Authorization': `Bearer ${token}`,
-                  'Content-Type': 'application/json'
-                }
-              }
-            );
-            
-            console.log("Retry successful:", retryResponse);
-            
-            // Ensure we save the correct gameMode to sessionStorage
-            if (typeof window !== 'undefined') {
-              sessionStorage.setItem('gameMode', retryGameMode);
-              console.log(`Retry: Game mode saved to sessionStorage: ${retryGameMode}`);
-              
-              // Also save for the specific quiz code
-              if (retryResponse.data && retryResponse.data.data && retryResponse.data.data.quizCode) {
-                const quizCode = retryResponse.data.data.quizCode.toString();
-                sessionStorage.setItem(`quizMode_${quizCode}`, retryGameMode);
-                console.log(`Retry: Quiz-specific game mode saved: quizMode_${quizCode} = ${retryGameMode}`);
-              }
-            }
-            
-            return retryResponse.data;
-          } catch (retryError) {
-            console.error("Retry also failed:", retryError);
-          }
-        }
-        
+        // Do not retry on 500 error to avoid duplicate quizzes
         throw new Error(`Server error: ${error.response?.data?.message || error.message}`);
       } else if (error.request) {
         console.error('No response from server:', error.request);
@@ -290,14 +254,14 @@ const quizService = {
         throw new Error('Authentication token is missing');
       }
 
-      const response = await axios.get(
+      const response = await fetchWithRetry(() => axios.get(
         `${API_BASE_URL}/api/Quiz`,
         {
           headers: {
             'Authorization': `Bearer ${token}`
           }
         }
-      );
+      ));
       
       return response.data;
     } catch (error) {
@@ -318,18 +282,24 @@ const quizService = {
         throw new Error('Authentication token is missing');
       }
 
-      const response = await axios.get(
+      const response = await fetchWithRetry(() => axios.get(
         `${API_BASE_URL}/api/Quiz/${quizId}`,
         {
           headers: {
             'Authorization': `Bearer ${token}`
           }
         }
-      );
+      ));
       
       return response.data;
-    } catch (error) {
+    } catch (error: any) {
       console.error(`Error fetching quiz with ID ${quizId}:`, error);
+      
+      // Provide more helpful error message for UI display
+      if (error.response && error.response.status === 500) {
+        throw new Error(`Server error (500): The database is temporarily unavailable. We've tried multiple times to connect. Please try again in a few moments.`);
+      }
+      
       throw error;
     }
   },
@@ -345,9 +315,9 @@ const quizService = {
       
       // Try endpoint without authentication first
       try {
-        const response = await axios.get(
+        const response = await fetchWithRetry(() => axios.get(
           `${API_BASE_URL}/api/Quiz/QuizCode/${quizCode}`
-        );
+        ));
         
         // Log the raw response to debug gameMode property
         console.log(`Raw API response for quiz code ${quizCode}:`, response.data);
@@ -394,14 +364,14 @@ const quizService = {
         // If public endpoint fails, try with authentication
         const token = localStorage.getItem('token');
         if (token) {
-          const response = await axios.get(
+          const response = await fetchWithRetry(() => axios.get(
             `${API_BASE_URL}/api/Quiz/QuizCode/${quizCode}`,
             {
               headers: {
                 'Authorization': `Bearer ${token}`
               }
             }
-          );
+          ));
           
           // Create a deep copy for the authenticated response as well
           const processedAuthResponse = {
@@ -445,8 +415,14 @@ const quizService = {
           throw publicError;
         }
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error(`Error fetching quiz with code ${quizCode} from QuizCode endpoint:`, error);
+      
+      // Provide more helpful error message for UI display
+      if (error.response && error.response.status === 500) {
+        throw new Error(`Server error (500): The database is temporarily unavailable. We've tried multiple times to connect. Please try again in a few moments.`);
+      }
+      
       throw error;
     }
   },
@@ -511,15 +487,16 @@ const quizService = {
         }
       }
 
-      // Call the API to get user's quizzes
-      const response = await axios.get(
+      // Call the API with retry mechanism for transient errors
+      console.log(`Fetching quizzes for user ${userId} with retry mechanism`);
+      const response = await fetchWithRetry(() => axios.get(
         `${API_BASE_URL}/api/Quiz/MySets/${userId}`,
         {
           headers: {
             'Authorization': `Bearer ${token}`
           }
         }
-      );
+      ));
       
       console.log("My quizzes retrieved:", response.data);
       
@@ -529,8 +506,14 @@ const quizService = {
       }
       
       return response.data;
-    } catch (error) {
+    } catch (error: any) {
       console.error(`Error fetching quizzes for user ${userId}:`, error);
+      
+      // Provide more helpful error message for UI display
+      if (error.response && error.response.status === 500) {
+        throw new Error(`Server error (500): The database is temporarily unavailable. We've tried multiple times to connect. Please try again in a few moments.`);
+      }
+      
       throw error;
     }
   },
@@ -554,15 +537,16 @@ const quizService = {
 
       const userId = currentUser.id;
 
-      // Call the API to get user's quizzes
-      const response = await axios.get(
+      // Call the API with retry mechanism for transient errors
+      console.log(`Fetching and storing quizzes for user ${userId} with retry mechanism`);
+      const response = await fetchWithRetry(() => axios.get(
         `${API_BASE_URL}/api/Quiz/MySets/${userId}`,
         {
           headers: {
             'Authorization': `Bearer ${token}`
           }
         }
-      );
+      ));
       
       console.log("My quizzes retrieved:", response.data);
       
@@ -572,8 +556,14 @@ const quizService = {
       }
       
       return response.data;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching user quizzes:', error);
+      
+      // Provide more helpful error message for UI display
+      if (error.response && error.response.status === 500) {
+        throw new Error(`Server error (500): The database is temporarily unavailable. We've tried multiple times to connect. Please try again in a few moments.`);
+      }
+      
       throw error;
     }
   },
@@ -591,7 +581,7 @@ const quizService = {
         throw new Error('Authentication token is missing');
       }
 
-      const response = await axios.put(
+      const response = await fetchWithRetry(() => axios.put(
         `${API_BASE_URL}/api/Quiz/${quizId}`,
         quizData,
         {
@@ -600,11 +590,17 @@ const quizService = {
             'Content-Type': 'application/json'
           }
         }
-      );
+      ));
       
       return response.data;
-    } catch (error) {
+    } catch (error: any) {
       console.error(`Error updating quiz with ID ${quizId}:`, error);
+      
+      // Provide more helpful error message for UI display
+      if (error.response && error.response.status === 500) {
+        throw new Error(`Server error (500): The database is temporarily unavailable. We've tried multiple times to connect. Please try again in a few moments.`);
+      }
+      
       throw error;
     }
   },
@@ -621,18 +617,24 @@ const quizService = {
         throw new Error('Authentication token is missing');
       }
 
-      const response = await axios.delete(
+      const response = await fetchWithRetry(() => axios.delete(
         `${API_BASE_URL}/api/Quiz/${quizId}`,
         {
           headers: {
             'Authorization': `Bearer ${token}`
           }
         }
-      );
+      ));
       
       return response.data;
-    } catch (error) {
+    } catch (error: any) {
       console.error(`Error deleting quiz with ID ${quizId}:`, error);
+      
+      // Provide more helpful error message for UI display
+      if (error.response && error.response.status === 500) {
+        throw new Error(`Server error (500): The database is temporarily unavailable. We've tried multiple times to connect. Please try again in a few moments.`);
+      }
+      
       throw error;
     }
   },

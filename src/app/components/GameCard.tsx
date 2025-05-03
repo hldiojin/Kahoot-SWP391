@@ -21,6 +21,8 @@ import {
   Edit as EditIcon,
   QuestionAnswer as QuestionIcon,
   BarChart as StatsIcon,
+  Person as PersonIcon,
+  Groups as GroupsIcon,
 } from '@mui/icons-material';
 import { motion } from 'framer-motion';
 import { styled } from '@mui/material/styles';
@@ -101,6 +103,7 @@ interface GameCardProps {
   playsCount: number;
   creator: string;
   gameCode?: string;
+  gameMode?: 'solo' | 'team';
 }
 
 const GameCard: React.FC<GameCardProps> = ({
@@ -111,6 +114,7 @@ const GameCard: React.FC<GameCardProps> = ({
   playsCount,
   creator,
   gameCode,
+  gameMode = 'solo',
 }) => {
   const router = useRouter();
   const [isFavorite, setIsFavorite] = React.useState(false);
@@ -126,6 +130,12 @@ const GameCard: React.FC<GameCardProps> = ({
     if (gameCode) {
       // Store the current code being used
       sessionStorage.setItem('currentGameCode', gameCode);
+      // Store the game mode
+      sessionStorage.setItem('gameMode', gameMode);
+      // If the quiz has a specific code, store the mode with that code as well
+      if (gameCode) {
+        sessionStorage.setItem(`quizMode_${gameCode}`, gameMode);
+      }
       // Navigate to play-game page with the code
       router.push(`/play-game?code=${gameCode}`);
     } else {
@@ -223,6 +233,34 @@ const GameCard: React.FC<GameCardProps> = ({
             }}
           />
         </Box>
+        
+        {/* Game mode indicator */}
+        <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
+          <Chip
+            size="small"
+            icon={gameMode === 'team' ? <GroupsIcon fontSize="small" /> : <PersonIcon fontSize="small" />}
+            label={gameMode === 'team' ? 'Team Mode' : 'Solo Mode'}
+            sx={{
+              fontSize: '0.7rem',
+              backgroundColor: gameMode === 'team' ? 'rgba(76, 175, 80, 0.1)' : 'rgba(33, 150, 243, 0.1)',
+              color: gameMode === 'team' ? 'success.main' : 'primary.main',
+              fontWeight: 'medium',
+              border: '1px solid',
+              borderColor: gameMode === 'team' ? 'success.light' : 'primary.light',
+            }}
+          />
+          {gameCode && (
+            <Chip
+              size="small"
+              label={`Code: ${gameCode}`}
+              sx={{
+                fontSize: '0.7rem',
+                backgroundColor: 'rgba(0, 0, 0, 0.05)',
+              }}
+            />
+          )}
+        </Box>
+        
         <Typography
           variant="body2"
           color="text.secondary"

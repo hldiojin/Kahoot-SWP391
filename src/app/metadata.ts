@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Blooket Clone",
-  description: "A Blooket-like educational game platform",
+  title: "Kahoot_Clone",
+  description: "A Kahoot-like educational game platform",
 }; 

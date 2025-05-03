@@ -110,7 +110,6 @@ const CreateGamePage = () => {
   const [activeStep, setActiveStep] = useState(0);
   const [quizTitle, setQuizTitle] = useState('');
   const [quizDescription, setQuizDescription] = useState('');
-  const [quizCategory, setQuizCategory] = useState('');
   const [isPublic, setIsPublic] = useState(true);
   const [gameMode, setGameMode] = useState<'solo' | 'team'>('solo');
   const [coverImage, setCoverImage] = useState<string | null>(null);
@@ -134,6 +133,8 @@ const CreateGamePage = () => {
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [successDialogOpen, setSuccessDialogOpen] = useState(false);
   const [gameCode, setGameCode] = useState('');
+  const [showImageSelector, setShowImageSelector] = useState(false);
+  const [customImageUrl, setCustomImageUrl] = useState('');
   
   // New state variables for API operations
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -149,6 +150,16 @@ const CreateGamePage = () => {
   const [teamCount, setTeamCount] = useState(4);
   const [membersPerTeam, setMembersPerTeam] = useState(5);
   const [teamNames, setTeamNames] = useState<string[]>(['Red Team', 'Blue Team', 'Green Team', 'Yellow Team']);
+
+  // Sample cover images
+  const sampleCoverImages = [
+    'https://images.pexels.com/photos/5428144/pexels-photo-5428144.jpeg',
+    'https://images.pexels.com/photos/6238050/pexels-photo-6238050.jpeg',
+    'https://images.pexels.com/photos/5428148/pexels-photo-5428148.jpeg',
+    'https://images.pexels.com/photos/5212320/pexels-photo-5212320.jpeg',
+    'https://images.pexels.com/photos/5212700/pexels-photo-5212700.jpeg',
+    'https://images.pexels.com/photos/5428827/pexels-photo-5428827.jpeg'
+  ];
 
   // Steps for the quiz creation process
   const steps = ['Quiz Info', 'Add Questions', 'Preview & Finish'];
@@ -192,6 +203,61 @@ const CreateGamePage = () => {
       localStorage.removeItem('clearingCreateQuizState');
     };
   }, []);
+
+  // Function to handle image selection
+  const handleSelectCoverImage = (imageUrl: string) => {
+    setCoverImage(imageUrl);
+    setShowImageSelector(false);
+  };
+
+  // Function to handle custom image URL
+  const handleCustomImageUrl = () => {
+    if (customImageUrl.trim()) {
+      setCoverImage(customImageUrl.trim());
+      setCustomImageUrl('');
+      setShowImageSelector(false);
+    }
+  };
+
+  // Function to handle quiz cover image upload
+  const handleCoverImageUpload = () => {
+    setShowImageSelector(true);
+  };
+
+  // Functions to reorder questions with arrow buttons
+  const moveQuestionUp = (index: number) => {
+    if (index > 0) {
+      const newQuestions = [...questions];
+      const temp = newQuestions[index];
+      newQuestions[index] = newQuestions[index - 1];
+      newQuestions[index - 1] = temp;
+      setQuestions(newQuestions);
+      setCurrentQuestionIndex(index - 1);
+    }
+  };
+
+  const moveQuestionDown = (index: number) => {
+    if (index < questions.length - 1) {
+      const newQuestions = [...questions];
+      const temp = newQuestions[index];
+      newQuestions[index] = newQuestions[index + 1];
+      newQuestions[index + 1] = temp;
+      setQuestions(newQuestions);
+      setCurrentQuestionIndex(index + 1);
+    }
+  };
+
+  // Add copy to clipboard function
+  const copyCodeToClipboard = () => {
+    navigator.clipboard.writeText(gameCode);
+    
+    // Show notification when copied
+    setNotification({
+      open: true,
+      message: "Game code copied to clipboard!",
+      type: "success"
+    });
+  };
 
   // Function to add a new question
   const addQuestion = async () => {
@@ -363,36 +429,6 @@ const CreateGamePage = () => {
     setQuestions(newQuestions);
   };
 
-  // Function to handle quiz cover image upload
-  const handleCoverImageUpload = () => {
-    // Mock upload
-    const randomImageId = Math.floor(Math.random() * 1000);
-    setCoverImage(`https://source.unsplash.com/random/900x600?quiz,${randomImageId}`);
-  };
-
-  // Functions to reorder questions with arrow buttons
-  const moveQuestionUp = (index: number) => {
-    if (index > 0) {
-      const newQuestions = [...questions];
-      const temp = newQuestions[index];
-      newQuestions[index] = newQuestions[index - 1];
-      newQuestions[index - 1] = temp;
-      setQuestions(newQuestions);
-      setCurrentQuestionIndex(index - 1);
-    }
-  };
-
-  const moveQuestionDown = (index: number) => {
-    if (index < questions.length - 1) {
-      const newQuestions = [...questions];
-      const temp = newQuestions[index];
-      newQuestions[index] = newQuestions[index + 1];
-      newQuestions[index + 1] = temp;
-      setQuestions(newQuestions);
-      setCurrentQuestionIndex(index + 1);
-    }
-  };
-
   // Function to navigate quiz creation steps
   const handleNext = () => {
     // Save the current form state before moving to the next step
@@ -556,7 +592,7 @@ const CreateGamePage = () => {
         title: quizTitle || 'Untitled Quiz',
         description: quizDescription || '',
         createdBy: parseInt(currentUser.id),
-        categoryId: quizCategory ? getCategoryId(quizCategory) : 1,
+        categoryId: 1, // Default to category 1
         isPublic: isPublic,
         thumbnailUrl: coverImage || 'https://wallpaperaccess.com/full/5720035.jpg',
         createdAt: new Date().toISOString(),
@@ -593,6 +629,25 @@ const CreateGamePage = () => {
           ...response.data,
           gameMode: finalGameMode // Ensure our gameMode is preserved
         };
+        
+        // Store ONLY this new quiz in sessionStorage, replacing any previous quizzes
+        const formattedQuiz = {
+          id: response.data.id,
+          title: response.data.title || 'Untitled Quiz',
+          description: response.data.description || '',
+          imageUrl: response.data.thumbnailUrl || coverImage || 'https://wallpaperaccess.com/full/5720035.jpg',
+          questionsCount: questions.length,
+          playsCount: 0,
+          creator: "You", 
+          gameCode: response.data.quizCode ? response.data.quizCode.toString() : generatedQuizCode.toString(),
+          gameMode: finalGameMode,
+          teamCount: finalGameMode === 'team' ? teamCount : undefined,
+          membersPerTeam: finalGameMode === 'team' ? membersPerTeam : undefined
+        };
+        
+        // Save as a single-item array to match expected format in my-sets page
+        sessionStorage.setItem('myQuizzes', JSON.stringify([formattedQuiz]));
+        console.log("Saved only the new quiz to sessionStorage:", formattedQuiz);
         
         sessionStorage.setItem(`quiz_${response.data.id}`, JSON.stringify(savedData));
         
@@ -844,33 +899,45 @@ const CreateGamePage = () => {
     return { isValid: true, errorMessage: '' };
   };
 
-  // Helper function to map category string to category ID
-  const getCategoryId = (category: string): number => {
-    const categoryMap: { [key: string]: number } = {
-      'education': 1,
-      'science': 2,
-      'math': 3,
-      'language': 4,
-      'geography': 5,
-      'history': 6,
-      'art': 7,
-      'music': 8,
-      'sports': 9,
-      'other': 10
-    };
-    return categoryMap[category] || 0;
+  // Add these helper functions for question validation
+  
+  // Function to check if a question has at least one correct answer
+  const hasCorrectAnswer = (questionIndex: number): boolean => {
+    return questions[questionIndex].answers.some(answer => answer.isCorrect);
+  };
+  
+  // Function to check if a question is fully valid
+  const isQuestionValid = (questionIndex: number): boolean => {
+    const question = questions[questionIndex];
+    
+    // Check question text
+    if (!question.text.trim()) {
+      return false;
+    }
+    
+    // Check if any answer is marked as correct
+    if (!hasCorrectAnswer(questionIndex)) {
+      return false;
+    }
+    
+    // Check that all answers have text
+    const emptyAnswers = question.answers.filter(answer => answer.text.trim() === '');
+    if (emptyAnswers.length > 0) {
+      return false;
+    }
+    
+    return true;
   };
 
-  // Add copy to clipboard function
-  const copyCodeToClipboard = () => {
-    navigator.clipboard.writeText(gameCode);
+  // Helper function to check if all questions are valid
+  const areAllQuestionsValid = (): boolean => {
+    // If there are no questions, return false
+    if (questions.length === 0) {
+      return false;
+    }
     
-    // Show notification when copied
-    setNotification({
-      open: true,
-      message: "Game code copied to clipboard!",
-      type: "success"
-    });
+    // Check if any question is invalid
+    return !questions.some((_, index) => !isQuestionValid(index));
   };
 
   // Function to generate colors based on question index
@@ -903,7 +970,7 @@ const CreateGamePage = () => {
         timeLimit: q.timeLimit || 20,
         points: q.points || 100
       })),
-      category: quizCategory || 'Uncategorized',
+      category: 'Uncategorized',
       isPublic: isPublic,
       coverImage: coverImage || 'https://source.unsplash.com/random/300x200?quiz',
       createdBy: user?.firstName + ' ' + user?.lastName || 'User',
@@ -995,25 +1062,6 @@ const CreateGamePage = () => {
                     placeholder="Describe what this quiz is about..."
                   />
                   <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, gap: 2, mb: 3 }}>
-                    <FormControl fullWidth>
-                      <InputLabel>Category</InputLabel>
-                      <Select
-                        value={quizCategory}
-                        label="Category"
-                        onChange={(e) => setQuizCategory(e.target.value)}
-                      >
-                        <MenuItem value="education">Education</MenuItem>
-                        <MenuItem value="science">Science</MenuItem>
-                        <MenuItem value="math">Math</MenuItem>
-                        <MenuItem value="language">Language</MenuItem>
-                        <MenuItem value="geography">Geography</MenuItem>
-                        <MenuItem value="history">History</MenuItem>
-                        <MenuItem value="art">Art</MenuItem>
-                        <MenuItem value="music">Music</MenuItem>
-                        <MenuItem value="sports">Sports</MenuItem>
-                        <MenuItem value="other">Other</MenuItem>
-                      </Select>
-                    </FormControl>
                     <FormControl fullWidth>
                       <InputLabel>Visibility</InputLabel>
                       <Select
@@ -1253,7 +1301,8 @@ const CreateGamePage = () => {
                   </Box>
                 </Box>
 
-                {!coverImage && (
+                {/* Cover Image Section */}
+                {!coverImage ? (
                   <Box sx={{ mt: 3 }}>
                     <Button 
                       variant="outlined" 
@@ -1274,7 +1323,96 @@ const CreateGamePage = () => {
                       Add Cover Image
                     </Button>
                   </Box>
-                )}
+                ) : null}
+
+                {/* Image Selector Dialog */}
+                <Dialog
+                  open={showImageSelector}
+                  onClose={() => setShowImageSelector(false)}
+                  maxWidth="md"
+                  PaperProps={{
+                    sx: {
+                      borderRadius: 2,
+                      overflow: 'hidden'
+                    }
+                  }}
+                >
+                  <DialogTitle sx={{ 
+                    bgcolor: theme.palette.primary.main,
+                    color: 'white',
+                    fontWeight: 'bold',
+                    p: 2
+                  }}>
+                    Choose a Cover Image
+                  </DialogTitle>
+                  <DialogContent dividers>
+                    <Box sx={{ my: 2 }}>
+                      <Typography variant="subtitle1" gutterBottom>
+                        Enter Image URL
+                      </Typography>
+                      <Box sx={{ display: 'flex', gap: 1 }}>
+                        <TextField
+                          fullWidth
+                          placeholder="https://example.com/image.jpg"
+                          value={customImageUrl}
+                          onChange={(e) => setCustomImageUrl(e.target.value)}
+                          size="small"
+                          variant="outlined"
+                          InputProps={{
+                            startAdornment: <ImageIcon fontSize="small" sx={{ mr: 1, opacity: 0.7 }} />
+                          }}
+                        />
+                        <Button 
+                          variant="contained" 
+                          onClick={handleCustomImageUrl}
+                          disabled={!customImageUrl.trim()}
+                        >
+                          Use URL
+                        </Button>
+                      </Box>
+                    </Box>
+
+                    <Divider sx={{ my: 3 }}>
+                      <Chip label="OR choose from gallery" />
+                    </Divider>
+
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
+                      {sampleCoverImages.map((image, index) => (
+                        <Box 
+                          key={index}
+                          sx={{ 
+                            width: { xs: '100%', sm: 'calc(50% - 8px)', md: 'calc(33.333% - 11px)' },
+                            cursor: 'pointer',
+                            transition: 'all 0.3s',
+                            '&:hover': {
+                              transform: 'translateY(-4px)',
+                              boxShadow: 4
+                            }
+                          }}
+                        >
+                          <Card onClick={() => handleSelectCoverImage(image)}>
+                            <CardMedia
+                              component="img"
+                              height="140"
+                              image={image}
+                              alt={`Sample cover ${index + 1}`}
+                            />
+                            <CardContent sx={{ p: 1, textAlign: 'center' }}>
+                              <Typography variant="caption">
+                                Sample {index + 1}
+                              </Typography>
+                            </CardContent>
+                          </Card>
+                        </Box>
+                      ))}
+                    </Box>
+                  </DialogContent>
+                  <DialogActions>
+                    <Button onClick={() => setShowImageSelector(false)}>
+                      Cancel
+                    </Button>
+                  </DialogActions>
+                </Dialog>
               </CardContent>
             </Card>
           </Box>
@@ -1661,67 +1799,113 @@ const CreateGamePage = () => {
                 p: 3, 
                 mb: 4, 
                 borderRadius: 3,
-                background: `linear-gradient(to right bottom, ${alpha(theme.palette.background.paper, 0.9)}, ${alpha(theme.palette.background.paper, 0.95)}),
-                            url(${coverImage || 'https://source.unsplash.com/random/1200x600?abstract'})`,
-                backgroundSize: 'cover',
-                backgroundPosition: 'center',
-                backgroundBlendMode: 'overlay',
                 boxShadow: '0 10px 30px rgba(0,0,0,0.15)',
               }}
             >
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 3, flexWrap: 'wrap', gap: 2 }}>
-                <Avatar 
-                  sx={{ 
-                    width: 60, 
-                    height: 60, 
-                    background: 'linear-gradient(45deg, #2196F3 30%, #21CBF3 90%)',
-                    mr: 2,
-                    boxShadow: 2,
-                    fontSize: '1.5rem'
+              {/* Header với thông tin quiz và avatar */}
+              <Box sx={{ 
+                display: 'flex', 
+                flexDirection: { xs: 'column', sm: 'row' },
+                alignItems: { xs: 'flex-start', sm: 'center' }, 
+                gap: 2, 
+                mb: 3 
+              }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', minWidth: { xs: '100%', sm: 'auto' } }}>
+                  <Avatar 
+                    sx={{ 
+                      width: 60, 
+                      height: 60, 
+                      bgcolor: 'primary.main',
+                      mr: 2,
+                      boxShadow: 2,
+                      fontSize: '1.5rem'
+                    }}
+                  >
+                    {quizTitle ? quizTitle.charAt(0).toUpperCase() : 'Q'}
+                  </Avatar>
+                  <Box>
+                    <Typography variant="h5" sx={{ fontWeight: 'bold' }}>
+                      {quizTitle || 'Untitled Quiz'}
+                    </Typography>
+                  </Box>
+                </Box>
+
+                <Box sx={{ 
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  gap: 1,
+                  ml: { xs: 0, sm: 'auto' },
+                  mt: { xs: 2, sm: 0 }
+                }}>
+                  <Button 
+                    startIcon={<PreviewIcon />} 
+                    variant="contained"
+                    color="secondary"
+                    onClick={handlePreview}
+                    sx={{ borderRadius: 8, px: 3 }}
+                  >
+                    PREVIEW GAME
+                  </Button>
+                </Box>
+              </Box>
+
+              {/* Cover image section */}
+              <Box sx={{ 
+                mb: 3, 
+                position: 'relative', 
+                borderRadius: 2,
+                overflow: 'hidden',
+                height: 240,
+                width: '100%'
+              }}>
+                <Box
+                  component="img"
+                  src={coverImage || 'https://source.unsplash.com/random/1200x600?education,quiz'}
+                  alt="Quiz cover"
+                  sx={{
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'cover',
                   }}
-                >
-                  {quizTitle ? quizTitle.charAt(0).toUpperCase() : 'Q'}
-                </Avatar>
-                <Box sx={{ flex: 1 }}>
-                  <Typography variant="h5" sx={{ fontWeight: 'bold', mb: 0.5 }}>
-                    {quizTitle || 'Untitled Quiz'}
-                  </Typography>
-                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center' }}>
-                    {quizCategory && (
-                      <Chip 
-                        label={quizCategory} 
-                        size="small" 
-                        color="primary" 
-                        variant="outlined" 
-                      />
-                    )}
+                />
+                <Box sx={{ 
+                  position: 'absolute', 
+                  bottom: 0, 
+                  left: 0, 
+                  width: '100%',
+                  padding: 2,
+                  background: 'linear-gradient(transparent, rgba(0,0,0,0.7))'
+                }}>
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
                     <Chip 
                       icon={isPublic ? <PublicIcon fontSize="small" /> : <PrivateIcon fontSize="small" />}
                       label={isPublic ? "Public" : "Private"} 
                       size="small" 
-                      color={isPublic ? "info" : "default"}
+                      sx={{ bgcolor: 'rgba(255,255,255,0.9)', color: 'text.primary' }}
                     />
                     <Chip 
                       icon={gameMode === 'solo' ? <PersonIcon fontSize="small" /> : <GroupsIcon fontSize="small" />}
                       label={gameMode === 'solo' ? "Solo Mode" : "Team Mode"} 
                       size="small" 
-                      color="secondary"
+                      sx={{ bgcolor: 'rgba(255,255,255,0.9)', color: 'text.primary' }}
                     />
                     <Chip 
                       icon={<PeopleIcon fontSize="small" />}
                       label={`${minPlayers}-${maxPlayers} players`} 
                       size="small" 
-                      color="default"
+                      sx={{ bgcolor: 'rgba(255,255,255,0.9)', color: 'text.primary' }}
                     />
                     <Chip 
                       icon={<QuestionIcon fontSize="small" />}
                       label={`${questions.length} questions`} 
-                      size="small" 
+                      size="small"
+                      sx={{ bgcolor: 'rgba(255,255,255,0.9)', color: 'text.primary' }} 
                     />
                     <Chip 
                       icon={<TimerIcon fontSize="small" />}
                       label={`${Math.ceil(questions.reduce((total, q) => total + q.timeLimit, 0) / 60)} min`} 
-                      size="small" 
+                      size="small"
+                      sx={{ bgcolor: 'rgba(255,255,255,0.9)', color: 'text.primary' }}
                     />
                     {isFavorite && (
                       <Chip 
@@ -1729,21 +1913,14 @@ const CreateGamePage = () => {
                         label="Favorite" 
                         size="small"
                         color="warning"
+                        sx={{ bgcolor: 'rgba(255,255,255,0.9)' }}
                       />
                     )}
                   </Box>
                 </Box>
-                <Button 
-                  startIcon={<PreviewIcon />} 
-                  variant="contained"
-                  color="secondary"
-                  onClick={handlePreview}
-                  sx={{ borderRadius: 8, px: 3 }}
-                >
-                  Preview Game
-                </Button>
               </Box>
               
+              {/* Quiz description */}
               {quizDescription && (
                 <Box sx={{ 
                   mb: 3, 
@@ -1868,10 +2045,11 @@ const CreateGamePage = () => {
                 ))}
               </Box>
               
+              {/* Quiz stats */}
               <Box 
                 sx={{ 
-                  display: 'flex', 
-                  justifyContent: 'space-between', 
+                  display: 'flex',
+                  justifyContent: 'space-between',
                   mt: 4,
                   p: 3,
                   borderRadius: 2,
@@ -1905,6 +2083,7 @@ const CreateGamePage = () => {
                 </Box>
               </Box>
 
+              {/* Demo game button */}
               <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
                 <Button
                   variant="contained"
@@ -1920,7 +2099,7 @@ const CreateGamePage = () => {
                     boxShadow: '0 5px 15px rgba(33, 150, 243, 0.3)'
                   }}
                 >
-                  Start Demo Game
+                  START DEMO GAME
                 </Button>
               </Box>
             </Paper>
@@ -1929,47 +2108,6 @@ const CreateGamePage = () => {
       default:
         return "Unknown step";
     }
-  };
-
-  // Add these helper functions for question validation
-  
-  // Function to check if a question has at least one correct answer
-  const hasCorrectAnswer = (questionIndex: number): boolean => {
-    return questions[questionIndex].answers.some(answer => answer.isCorrect);
-  };
-  
-  // Function to check if a question is fully valid
-  const isQuestionValid = (questionIndex: number): boolean => {
-    const question = questions[questionIndex];
-    
-    // Check question text
-    if (!question.text.trim()) {
-      return false;
-    }
-    
-    // Check if any answer is marked as correct
-    if (!hasCorrectAnswer(questionIndex)) {
-      return false;
-    }
-    
-    // Check that all answers have text
-    const emptyAnswers = question.answers.filter(answer => answer.text.trim() === '');
-    if (emptyAnswers.length > 0) {
-      return false;
-    }
-    
-    return true;
-  };
-
-  // Helper function to check if all questions are valid
-  const areAllQuestionsValid = (): boolean => {
-    // If there are no questions, return false
-    if (questions.length === 0) {
-      return false;
-    }
-    
-    // Check if any question is invalid
-    return !questions.some((_, index) => !isQuestionValid(index));
   };
 
   return (
