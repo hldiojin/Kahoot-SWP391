@@ -275,7 +275,7 @@ export default function LoginPage() {
         width: '100%',
         borderRadius: 4,
       }}>
-        <LoginTitle variant="h4">Log in to Blooket Clone</LoginTitle>
+        <LoginTitle variant="h4">Log in to Kahoot_Clone</LoginTitle>
         
         {/* Only show these elements when client-side has mounted */}
         {mounted && (

@@ -335,7 +335,7 @@ export default function PlayGamePage() {
               id: parseInt(quizData.id || (code || '0')),
               title: quizData.title || `Quiz ${code}`,
               description: quizData.description || "Quiz information",
-              imageUrl: quizData.thumbnailUrl || 'https://source.unsplash.com/random/300x200?quiz',
+              imageUrl: quizData.thumbnailUrl || 'https://wallpaperaccess.com/full/5720035.jpg',
               questions: quizData.questions || [],
               creator: quizData.createdBy || "Unknown",
               category: quizData.categoryId || 1,

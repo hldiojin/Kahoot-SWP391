@@ -802,7 +802,7 @@ export default function LandingPage() {
       >
         <Container maxWidth="lg">
           <Typography variant="body2" color="text.secondary" align="center">
-            {'Copyright © Blooket '}{currentYear || '2024'}.
+            {'Copyright © Kahoot_Clone '}{currentYear || '2024'}.
           </Typography>
         </Container>
       </Box>

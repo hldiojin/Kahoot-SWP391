@@ -558,7 +558,7 @@ const CreateGamePage = () => {
         createdBy: parseInt(currentUser.id),
         categoryId: quizCategory ? getCategoryId(quizCategory) : 1,
         isPublic: isPublic,
-        thumbnailUrl: coverImage || 'https://img.freepik.com/free-vector/quiz-neon-sign_1262-15536.jpg',
+        thumbnailUrl: coverImage || 'https://wallpaperaccess.com/full/5720035.jpg',
         createdAt: new Date().toISOString(),
         quizCode: generatedQuizCode,
         maxPlayer: maxPlayers, // Maximum players allowed

@@ -59,7 +59,7 @@ const PublicLayout: React.FC<PublicLayoutProps> = ({ children }) => {
             }}
           >
             <Link href="/" style={{ textDecoration: 'none' }}>
-              Blooket
+              Kahoot_Clone
             </Link>
           </Typography>
           <Button 
@@ -123,7 +123,7 @@ const PublicLayout: React.FC<PublicLayoutProps> = ({ children }) => {
         }}
       >
         <Typography variant="body2" color="text.secondary">
-          {'Copyright © '} Blooket {new Date().getFullYear()}.
+          {'Copyright © '} Kahoot_Clone {new Date().getFullYear()}.
         </Typography>
       </Box>
     </Box>

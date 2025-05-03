@@ -339,7 +339,7 @@ function Dashboard() {
         createdBy: parseInt(currentUser.id),
         categoryId: 1, // Default to Education category
         isPublic: true,
-        thumbnailUrl: "https://img.freepik.com/free-vector/quiz-neon-sign_1262-15536.jpg"
+        thumbnailUrl: "https://wallpaperaccess.com/full/5720035.jpg"
       };
 
       // Call API to create quiz - quizCode will be generated server-side

@@ -644,51 +644,41 @@ export default function GamePage() {
   };
 
   const moveToNextQuestion = () => {
-    // Store the current answer status before resetting states
-    const wasCorrect = isCorrect;
-    const questionResultShown = isFeedbackShown;
+    // First, close the dialog completely to avoid state flashing
+    // This ensures dialog is fully hidden before changing any other states
+    setIsFeedbackShown(false);
     
-    // Complete cleanup function to ensure smooth transitions
-    const cleanupAndMoveOn = () => {
-      // Reset states for next question
-      setSelectedAnswer(null);
-      setSubmittedAnswer(null);
-      setIsCorrect(null);
-      setIsFeedbackShown(false);
-      setShowCorrectAnswer(false);
-      setWaitingState(false);
-      setFeedbackColor(null); // Reset feedback color
-      setPointsEarned(0); // Reset points earned for next question
-    };
-    
-    // Only reset all states if moving to another question
-    if (currentQuestionIndex + 1 < (quizData?.questions?.length || 0)) {
-      // First turn off the waiting state, but keep the rest of the dialog the same
-      // This prevents the dialog from flashing between states
-      setWaitingState(false);
-      
-      // Use a small timeout to ensure smooth transition between questions
-      setTimeout(() => {
-        // Reset all states at once to avoid flicker
-        cleanupAndMoveOn();
+    // Wait for dialog animation to complete before changing any other states
+    setTimeout(() => {
+      // Only proceed to next question if there are more questions
+      if (currentQuestionIndex + 1 < (quizData?.questions?.length || 0)) {
+        // Reset all states in one go to avoid UI flicker
+        setSelectedAnswer(null);
+        setSubmittedAnswer(null);
+        setIsCorrect(null);
+        setShowCorrectAnswer(false);
+        setWaitingState(false);
+        setFeedbackColor(null);
+        setPointsEarned(0);
         
-        // Then set the next question index
+        // Move to next question
         setCurrentQuestionIndex(prev => prev + 1);
-      }, 100);
-    } else {
-      // For the last question, close everything cleanly
-      setWaitingState(false);
-      
-      // Use same cleanup approach for consistency
-      setTimeout(() => {
-        cleanupAndMoveOn();
+      } else {
+        // For the last question, reset states and then show results
+        setSelectedAnswer(null);
+        setSubmittedAnswer(null);
+        setIsCorrect(null);
+        setShowCorrectAnswer(false);
+        setWaitingState(false);
+        setFeedbackColor(null);
+        setPointsEarned(0);
         
         // Brief delay before showing results
         setTimeout(() => {
           setShowResults(true);
         }, 300);
-      }, 100);
-    }
+      }
+    }, 300); // Wait for dialog closing animation to complete
   };
 
   if (loading) {
@@ -1017,7 +1007,6 @@ export default function GamePage() {
                             `0 8px 15px ${OPTION_COLORS[index].shadow}`)
                     },
                     transition: 'all 0.2s',
-                    // Apply reduced opacity to non-selected answers when showing correct answer
                     opacity: showCorrectAnswer && 
                              index !== currentQuestion.correctAnswer && 
                              index !== submittedAnswer ? 0.7 : 1
@@ -1116,6 +1105,13 @@ export default function GamePage() {
         keepMounted
         disableEscapeKeyDown
         onClose={() => {}}
+        // Add exit animation handling to ensure proper cleanup
+        TransitionProps={{
+          onExited: () => {
+            // This ensures state isn't changed until dialog is fully closed
+            console.log("Dialog exit animation completed");
+          }
+        }}
       >
         <DialogContent sx={{ p: 5, textAlign: 'center' }}>
           <motion.div
