@@ -47,6 +47,29 @@ interface UpdateUserData {
   createdAt?: string;
 }
 
+// Helper to check if we're in a browser context
+const isBrowser = typeof window !== 'undefined';
+
+// Safe storage access functions
+const safeGetItem = (key: string): string | null => {
+  if (isBrowser) {
+    return localStorage.getItem(key);
+  }
+  return null;
+};
+
+const safeSetItem = (key: string, value: string): void => {
+  if (isBrowser) {
+    localStorage.setItem(key, value);
+  }
+};
+
+const safeRemoveItem = (key: string): void => {
+  if (isBrowser) {
+    localStorage.removeItem(key);
+  }
+};
+
 const authService = {
   /**
    * Login user with email and password
@@ -60,7 +83,7 @@ const authService = {
       // Store the token in localStorage for future requests
       if (response.data && response.data.data) {
         const token = response.data.data;
-        localStorage.setItem('token', token);
+        safeSetItem('token', token);
         
         // Set the default Authorization header for future requests
         axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
@@ -100,11 +123,11 @@ const authService = {
   logout: async (): Promise<{status: number, message: string, data: any}> => {
     try {
       // Lưu token hiện tại để xóa khỏi header
-      const token = localStorage.getItem('token');
+      const token = safeGetItem('token');
       
       // Xóa token và thông tin người dùng từ local storage
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
+      safeRemoveItem('token');
+      safeRemoveItem('user');
       
       // Xóa authorization header
       delete axios.defaults.headers.common['Authorization'];
@@ -140,7 +163,7 @@ const authService = {
    * @returns boolean indicating authentication status
    */
   isAuthenticated: (): boolean => {
-    return !!localStorage.getItem('token');
+    return !!safeGetItem('token');
   },
 
   /**
@@ -148,7 +171,7 @@ const authService = {
    * @returns The JWT token or null if not logged in
    */
   getToken: (): string | null => {
-    return localStorage.getItem('token');
+    return safeGetItem('token');
   },
 
   /**
@@ -156,7 +179,7 @@ const authService = {
    * @returns Decoded JWT payload or null
    */
   getTokenPayload: () => {
-    const token = localStorage.getItem('token');
+    const token = safeGetItem('token');
     if (!token) return null;
     
     try {

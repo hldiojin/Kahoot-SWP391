@@ -89,7 +89,7 @@ interface Question {
   points: number;
   image: string | null;
   answers: Answer[];
-  questionType: 'multiple-choice' | 'true-false' | 'quiz';
+  questionType: 'multiple-choice' | 'true-false';
 }
 
 // Interface for Answer object
@@ -297,7 +297,7 @@ const CreateGamePage = () => {
       newQuestions[questionIndex].answers[answerIndex].isCorrect = 
         !newQuestions[questionIndex].answers[answerIndex].isCorrect;
     } else {
-      // For true-false or quiz type, only one answer can be correct
+      // For true-false type, only one answer can be correct
       newQuestions[questionIndex].answers.forEach((answer, idx) => {
         answer.isCorrect = idx === answerIndex;
       });
@@ -306,7 +306,7 @@ const CreateGamePage = () => {
   };
 
   // Function to handle question type change
-  const handleQuestionTypeChange = (questionIndex: number, type: 'multiple-choice' | 'true-false' | 'quiz') => {
+  const handleQuestionTypeChange = (questionIndex: number, type: 'multiple-choice' | 'true-false') => {
     const newQuestions = [...questions];
     newQuestions[questionIndex].questionType = type;
     
@@ -399,6 +399,28 @@ const CreateGamePage = () => {
     console.log(`Saving form state at step ${activeStep}`);
     console.log(`Current game mode before next step: ${gameMode}`);
     
+    // Validate questions when moving from step 2 to step 3
+    if (activeStep === 1) {
+      // Find any invalid questions
+      const invalidQuestions = questions.filter((_, index) => !isQuestionValid(index));
+      
+      if (invalidQuestions.length > 0) {
+        // Show error notification
+        const questionIndexes = invalidQuestions.map((q, idx) => {
+          const questionIdx = questions.findIndex(quest => quest.id === invalidQuestions[idx].id);
+          return questionIdx + 1;
+        });
+        
+        setNotification({
+          open: true,
+          message: `Questions ${questionIndexes.join(', ')} are incomplete. Each question needs question text, answer options, and at least one correct answer.`,
+          type: "error"
+        });
+        
+        return; // Don't proceed to next step
+      }
+    }
+    
     // Explicitly save game mode to sessionStorage to preserve it between steps
     sessionStorage.setItem('createQuizGameMode', gameMode);
     // Make sure the general gameMode is also set consistently
@@ -485,6 +507,18 @@ const CreateGamePage = () => {
   const submitQuiz = async () => {
     try {
       console.log("=== STARTING QUIZ SUBMISSION ===");
+      
+      // Validate quiz data before submission
+      const validation = validateQuizData();
+      if (!validation.isValid) {
+        setNotification({
+          open: true,
+          message: validation.errorMessage,
+          type: "error"
+        });
+        return;
+      }
+      
       setIsSubmitting(true);
       
       // Generate a unique 6-digit game code
@@ -729,6 +763,85 @@ const CreateGamePage = () => {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  // Add this new function for quiz validation
+  const validateQuizData = () => {
+    // Check if quiz title is provided
+    if (!quizTitle.trim()) {
+      return { 
+        isValid: false, 
+        errorMessage: "Quiz title is required. Please go back to step 1 and add a title." 
+      };
+    }
+    
+    // Check if there are any questions
+    if (questions.length === 0) {
+      return { 
+        isValid: false, 
+        errorMessage: "You need at least one question for your quiz." 
+      };
+    }
+    
+    // Validate each question
+    const invalidQuestions = questions.filter((question, index) => {
+      // Check if question text exists
+      if (!question.text.trim()) {
+        return true;
+      }
+      
+      // Check if any answers exist
+      if (question.answers.length === 0) {
+        return true;
+      }
+      
+      // Check if answers have text
+      const emptyAnswers = question.answers.filter(
+        answer => answer.text.trim() === ''
+      );
+      
+      // Check true/false questions specifically
+      if (question.questionType === 'true-false') {
+        // For true/false, we need exactly 2 answers with text "True" and "False"
+        // and one of them must be marked as correct
+        if (question.answers.length !== 2) {
+          return true;
+        }
+        
+        // Check if any answer is marked as correct
+        const hasCorrectAnswer = question.answers.some(answer => answer.isCorrect);
+        if (!hasCorrectAnswer) {
+          return true;
+        }
+      } else {
+        // For other question types
+        if (emptyAnswers.length > 0) {
+          return true;
+        }
+        
+        // Check if at least one answer is marked as correct
+        const hasCorrectAnswer = question.answers.some(answer => answer.isCorrect);
+        if (!hasCorrectAnswer) {
+          return true;
+        }
+      }
+      
+      return false;
+    });
+    
+    if (invalidQuestions.length > 0) {
+      const questionIndexes = invalidQuestions.map((_, idx) => {
+        const questionIndex = questions.findIndex(q => q.id === invalidQuestions[idx].id);
+        return questionIndex + 1;
+      });
+      
+      return { 
+        isValid: false, 
+        errorMessage: `Questions ${questionIndexes.join(', ')} are incomplete. Each question needs question text, answer options, and at least one correct answer.` 
+      };
+    }
+    
+    return { isValid: true, errorMessage: '' };
   };
 
   // Helper function to map category string to category ID
@@ -1257,12 +1370,11 @@ const CreateGamePage = () => {
                       label="Question Type"
                       onChange={(e) => handleQuestionTypeChange(
                         currentQuestionIndex, 
-                        e.target.value as 'multiple-choice' | 'true-false' | 'quiz'
+                        e.target.value as 'multiple-choice' | 'true-false'
                       )}
                     >
                       <MenuItem value="multiple-choice">Multiple Choice</MenuItem>
                       <MenuItem value="true-false">True/False</MenuItem>
-                      <MenuItem value="quiz">Quiz</MenuItem>
                     </Select>
                   </FormControl>
                   
@@ -1346,6 +1458,9 @@ const CreateGamePage = () => {
                   sx={{ mb: 3 }}
                   variant="outlined"
                   placeholder="Enter your question here..."
+                  required
+                  error={questions[currentQuestionIndex].text.trim() === ''}
+                  helperText={questions[currentQuestionIndex].text.trim() === '' ? "Question text is required" : ""}
                 />
                 
                 {/* Question Image */}
@@ -1394,19 +1509,32 @@ const CreateGamePage = () => {
                   )}
                 </Box>
                 
-                <Box sx={{ mb: 2, display: 'flex', alignItems: 'center' }}>
-                  <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mr: 1 }}>
-                    Answer Options
-                  </Typography>
-                  <Tooltip title={questions[currentQuestionIndex].questionType === 'multiple-choice' ? "Multiple answers can be correct" : "Only one answer can be correct"}>
-                    <Chip 
-                      label={questions[currentQuestionIndex].questionType === 'multiple-choice' ? "Multiple answers allowed" : "Single answer only"}
+                <Box sx={{ mb: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mr: 1 }}>
+                      Answer Options
+                    </Typography>
+                    <Tooltip title={questions[currentQuestionIndex].questionType === 'multiple-choice' ? "Multiple answers can be correct" : "Only one answer can be correct"}>
+                      <Chip 
+                        label={questions[currentQuestionIndex].questionType === 'multiple-choice' ? "Multiple answers allowed" : "Single answer only"}
+                        size="small"
+                        color="secondary"
+                        variant="outlined"
+                        sx={{ fontSize: '0.7rem' }}
+                      />
+                    </Tooltip>
+                  </Box>
+                  
+                  {/* Show validation status for question */}
+                  {!isQuestionValid(currentQuestionIndex) && (
+                    <Chip
+                      label="Incomplete question"
+                      color="error"
                       size="small"
-                      color="secondary"
+                      icon={<IncorrectIcon fontSize="small" />}
                       variant="outlined"
-                      sx={{ fontSize: '0.7rem' }}
                     />
-                  </Tooltip>
+                  )}
                 </Box>
                 
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -1449,7 +1577,7 @@ const CreateGamePage = () => {
                           alignItems: 'center',
                           backgroundColor: answer.isCorrect ? alpha(theme.palette.success.light, 0.2) : alpha(theme.palette.grey[100], 0.7),
                           borderRadius: 2,
-                          border: `1px solid ${answer.isCorrect ? theme.palette.success.light : theme.palette.divider}`,
+                          border: `1px solid ${answer.isCorrect ? theme.palette.success.light : answer.text.trim() === '' ? theme.palette.error.light : theme.palette.divider}`,
                           transition: 'all 0.2s ease',
                           '&:hover': {
                             backgroundColor: answer.isCorrect ? alpha(theme.palette.success.light, 0.3) : alpha(theme.palette.grey[200], 0.7),
@@ -1463,6 +1591,8 @@ const CreateGamePage = () => {
                             value={answer.text}
                             onChange={(e) => handleAnswerChange(currentQuestionIndex, answerIndex, e.target.value)}
                             variant="standard"
+                            required
+                            error={answer.text.trim() === ''}
                             InputProps={{ 
                               disableUnderline: true
                             }}
@@ -1470,7 +1600,7 @@ const CreateGamePage = () => {
                               '& .MuiInputBase-root': { 
                                 px: 1,
                                 fontWeight: answer.isCorrect ? 500 : 400,
-                                color: answer.isCorrect ? theme.palette.success.dark : 'inherit'
+                                color: answer.isCorrect ? theme.palette.success.dark : answer.text.trim() === '' ? theme.palette.error.main : 'inherit'
                               }
                             }}
                           />
@@ -1491,7 +1621,23 @@ const CreateGamePage = () => {
                   ))}
                 </Box>
                 
-                <Box sx={{ mt: 4, display: 'flex', justifyContent: 'flex-end' }}>
+                {/* Add a validation message if no correct answer is selected */}
+                {!hasCorrectAnswer(currentQuestionIndex) && (
+                  <Box sx={{ mt: 2, p: 2, borderRadius: 1, bgcolor: alpha(theme.palette.error.light, 0.1), borderLeft: `4px solid ${theme.palette.error.main}` }}>
+                    <Typography variant="body2" color="error.main">
+                      At least one answer must be marked as correct. Click the edit icon on an answer to mark it as correct.
+                    </Typography>
+                  </Box>
+                )}
+
+                <Box sx={{ mt: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Box>
+                    {!isQuestionValid(currentQuestionIndex) && (
+                      <Typography variant="caption" color="error">
+                        This question is incomplete. Please check the question text, answer options, and mark at least one correct answer.
+                      </Typography>
+                    )}
+                  </Box>
                   <Button
                     variant="outlined"
                     color="primary"
@@ -1636,7 +1782,8 @@ const CreateGamePage = () => {
                       display: 'flex',
                       flexDirection: { xs: 'column', sm: 'row' },
                       alignItems: { xs: 'flex-start', sm: 'center' },
-                      gap: 2
+                      gap: 2,
+                      borderLeft: isQuestionValid(index) ? '4px solid #4CAF50' : '4px solid #F44336'
                     }}
                     onClick={() => { setCurrentQuestionIndex(index); setActiveStep(1); }}
                   >
@@ -1695,6 +1842,14 @@ const CreateGamePage = () => {
                         color="primary" 
                         variant="outlined"
                       />
+                      {!isQuestionValid(index) && (
+                        <Chip
+                          label="Incomplete"
+                          size="small"
+                          color="error"
+                          icon={<IncorrectIcon fontSize="small" />}
+                        />
+                      )}
                       <Tooltip title="Edit question">
                         <IconButton 
                           size="small" 
@@ -1774,6 +1929,47 @@ const CreateGamePage = () => {
       default:
         return "Unknown step";
     }
+  };
+
+  // Add these helper functions for question validation
+  
+  // Function to check if a question has at least one correct answer
+  const hasCorrectAnswer = (questionIndex: number): boolean => {
+    return questions[questionIndex].answers.some(answer => answer.isCorrect);
+  };
+  
+  // Function to check if a question is fully valid
+  const isQuestionValid = (questionIndex: number): boolean => {
+    const question = questions[questionIndex];
+    
+    // Check question text
+    if (!question.text.trim()) {
+      return false;
+    }
+    
+    // Check if any answer is marked as correct
+    if (!hasCorrectAnswer(questionIndex)) {
+      return false;
+    }
+    
+    // Check that all answers have text
+    const emptyAnswers = question.answers.filter(answer => answer.text.trim() === '');
+    if (emptyAnswers.length > 0) {
+      return false;
+    }
+    
+    return true;
+  };
+
+  // Helper function to check if all questions are valid
+  const areAllQuestionsValid = (): boolean => {
+    // If there are no questions, return false
+    if (questions.length === 0) {
+      return false;
+    }
+    
+    // Check if any question is invalid
+    return !questions.some((_, index) => !isQuestionValid(index));
   };
 
   return (
@@ -1862,22 +2058,33 @@ const CreateGamePage = () => {
             >
               Back
             </Button>
-            <Button
-              variant="contained"
-              onClick={activeStep === steps.length - 1 ? submitQuiz : handleNext}
-              endIcon={activeStep === steps.length - 1 ? <SaveIcon /> : <ForwardIcon />}
-              disabled={isSubmitting}
-              sx={{ 
-                borderRadius: 8, 
-                px: 4,
-                background: activeStep === steps.length - 1 
-                  ? 'linear-gradient(45deg, #4CAF50 30%, #2E7D32 90%)' 
-                  : 'linear-gradient(45deg, #2196F3 30%, #1976D2 90%)',
-                boxShadow: '0 4px 10px rgba(0, 0, 0, 0.15)'
-              }}
+            <Tooltip 
+              title={
+                activeStep === steps.length - 1 && !areAllQuestionsValid() 
+                  ? "You need to complete all questions before saving"
+                  : ""
+              }
+              placement="top"
             >
-              {activeStep === steps.length - 1 ? (isSubmitting ? 'Saving...' : 'Finish & Save') : 'Next Step'}
-            </Button>
+              <span> {/* Wrapper needed for disabled button tooltips */}
+                <Button
+                  variant="contained"
+                  onClick={activeStep === steps.length - 1 ? submitQuiz : handleNext}
+                  endIcon={activeStep === steps.length - 1 ? <SaveIcon /> : <ForwardIcon />}
+                  disabled={isSubmitting || (activeStep === steps.length - 1 && !areAllQuestionsValid())}
+                  sx={{ 
+                    borderRadius: 8, 
+                    px: 4,
+                    background: activeStep === steps.length - 1 
+                      ? 'linear-gradient(45deg, #4CAF50 30%, #2E7D32 90%)' 
+                      : 'linear-gradient(45deg, #2196F3 30%, #1976D2 90%)',
+                    boxShadow: '0 4px 10px rgba(0, 0, 0, 0.15)'
+                  }}
+                >
+                  {activeStep === steps.length - 1 ? (isSubmitting ? 'Saving...' : 'Finish & Save') : 'Next Step'}
+                </Button>
+              </span>
+            </Tooltip>
           </Box>
         </Box>
       </Container>

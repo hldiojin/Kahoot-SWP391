@@ -15,7 +15,8 @@ import {
   Dialog,
   DialogContent,
   DialogTitle,
-  Slide
+  Slide,
+  SlideProps
 } from '@mui/material';
 import { 
   CheckCircle as CorrectIcon,
@@ -34,6 +35,7 @@ import quizService from '@/services/quizService';
 import playerService from '@/services/playerService';
 import questionService from '@/services/questionService';
 import dynamic from 'next/dynamic';
+import { TransitionProps } from '@mui/material/transitions';
 
 // Import Animal component with dynamic import to avoid SSR issues
 const Animal = dynamic(() => import('react-animals'), { ssr: false });
@@ -158,6 +160,16 @@ const OPTION_COLORS = [
 // Shape icons for options (Kahoot style)
 const OPTION_SHAPES = ['▲', '◆', '●', '■'];
 
+// Transition component for dialog
+const Transition = React.forwardRef(function Transition(
+  props: TransitionProps & {
+    children: React.ReactElement;
+  },
+  ref: React.Ref<unknown>,
+) {
+  return <Slide direction="up" ref={ref} {...props} />;
+});
+
 export default function GamePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -188,6 +200,7 @@ export default function GamePage() {
   const [playerData, setPlayerData] = useState<any>(null); // To store the player data from API
   const [gameMode, setGameMode] = useState<'solo' | 'team'>('solo'); // Add explicit game mode state
   const [feedbackColor, setFeedbackColor] = useState<'correct' | 'incorrect' | null>(null); // Add state for feedback color
+  const [pointsEarned, setPointsEarned] = useState(0); // Add state to track points earned for current question
   
   // Hardcoded data for demonstration (will be used if real data fails to load)
   const hardcodedQuestion = {
@@ -291,13 +304,18 @@ export default function GamePage() {
                   q.optionD && q.optionD.trim() !== "" ? q.optionD.trim() : `Option D`
                 ];
                 
+                // Check if this is a true/false question
+                const isTrueFalse = q.type === 'true-false' || 
+                  (q.optionA === 'True' && q.optionB === 'False' && (!q.optionC || q.optionC.trim() === '') && (!q.optionD || q.optionD.trim() === ''));
+                
                 return {
                   id: questionId,
                   question: q.text || 'Question',
                   options: options,
                   correctAnswer: correctAnswerIndex,
                   timeLimit: q.timeLimit || DEFAULT_TIMER_DURATION,
-                  points: q.score || 100
+                  points: q.score || 100,
+                  questionType: isTrueFalse ? 'true-false' : 'multiple-choice'
                 };
               });
               
@@ -485,11 +503,31 @@ export default function GamePage() {
     const timeRatio = elapsedTime / (currentQuestion.timeLimit || DEFAULT_TIMER_DURATION);
     const timeMultiplier = 1 - timeRatio * 0.5; // Max multiplier is 1, min is 0.5
     
-    let pointsEarned = 0;
+    let currentPointsEarned = 0;
     if (isAnswerCorrect) {
-      pointsEarned = Math.round(pointsForQuestion * timeMultiplier);
-      setScore(prevScore => prevScore + pointsEarned);
+      // Calculate points with time bonus
+      currentPointsEarned = Math.round(pointsForQuestion * timeMultiplier);
+      
+      // Save points earned for this specific question (for display in dialog)
+      setPointsEarned(currentPointsEarned);
+      
+      // Update total score
+      setScore(prevScore => prevScore + currentPointsEarned);
+    } else {
+      // No points for incorrect answers
+      setPointsEarned(0);
     }
+    
+    // Record the answer for final stats
+    setAnswersRecord(prev => [...prev, {
+      questionIndex: currentQuestionIndex,
+      selectedAnswer: index,
+      isCorrect: isAnswerCorrect,
+      timeTaken: elapsedTime,
+      correctAnswer: currentQuestion.correctAnswer,
+      points: currentPointsEarned,
+      timeBonus: isAnswerCorrect ? Math.round(currentPointsEarned * (timeMultiplier - 0.5) / 0.5) : 0
+    }]);
     
     // Convert index to letter (A, B, C, D)
     const answerLetter = String.fromCharCode(65 + index);
@@ -526,15 +564,6 @@ export default function GamePage() {
       console.error("Error preparing answer submission:", error);
     }
     
-    // Record the answer for final stats
-    setAnswersRecord(prev => [...prev, {
-      questionIndex: currentQuestionIndex,
-      selectedAnswer: index,
-      isCorrect: isAnswerCorrect,
-      timeTaken: elapsedTime,
-      correctAnswer: currentQuestion.correctAnswer
-    }]);
-    
     // Show correct answer after a delay
     setTimeout(() => {
       setShowCorrectAnswer(true);
@@ -557,6 +586,7 @@ export default function GamePage() {
     setIsFeedbackShown(true);
     setIsCorrect(false);
     setFeedbackColor('incorrect'); // Always incorrect when time is up
+    setPointsEarned(0); // No points when time is up
     
     try {
       // Extract playerId more carefully
@@ -628,6 +658,7 @@ export default function GamePage() {
       setShowCorrectAnswer(false);
       setWaitingState(false);
       setFeedbackColor(null); // Reset feedback color
+      setPointsEarned(0); // Reset points earned for next question
     };
     
     // Only reset all states if moving to another question
@@ -924,135 +955,151 @@ export default function GamePage() {
           </Paper>
         </motion.div>
         
-        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 3 }}>
-          {currentQuestion?.options?.map((option: string, index: number) => (
-            <motion.div
-              key={index}
-              initial={buttonAnimation.initial}
-              animate={buttonAnimation.animate}
-              exit={buttonAnimation.exit}
-              transition={{ ...buttonAnimation.transition, delay: index * 0.15 }}
-            >
-              <Button
-                fullWidth
-                variant="contained"
-                onClick={() => handleSelectAnswer(index)}
-                disabled={submittedAnswer !== null || isFeedbackShown}
-                sx={{
-                  py: 3,
-                  height: '100%',
-                  borderRadius: 3,
-                  textTransform: 'none',
-                  fontSize: '1.2rem',
-                  fontWeight: 'bold',
-                  justifyContent: 'flex-start',
-                  bgcolor: showCorrectAnswer && index === currentQuestion.correctAnswer 
-                    ? '#4caf50' // Always show correct answer in green when revealed
-                    : showCorrectAnswer && submittedAnswer === index && index !== currentQuestion.correctAnswer
-                      ? '#f44336' // Show incorrect selected answer in red
-                      : OPTION_COLORS[index].bg, // Default color
-                  color: 'white',
-                  position: 'relative',
-                  overflow: 'hidden',
-                  boxShadow: showCorrectAnswer && index === currentQuestion.correctAnswer
-                    ? '0 0 0 4px white, 0 0 0 8px #4caf50' // Highlight correct answer
-                    : submittedAnswer === index && !showCorrectAnswer
-                      ? `0 0 0 4px white, 0 0 0 8px ${OPTION_COLORS[index].bg}` // Highlight selected answer
-                      : `0 8px 15px ${OPTION_COLORS[index].shadow}`, // Default shadow
-                  '&:hover': {
-                    bgcolor: showCorrectAnswer ? 
-                      (index === currentQuestion.correctAnswer ? '#4caf50' : 
-                       (submittedAnswer === index ? '#f44336' : OPTION_COLORS[index].hover)) : 
-                      OPTION_COLORS[index].hover,
-                    transform: submittedAnswer === null ? 'translateY(-3px)' : 'none',
-                    boxShadow: submittedAnswer === null ? 
-                      `0 12px 20px ${OPTION_COLORS[index].shadow}` : 
-                      (showCorrectAnswer && index === currentQuestion.correctAnswer) ? 
-                        '0 0 0 4px white, 0 0 0 8px #4caf50' : 
-                        (submittedAnswer === index ? 
-                          `0 0 0 4px white, 0 0 0 8px ${OPTION_COLORS[index].bg}` : 
-                          `0 8px 15px ${OPTION_COLORS[index].shadow}`)
-                  },
-                  transition: 'all 0.2s',
-                  // Apply reduced opacity to non-selected answers when showing correct answer
-                  opacity: showCorrectAnswer && 
-                           index !== currentQuestion.correctAnswer && 
-                           index !== submittedAnswer ? 0.7 : 1
-                }}
+        <Box sx={{ 
+          display: 'grid', 
+          gridTemplateColumns: currentQuestion?.questionType === 'true-false' 
+            ? { xs: '1fr' }  // Full width for true/false
+            : { xs: '1fr', md: '1fr 1fr' },  // Two columns for multiple choice
+          gap: 3 
+        }}>
+          {currentQuestion?.options?.map((option: string, index: number) => {
+            // Skip options C and D for true-false questions
+            if (currentQuestion.questionType === 'true-false' && index > 1) {
+              return null;
+            }
+            
+            return (
+              <motion.div
+                key={index}
+                initial={buttonAnimation.initial}
+                animate={buttonAnimation.animate}
+                exit={buttonAnimation.exit}
+                transition={{ ...buttonAnimation.transition, delay: index * 0.15 }}
               >
-                <Box
+                <Button
+                  fullWidth
+                  variant="contained"
+                  onClick={() => handleSelectAnswer(index)}
+                  disabled={submittedAnswer !== null || isFeedbackShown}
                   sx={{
-                    mr: 2,
-                    minWidth: 45,
-                    height: 45,
-                    borderRadius: '8px',
-                    bgcolor: 'rgba(0,0,0,0.1)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '1.5rem',
-                    fontWeight: 'bold'
+                    py: 3,
+                    height: '100%',
+                    borderRadius: 3,
+                    textTransform: 'none',
+                    fontSize: '1.2rem',
+                    fontWeight: 'bold',
+                    justifyContent: 'flex-start',
+                    bgcolor: showCorrectAnswer && index === currentQuestion.correctAnswer 
+                      ? '#4caf50' // Always show correct answer in green when revealed
+                      : showCorrectAnswer && submittedAnswer === index && index !== currentQuestion.correctAnswer
+                        ? '#f44336' // Show incorrect selected answer in red
+                        : OPTION_COLORS[index].bg, // Default color
+                    color: 'white',
+                    position: 'relative',
+                    overflow: 'hidden',
+                    boxShadow: showCorrectAnswer && index === currentQuestion.correctAnswer
+                      ? '0 0 0 4px white, 0 0 0 8px #4caf50' // Highlight correct answer
+                      : submittedAnswer === index && !showCorrectAnswer
+                        ? `0 0 0 4px white, 0 0 0 8px ${OPTION_COLORS[index].bg}` // Highlight selected answer
+                        : `0 8px 15px ${OPTION_COLORS[index].shadow}`, // Default shadow
+                    '&:hover': {
+                      bgcolor: showCorrectAnswer ? 
+                        (index === currentQuestion.correctAnswer ? '#4caf50' : 
+                         (submittedAnswer === index ? '#f44336' : OPTION_COLORS[index].hover)) : 
+                        OPTION_COLORS[index].hover,
+                      transform: submittedAnswer === null ? 'translateY(-3px)' : 'none',
+                      boxShadow: submittedAnswer === null ? 
+                        `0 12px 20px ${OPTION_COLORS[index].shadow}` : 
+                        (showCorrectAnswer && index === currentQuestion.correctAnswer) ? 
+                          '0 0 0 4px white, 0 0 0 8px #4caf50' : 
+                          (submittedAnswer === index ? 
+                            `0 0 0 4px white, 0 0 0 8px ${OPTION_COLORS[index].bg}` : 
+                            `0 8px 15px ${OPTION_COLORS[index].shadow}`)
+                    },
+                    transition: 'all 0.2s',
+                    // Apply reduced opacity to non-selected answers when showing correct answer
+                    opacity: showCorrectAnswer && 
+                             index !== currentQuestion.correctAnswer && 
+                             index !== submittedAnswer ? 0.7 : 1
                   }}
                 >
-                  {OPTION_SHAPES[index]}
-                </Box>
-                
-                <Box sx={{ flex: 1, textAlign: 'left', pr: 3 }}>
-                  {`${String.fromCharCode(65 + index)}: ${option || `Option ${String.fromCharCode(65 + index)}`}`}
-                </Box>
-                
-                {showCorrectAnswer && index === currentQuestion.correctAnswer && (
                   <Box
                     sx={{
-                      position: 'absolute',
-                      right: 16,
+                      mr: 2,
+                      minWidth: 45,
+                      height: 45,
+                      borderRadius: '8px',
+                      bgcolor: 'rgba(0,0,0,0.1)',
                       display: 'flex',
                       alignItems: 'center',
-                      justifyContent: 'center'
+                      justifyContent: 'center',
+                      fontSize: '1.5rem',
+                      fontWeight: 'bold'
                     }}
                   >
-                    <motion.div 
-                      initial={{ scale: 0 }}
-                      animate={{ scale: 1 }}
-                      transition={{ duration: 0.6, type: 'spring', stiffness: 200 }}
-                    >
-                      <CorrectIcon sx={{ fontSize: '2.5rem', filter: 'drop-shadow(0 0 3px rgba(0,0,0,0.3))' }} />
-                    </motion.div>
+                    {OPTION_SHAPES[index]}
                   </Box>
-                )}
-                
-                {submittedAnswer === index && !showCorrectAnswer && (
-                  <Box
-                    sx={{
-                      position: 'absolute',
-                      right: 16,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center'
-                    }}
-                  >
-                    <motion.div 
-                      animate={{ 
-                        scale: [1, 1.2, 1],
-                      }}
-                      transition={{ 
-                        duration: 1.5,
-                        repeat: Infinity,
+                  
+                  <Box sx={{ flex: 1, textAlign: 'left', pr: 3 }}>
+                    {currentQuestion.questionType === 'true-false' 
+                      ? option  // Just show 'True' or 'False' for true/false questions
+                      : `${String.fromCharCode(65 + index)}: ${option || `Option ${String.fromCharCode(65 + index)}`}`
+                    }
+                  </Box>
+                  
+                  {showCorrectAnswer && index === currentQuestion.correctAnswer && (
+                    <Box
+                      sx={{
+                        position: 'absolute',
+                        right: 16,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
                       }}
                     >
-                      <CircularProgress size={30} color="inherit" thickness={5} />
-                    </motion.div>
-                  </Box>
-                )}
-              </Button>
-            </motion.div>
-          ))}
+                      <motion.div 
+                        initial={{ scale: 0 }}
+                        animate={{ scale: 1 }}
+                        transition={{ duration: 0.6, type: 'spring', stiffness: 200 }}
+                      >
+                        <CorrectIcon sx={{ fontSize: '2.5rem', filter: 'drop-shadow(0 0 3px rgba(0,0,0,0.3))' }} />
+                      </motion.div>
+                    </Box>
+                  )}
+                  
+                  {submittedAnswer === index && !showCorrectAnswer && (
+                    <Box
+                      sx={{
+                        position: 'absolute',
+                        right: 16,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}
+                    >
+                      <motion.div 
+                        animate={{ 
+                          scale: [1, 1.2, 1],
+                        }}
+                        transition={{ 
+                          duration: 1.5,
+                          repeat: Infinity,
+                        }}
+                      >
+                        <CircularProgress size={30} color="inherit" thickness={5} />
+                      </motion.div>
+                    </Box>
+                  )}
+                </Button>
+              </motion.div>
+            );
+          })}
         </Box>
       </Container>
       
       <Dialog
         open={isFeedbackShown}
-        TransitionComponent={Slide}
+        TransitionComponent={Transition}
         transitionDuration={300}
         PaperProps={{
           sx: {
@@ -1110,8 +1157,19 @@ export default function GamePage() {
                 fontWeight: 'bold',
                 fontSize: '1.5rem'
               }}>
-                +{score} points
+                +{pointsEarned} points
               </Box>
+              
+              {/* Show time bonus information */}
+              {pointsEarned > 0 && (
+                <Typography variant="body2" sx={{ 
+                  mt: 1, 
+                  color: 'rgba(255,255,255,0.9)',
+                  fontStyle: 'italic'
+                }}>
+                  Includes time bonus for quick answer!
+                </Typography>
+              )}
             </motion.div>
           )}
           

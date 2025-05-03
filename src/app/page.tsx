@@ -163,22 +163,10 @@ export default function LandingPage() {
   const [errorMessage, setErrorMessage] = useState('');
   const [isJoining, setIsJoining] = useState(false);
   const [recentGames, setRecentGames] = useState<string[]>([]);
-  const [animationStyles, setAnimationStyles] = useState({});
 
   useEffect(() => {
     setIsMounted(true);
     setCurrentYear(new Date().getFullYear().toString());
-    
-    // Set animation styles only on client side
-    setAnimationStyles({
-      fadeInUp: {
-        opacity: 1,
-        transform: 'translateY(0)'
-      },
-      scaleIn: {
-        transform: 'scale(1)'
-      }
-    });
   }, []);
 
   useEffect(() => {
@@ -307,12 +295,12 @@ export default function LandingPage() {
   };
 
   const saveRecentGameCode = (code: string) => {
+    if (!isMounted) return;
+    
     try {
-      const recentCodes = JSON.parse(localStorage.getItem('recentGameCodes') || '[]');
-      const updatedCodes = recentCodes.filter((c: string) => c !== code);
-      updatedCodes.unshift(code);
-      const trimmedCodes = updatedCodes.slice(0, 5);
-      localStorage.setItem('recentGameCodes', JSON.stringify(trimmedCodes));
+      const existingCodes = JSON.parse(localStorage.getItem('recentGameCodes') || '[]');
+      const updatedCodes = [code, ...existingCodes.filter((c: string) => c !== code)].slice(0, 5);
+      localStorage.setItem('recentGameCodes', JSON.stringify(updatedCodes));
     } catch (e) {
       console.error("Error saving recent game code:", e);
     }
@@ -324,9 +312,8 @@ export default function LandingPage() {
   };
 
   if (!isMounted) {
-    // Return a simple loading state to avoid hydration mismatch
     return (
-      <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', position: 'relative' }}>
+      <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
         <StyledAppBar position="static">
           <Toolbar>
             <LogoTypography variant="h6">
@@ -336,17 +323,27 @@ export default function LandingPage() {
             <Button
               variant="contained"
               startIcon={<PlayArrowIcon />}
-              sx={{
-                mr: 2,
+              sx={{ 
+                mr: 2, 
+                textTransform: 'none',
                 borderRadius: 2,
+                fontWeight: 'medium',
+                px: 2,
                 background: 'linear-gradient(45deg, #2196F3 30%, #9C27B0 90%)',
               }}
+              disabled
             >
               Join a game
             </Button>
             <Button
               variant="outlined"
-              sx={{ borderRadius: 2 }}
+              sx={{ 
+                textTransform: 'none',
+                borderRadius: 2,
+                borderWidth: 2,
+              }}
+              href="/login"
+              LinkComponent={Link}
             >
               Log in
             </Button>
@@ -436,7 +433,7 @@ export default function LandingPage() {
           flexDirection: 'column',
           alignItems: 'center'
         }}>
-          {/* Decorative elements */}
+          {/* Decorative elements - only render on client */}
           <MotionBox
             style={{
               position: 'absolute',
@@ -542,7 +539,7 @@ export default function LandingPage() {
               <IconButton size="small" sx={{ mr: 0.5 }}>
                 <VolumeUpIcon fontSize="inherit" />
               </IconButton>
-              <Typography variant="caption">Pronounced ("Blue-kit")</Typography>
+              <Typography variant="caption">Pronounced ("ka-hoot")</Typography>
             </PronunciationBox>
           </MotionBox>
         </Box>

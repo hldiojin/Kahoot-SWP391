@@ -25,6 +25,12 @@ import {
   ListItemText,
   Divider,
   CircularProgress,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
+  Card,
+  CardContent,
+  Chip,
 } from '@mui/material';
 import {
   Search as SearchIcon,
@@ -34,10 +40,15 @@ import {
   Delete as DeleteIcon,
   ContentCopy as DuplicateIcon,
   PlayArrow as PlayIcon,
+  ExpandMore as ExpandMoreIcon,
+  CheckCircle as CheckCircleIcon,
+  QuestionAnswer as QuestionAnswerIcon,
+  Info as InfoIcon,
 } from '@mui/icons-material';
 import GameCard from '../components/GameCard';
 import authService from '@/services/authService';
 import quizService from '@/services/quizService';
+import questionService from '@/services/questionService';
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -79,6 +90,11 @@ export default function MySetsPage() {
   const [gameResults, setGameResults] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [quizDetailsOpen, setQuizDetailsOpen] = useState(false);
+  const [quizDetails, setQuizDetails] = useState<any>(null);
+  const [quizQuestions, setQuizQuestions] = useState<any[]>([]);
+  const [loadingDetails, setLoadingDetails] = useState(false);
+  const [detailsError, setDetailsError] = useState<string | null>(null);
 
   // Helper function to ensure data is properly formatted for GameCard
   const formatQuizForDisplay = (quiz: any) => {
@@ -261,6 +277,48 @@ export default function MySetsPage() {
     fetchQuizzesFromAPI();
   };
 
+  const handleViewDetails = async (game: any) => {
+    try {
+      setLoadingDetails(true);
+      setDetailsError(null);
+      setQuizDetails(game);
+      
+      // Fetch questions for this quiz
+      if (game && game.id) {
+        const questionsResponse = await questionService.getQuestionsByQuizId(parseInt(game.id));
+        if (questionsResponse && questionsResponse.data) {
+          setQuizQuestions(questionsResponse.data);
+        } else {
+          setQuizQuestions([]);
+        }
+      }
+      
+      setQuizDetailsOpen(true);
+    } catch (error) {
+      console.error("Error fetching quiz details:", error);
+      setDetailsError("Failed to load quiz details. Please try again.");
+    } finally {
+      setLoadingDetails(false);
+    }
+  };
+
+  const handleCloseQuizDetails = () => {
+    setQuizDetailsOpen(false);
+  };
+
+  // Helper function to display correct answer letter
+  const getCorrectAnswerText = (question: any) => {
+    if (!question.isCorrect) return 'N/A';
+    
+    switch(question.isCorrect.toUpperCase()) {
+      case 'A': return question.optionA;
+      case 'B': return question.optionB;
+      case 'C': return question.optionC;
+      case 'D': return question.optionD;
+      default: return 'N/A';
+    }
+  };
+
   const filteredSets = mySets.filter(game => 
     game.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
     game.description.toLowerCase().includes(searchQuery.toLowerCase())
@@ -396,15 +454,17 @@ export default function MySetsPage() {
                           <MoreVertIcon />
                         </IconButton>
                       </Box>
-                      <GameCard
-                        title={String(game.title || "Untitled Quiz")}
-                        description={String(game.description || "No description")}
-                        imageUrl={game.coverImage || game.imageUrl || "https://img.freepik.com/free-vector/quiz-neon-sign_1262-15536.jpg"}
-                        questionsCount={typeof game.questionsCount === 'number' ? game.questionsCount : 0}
-                        playsCount={typeof game.playsCount === 'number' ? game.playsCount : 0}
-                        creator={String(game.creator || "You")}
-                        gameCode={String(game.gameCode || "")}
-                      />
+                      <Box onClick={() => handleViewDetails(game)} sx={{ cursor: 'pointer' }}>
+                        <GameCard
+                          title={String(game.title || "Untitled Quiz")}
+                          description={String(game.description || "No description")}
+                          imageUrl={game.coverImage || game.imageUrl || "https://img.freepik.com/free-vector/quiz-neon-sign_1262-15536.jpg"}
+                          questionsCount={typeof game.questionsCount === 'number' ? game.questionsCount : 0}
+                          playsCount={typeof game.playsCount === 'number' ? game.playsCount : 0}
+                          creator={String(game.creator || "You")}
+                          gameCode={String(game.gameCode || "")}
+                        />
+                      </Box>
                     </Box>
                   ))}
                 </Box>
@@ -433,7 +493,6 @@ export default function MySetsPage() {
               )}
             </TabPanel>
             
-            {/* Other tab panels with similar pattern - removed sample sets here too */}
             <TabPanel value={tabValue} index={1}>
               {filteredSets.length > 0 ? (
                 <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
@@ -448,15 +507,17 @@ export default function MySetsPage() {
                           <MoreVertIcon />
                         </IconButton>
                       </Box>
-                      <GameCard
-                        title={String(game.title || "Untitled Quiz")}
-                        description={String(game.description || "No description")}
-                        imageUrl={game.coverImage || game.imageUrl || "https://img.freepik.com/free-vector/quiz-neon-sign_1262-15536.jpg"}
-                        questionsCount={typeof game.questionsCount === 'number' ? game.questionsCount : 0}
-                        playsCount={typeof game.playsCount === 'number' ? game.playsCount : 0}
-                        creator={String(game.creator || "You")}
-                        gameCode={String(game.gameCode || "")}
-                      />
+                      <Box onClick={() => handleViewDetails(game)} sx={{ cursor: 'pointer' }}>
+                        <GameCard
+                          title={String(game.title || "Untitled Quiz")}
+                          description={String(game.description || "No description")}
+                          imageUrl={game.coverImage || game.imageUrl || "https://img.freepik.com/free-vector/quiz-neon-sign_1262-15536.jpg"}
+                          questionsCount={typeof game.questionsCount === 'number' ? game.questionsCount : 0}
+                          playsCount={typeof game.playsCount === 'number' ? game.playsCount : 0}
+                          creator={String(game.creator || "You")}
+                          gameCode={String(game.gameCode || "")}
+                        />
+                      </Box>
                     </Box>
                   ))}
                 </Box>
@@ -516,7 +577,153 @@ export default function MySetsPage() {
         )}
       </Box>
 
-      {/* Dialogs - unchanged */}
+      <Menu
+        anchorEl={anchorEl}
+        open={Boolean(anchorEl)}
+        onClose={handleMenuClose}
+      >
+        <MenuItem onClick={handleEditClick}>
+          <ListItemIcon>
+            <EditIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText primary="Edit" />
+        </MenuItem>
+        <MenuItem onClick={handleDuplicateClick}>
+          <ListItemIcon>
+            <DuplicateIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText primary="Duplicate" />
+        </MenuItem>
+        <MenuItem onClick={handleShowCode}>
+          <ListItemIcon>
+            <PlayIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText primary="Show Game Code" />
+        </MenuItem>
+        <MenuItem onClick={handleDeleteClick}>
+          <ListItemIcon>
+            <DeleteIcon fontSize="small" color="error" />
+          </ListItemIcon>
+          <ListItemText primary="Delete" sx={{ color: 'error.main' }} />
+        </MenuItem>
+      </Menu>
+
+      <Dialog
+        open={quizDetailsOpen}
+        onClose={handleCloseQuizDetails}
+        maxWidth="md"
+        fullWidth
+        aria-labelledby="quiz-details-dialog-title"
+      >
+        <DialogTitle id="quiz-details-dialog-title">
+          Quiz Details
+          <IconButton
+            aria-label="close"
+            onClick={handleCloseQuizDetails}
+            sx={{ position: 'absolute', right: 8, top: 8 }}
+          >
+            <MoreVertIcon />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent>
+          {loadingDetails ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+              <CircularProgress />
+            </Box>
+          ) : detailsError ? (
+            <Typography color="error">{detailsError}</Typography>
+          ) : quizDetails ? (
+            <>
+              <Card variant="outlined" sx={{ mb: 3 }}>
+                <CardContent>
+                  <Typography variant="h5" component="div" gutterBottom>
+                    {quizDetails.title}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" paragraph>
+                    {quizDetails.description}
+                  </Typography>
+                  <Box sx={{ display: 'flex', gap: 2 }}>
+                    <Chip 
+                      icon={<QuestionAnswerIcon />} 
+                      label={`${quizQuestions.length} Questions`} 
+                      variant="outlined" 
+                    />
+                    <Chip 
+                      icon={<InfoIcon />} 
+                      label={`${quizDetails.playsCount || 0} Plays`} 
+                      variant="outlined" 
+                    />
+                    <Chip 
+                      icon={<PlayIcon />} 
+                      label={`Game Code: ${quizDetails.gameCode || 'N/A'}`} 
+                      variant="outlined" 
+                      color="primary"
+                    />
+                  </Box>
+                </CardContent>
+              </Card>
+
+              <Typography variant="h6" gutterBottom>
+                Questions
+              </Typography>
+              
+              {quizQuestions.length > 0 ? (
+                quizQuestions.map((question, index) => (
+                  <Accordion key={question.id || index} sx={{ mb: 1 }}>
+                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                      <Typography>{`${index + 1}. ${question.text}`}</Typography>
+                    </AccordionSummary>
+                    <AccordionDetails>
+                      <List dense>
+                        <ListItem sx={{ color: question.isCorrect === 'A' ? 'success.main' : 'text.primary' }}>
+                          {question.isCorrect === 'A' && <CheckCircleIcon color="success" sx={{ mr: 1 }} />}
+                          <ListItemText primary={`A: ${question.optionA}`} />
+                        </ListItem>
+                        <ListItem sx={{ color: question.isCorrect === 'B' ? 'success.main' : 'text.primary' }}>
+                          {question.isCorrect === 'B' && <CheckCircleIcon color="success" sx={{ mr: 1 }} />}
+                          <ListItemText primary={`B: ${question.optionB}`} />
+                        </ListItem>
+                        {question.optionC && (
+                          <ListItem sx={{ color: question.isCorrect === 'C' ? 'success.main' : 'text.primary' }}>
+                            {question.isCorrect === 'C' && <CheckCircleIcon color="success" sx={{ mr: 1 }} />}
+                            <ListItemText primary={`C: ${question.optionC}`} />
+                          </ListItem>
+                        )}
+                        {question.optionD && (
+                          <ListItem sx={{ color: question.isCorrect === 'D' ? 'success.main' : 'text.primary' }}>
+                            {question.isCorrect === 'D' && <CheckCircleIcon color="success" sx={{ mr: 1 }} />}
+                            <ListItemText primary={`D: ${question.optionD}`} />
+                          </ListItem>
+                        )}
+                      </List>
+                      <Box sx={{ mt: 2 }}>
+                        <Typography variant="body2">
+                          <strong>Correct Answer:</strong> {question.isCorrect} - {getCorrectAnswerText(question)}
+                        </Typography>
+                        <Typography variant="body2">
+                          <strong>Time Limit:</strong> {question.timeLimit} seconds
+                        </Typography>
+                        <Typography variant="body2">
+                          <strong>Points:</strong> {question.score} points
+                        </Typography>
+                      </Box>
+                    </AccordionDetails>
+                  </Accordion>
+                ))
+              ) : (
+                <Typography color="text.secondary" sx={{ py: 2 }}>
+                  No questions found for this quiz.
+                </Typography>
+              )}
+            </>
+          ) : (
+            <Typography color="text.secondary">Select a quiz to view details.</Typography>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseQuizDetails}>Close</Button>
+        </DialogActions>
+      </Dialog>
     </MainLayout>
   );
 }

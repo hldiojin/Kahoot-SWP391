@@ -7,7 +7,7 @@ import authService from '@/services/authService';
 interface User {
   id: string;
   role: string;
-  username?: string; // Thêm trường username
+  username?: string;
   name?: string;
   email?: string;
   firstName?: string;
@@ -22,10 +22,20 @@ interface AuthContextType {
   register: (username: string, email: string, password: string) => Promise<any>;
   checkAuth: () => Promise<boolean>;
   updateUser: (userId: number, userData: any) => Promise<any>;
+  isClientReady: boolean;
 }
 
-// Create context
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+// Create context with default values
+const AuthContext = createContext<AuthContextType>({
+  user: null,
+  isLoading: true,
+  isClientReady: false,
+  login: async () => ({ success: false }),
+  logout: () => {},
+  register: async () => ({ success: false }),
+  checkAuth: async () => false,
+  updateUser: async () => ({ success: false })
+});
 
 // API URL
 const API_URL = 'https://kahootclone-f7hkd0hwafgbfrfa.southeastasia-01.azurewebsites.net';
@@ -33,9 +43,9 @@ const API_URL = 'https://kahootclone-f7hkd0hwafgbfrfa.southeastasia-01.azurewebs
 // In the AuthProvider component
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // Add client-side indicator
-  const [isMounted, setIsMounted] = useState(false);
+  const [isClientReady, setIsClientReady] = useState(false);
   const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(false); // Change initial value to false
+  const [isLoading, setIsLoading] = useState(true);
 
   // Helper function to decode JWT
   const decodeToken = (token: string) => {
@@ -58,57 +68,60 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Check for existing user session on mount - only client side
   useEffect(() => {
-    setIsMounted(true);
-    
-    // Move the auth check to useEffect to run only on client
-    const initialAuthCheck = async () => {
-      setIsLoading(true);
-      try {
-        // Check for token in localStorage (only available on client)
-        const token = localStorage.getItem('token');
-        
-        if (!token) {
+    // Only run once on client
+    if (typeof window !== 'undefined') {
+      setIsClientReady(true);
+      
+      const initialAuthCheck = async () => {
+        try {
+          // Check for token in localStorage (only available on client)
+          const token = localStorage.getItem('token');
+          
+          if (!token) {
+            setIsLoading(false);
+            return;
+          }
+          
+          // Set authorization header
+          axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+          
+          // Decode and check token
+          const decodedToken = decodeToken(token);
+          
+          if (!decodedToken) {
+            localStorage.removeItem('token');
+            setIsLoading(false);
+            return;
+          }
+          
+          // Check if token has expired
+          const currentTime = Math.floor(Date.now() / 1000);
+          if (decodedToken.exp && decodedToken.exp < currentTime) {
+            localStorage.removeItem('token');
+            delete axios.defaults.headers.common['Authorization'];
+            setIsLoading(false);
+            return;
+          }
+          
+          // Token is valid, update user
+          setUser({
+            id: decodedToken.nameid,
+            role: decodedToken.role,
+          });
+        } catch (error) {
+          console.error('Error during initial auth check:', error);
+        } finally {
           setIsLoading(false);
-          return;
         }
-        
-        // Set authorization header
-        axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-        
-        // Decode and check token
-        const decodedToken = decodeToken(token);
-        
-        if (!decodedToken) {
-          localStorage.removeItem('token');
-          setIsLoading(false);
-          return;
-        }
-        
-        // Check if token has expired
-        const currentTime = Math.floor(Date.now() / 1000);
-        if (decodedToken.exp && decodedToken.exp < currentTime) {
-          localStorage.removeItem('token');
-          delete axios.defaults.headers.common['Authorization'];
-          setIsLoading(false);
-          return;
-        }
-        
-        // Token is valid, update user
-        setUser({
-          id: decodedToken.nameid,
-          role: decodedToken.role,
-        });
-      } catch (error) {
-        console.error('Error during initial auth check:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    
-    initialAuthCheck();
+      };
+      
+      initialAuthCheck();
+    }
   }, []);
 
   const login = async (email: string, password: string) => {
+    if (!isClientReady) return { success: false, message: 'Client not ready' };
+    
     try {
       setIsLoading(true);
       
@@ -158,6 +171,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = async () => {
+    if (!isClientReady) return;
+    
     try {
       // Gọi API logout thông qua authService
       await authService.logout();
@@ -172,6 +187,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const register = async (username: string, email: string, password: string) => {
+    if (!isClientReady) return { success: false, message: 'Client not ready' };
+    
     try {
       setIsLoading(true);
       const response = await authService.register({ username, email, password });
@@ -195,6 +212,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   
   // Function to check if user is authenticated and token is valid
   const checkAuth = async () => {
+    if (!isClientReady) return false;
+    
     try {
       const token = localStorage.getItem('token');
       
@@ -242,50 +261,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Add updateUser method
   const updateUser = async (userId: number, userData: any) => {
+    if (!isClientReady) return { success: false, message: 'Client not ready' };
+    
     try {
       setIsLoading(true);
       const result = await authService.updateUser(userId, userData);
       
       // If update was successful and includes user information, update the local user state
       if (result && result.status === 1 && user) {
-        // Update only the fields that were returned in the response
-        const updatedUser = {
-          ...user,
-          username: userData.username || user.username,
-          email: userData.email || user.email,
-          role: userData.role || user.role
-        };
-        
-        setUser(updatedUser);
+        setUser({ ...user, ...result.data });
       }
       
       return result;
     } catch (error: any) {
       console.error('Error updating user:', error);
-      
-      if (error.response?.data?.message) {
-        return { success: false, message: error.response.data.message };
-      }
-      
-      return { success: false, message: 'An error occurred during user update' };
+      return { success: false, message: error.message || 'Update failed' };
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Only provide the context value if client-side
-  const contextValue = {
-    user,
-    isLoading,
-    login,
-    logout,
-    register,
-    checkAuth,
-    updateUser
-  };
-
+  // Provide the auth context
   return (
-    <AuthContext.Provider value={contextValue}>
+    <AuthContext.Provider 
+      value={{ 
+        user, 
+        isLoading, 
+        login, 
+        logout, 
+        register, 
+        checkAuth, 
+        updateUser,
+        isClientReady
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
