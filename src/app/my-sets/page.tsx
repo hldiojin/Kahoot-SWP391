@@ -153,7 +153,9 @@ export default function MySetsPage() {
               
               setMySets(formattedQuizzes);
             } else {
+              console.warn("Quiz API returned null or undefined data");
               setMySets([]);
+              setError("No quiz data available. The server returned an empty response.");
             }
           } catch (error: any) {
             console.error("Error fetching quizzes:", error);
@@ -349,11 +351,17 @@ export default function MySetsPage() {
       
       // Fetch questions for this quiz
       if (game && game.id) {
-        const questionsResponse = await questionService.getQuestionsByQuizId(parseInt(game.id));
-        if (questionsResponse && questionsResponse.data) {
-          setQuizQuestions(questionsResponse.data);
-        } else {
+        try {
+          const questionsResponse = await questionService.getQuestionsByQuizId(parseInt(game.id));
+          if (questionsResponse && questionsResponse.data) {
+            setQuizQuestions(Array.isArray(questionsResponse.data) ? questionsResponse.data : []);
+          } else {
+            setQuizQuestions([]);
+          }
+        } catch (questionError) {
+          console.error("Error fetching quiz questions:", questionError);
           setQuizQuestions([]);
+          setDetailsError("Could not load quiz questions. Using empty list.");
         }
       }
       

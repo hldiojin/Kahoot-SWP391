@@ -76,10 +76,25 @@ const questionService = {
         }
       );
       
+      // Ensure we handle null data responses properly
+      if (!response.data) {
+        console.warn(`Received null data from questions API for quiz ID ${quizId}`);
+        return { 
+          data: [], 
+          message: "No questions found or null data returned", 
+          status: 200 
+        };
+      }
+      
       return response.data;
     } catch (error) {
       console.error(`Error fetching questions for quiz ID ${quizId}:`, error);
-      throw error;
+      // Return an empty array instead of throwing to prevent cascading errors
+      return { 
+        data: [], 
+        message: `Error fetching questions: ${error instanceof Error ? error.message : 'Unknown error'}`, 
+        status: 500 
+      };
     }
   },
 

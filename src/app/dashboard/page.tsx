@@ -285,15 +285,29 @@ function Dashboard() {
     try {
       const paymentUrl = `https://kahootclone-f7hkd0hwafgbfrfa.southeastasia-01.azurewebsites.net/api/Payment`;
       
+      // Create full URLs for success and failure redirects
+      const baseUrl = window.location.origin;
+      const successUrl = `${baseUrl}/upgrade-success?status=success`;
+      const failureUrl = `${baseUrl}/upgrade-failed?status=failed`;
+      
+      // Clean previous payment status from localStorage
+      localStorage.removeItem('paymentVerified');
+      localStorage.removeItem('paymentFailed');
+      
       const response = await axios.post(paymentUrl, null, {
         params: {
-          servicePackId: servicePackId
+          servicePackId: servicePackId,
+          successUrl: successUrl,
+          failureUrl: failureUrl
         }
       });
       
       console.log("Payment API response:", response.data);
       
       if (response.data && response.data.status === 200 && response.data.data && response.data.data.payOSUrl) {
+        // Store current timestamp before redirect to verify return journey
+        sessionStorage.setItem('paymentStartTime', Date.now().toString());
+        
         // Navigate to PayOS payment URL
         window.location.href = response.data.data.payOSUrl;
         

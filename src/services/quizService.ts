@@ -500,6 +500,18 @@ const quizService = {
       
       console.log("My quizzes retrieved:", response.data);
       
+      // Check for null data and convert to empty array
+      if (!response.data) {
+        console.warn("API returned null data for getMyQuizzes");
+        return { data: [], message: "No quiz data available", status: 200 };
+      }
+      
+      // If data property is null, convert to empty array
+      if (response.data && response.data.data === null) {
+        console.warn("API returned response with null data property");
+        response.data.data = [];
+      }
+      
       // Store the quizzes in sessionStorage
       if (response.data && response.data.data) {
         sessionStorage.setItem('myQuizzes', JSON.stringify(response.data.data));
@@ -549,6 +561,18 @@ const quizService = {
       ));
       
       console.log("My quizzes retrieved:", response.data);
+      
+      // Check for null data and convert to empty array
+      if (!response.data) {
+        console.warn("API returned null data for fetchAndStoreMyQuizzes");
+        return { data: [], message: "No quiz data available", status: 200 };
+      }
+      
+      // If data property is null, convert to empty array
+      if (response.data && response.data.data === null) {
+        console.warn("API returned response with null data property");
+        response.data.data = [];
+      }
       
       // Store the quizzes in sessionStorage
       if (response.data && response.data.data) {

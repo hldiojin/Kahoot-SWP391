@@ -5,6 +5,7 @@ import "./globals.css";
 import ThemeProvider from './ThemeProvider';
 import ThemeRegistry from './components/ThemeRegistry';
 import { AuthProvider } from './context/AuthContext';
+import RouteGuard from './RouteGuard';
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -25,7 +26,9 @@ export default function RootLayout({
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <AuthProvider>
-          <ThemeRegistry>{children}</ThemeRegistry>
+          <ThemeRegistry>
+            <RouteGuard>{children}</RouteGuard>
+          </ThemeRegistry>
         </AuthProvider>
       </body>
     </html>
