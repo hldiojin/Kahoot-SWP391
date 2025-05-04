@@ -512,13 +512,18 @@ export default function PlayGamePage() {
         if (playerResponse && playerResponse.data && playerResponse.data.id) {
           console.log("Player created successfully:", playerResponse);
           
+          // Ensure ID is stored as a number, not a string
+          const playerId = Number(playerResponse.data.id);
+          
           // Update player information with ID
           const playerInfoWithId = {
             ...newPlayerInfo,
-            id: playerResponse.data.id,
-            playerId: playerResponse.data.id,
+            id: playerId,
+            playerId: playerId, // Ensure both id and playerId fields exist
             playerCode: playerResponse.data.playerCode || Math.floor(100000 + Math.random() * 900000)
           };
+          
+          console.log("Saving player info with ID as number:", playerInfoWithId);
           
           // Save to sessionStorage
           sessionStorage.setItem('currentPlayer', JSON.stringify(playerInfoWithId));

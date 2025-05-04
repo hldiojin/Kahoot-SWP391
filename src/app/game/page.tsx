@@ -37,6 +37,9 @@ import questionService from '@/services/questionService';
 import dynamic from 'next/dynamic';
 import { TransitionProps } from '@mui/material/transitions';
 
+// API base URL for direct API calls
+const API_BASE_URL = 'https://kahootclone-f7hkd0hwafgbfrfa.southeastasia-01.azurewebsites.net';
+
 // Import Animal component with dynamic import to avoid SSR issues
 const Animal = dynamic(() => import('react-animals'), { ssr: false });
 
@@ -202,6 +205,11 @@ export default function GamePage() {
   const [feedbackColor, setFeedbackColor] = useState<'correct' | 'incorrect' | null>(null); // Add state for feedback color
   const [pointsEarned, setPointsEarned] = useState(0); // Add state to track points earned for current question
   
+  // Add new states to track answers and questions for scoring
+  const [allSubmittedAnswers, setAllSubmittedAnswers] = useState<any[]>([]);
+  const [formattedQuestions, setFormattedQuestions] = useState<any[]>([]);
+  const [groupMembers, setGroupMembers] = useState<any[]>([]);
+  
   // Hardcoded data for demonstration (will be used if real data fails to load)
   const hardcodedQuestion = {
     id: "1",
@@ -211,10 +219,34 @@ export default function GamePage() {
     timeLimit: 30,
     points: 100
   };
-
+  
   useEffect(() => {
     const loadGame = async () => {
       try {
+        // Debug player info
+        console.log('🔴 GAME PAGE LOADING');
+        
+        // Check for player info in storage
+        const debugPlayerInfo = sessionStorage.getItem('currentPlayer');
+        if (debugPlayerInfo) {
+          try {
+            const parsedPlayerInfo = JSON.parse(debugPlayerInfo);
+            console.log('🔴 STORED PLAYER INFO:', parsedPlayerInfo);
+            console.log('🔴 ID TYPE:', typeof parsedPlayerInfo.id);
+            
+            // Ensure ID is a number not a string
+            if (typeof parsedPlayerInfo.id === 'string') {
+              console.log('🔴 CONVERTING STRING ID TO NUMBER');
+              parsedPlayerInfo.id = Number(parsedPlayerInfo.id);
+              sessionStorage.setItem('currentPlayer', JSON.stringify(parsedPlayerInfo));
+            }
+          } catch (e) {
+            console.error('Error parsing debug player info:', e);
+          }
+        } else {
+          console.log('🔴 NO PLAYER INFO IN STORAGE');
+        }
+
         if (!quizCode) {
           throw new Error('No quiz code provided');
         }
@@ -224,9 +256,67 @@ export default function GamePage() {
           throw new Error('No player information found. Please join the game first.');
         }
 
-        const playerData = JSON.parse(playerInfoStr);
-        setPlayerInfo(playerData);
-        
+        // Parse and validate player data
+        let parsedPlayerInfo;
+        try {
+          parsedPlayerInfo = JSON.parse(playerInfoStr);
+          
+          // Log player info for debugging
+          console.log("Player info from sessionStorage:", parsedPlayerInfo);
+          
+          // Ensure player has an ID and both id and playerId are the same
+          if (!parsedPlayerInfo.id && !parsedPlayerInfo.playerId) {
+            console.warn("Player info missing ID fields, this will cause errors");
+            
+            // Try to set a default ID to prevent errors
+            const defaultId = Math.floor(Math.random() * 100000) + 1;
+            parsedPlayerInfo.id = defaultId;
+            parsedPlayerInfo.playerId = defaultId;
+            
+            // Update sessionStorage with the fixed player info
+            sessionStorage.setItem('currentPlayer', JSON.stringify(parsedPlayerInfo));
+            localStorage.setItem('currentPlayer', JSON.stringify(parsedPlayerInfo));
+            console.log("Updated player info with default ID:", parsedPlayerInfo);
+          } else if (parsedPlayerInfo.id && !parsedPlayerInfo.playerId) {
+            // If we have id but not playerId, copy id to playerId
+            parsedPlayerInfo.playerId = parsedPlayerInfo.id;
+            sessionStorage.setItem('currentPlayer', JSON.stringify(parsedPlayerInfo));
+            localStorage.setItem('currentPlayer', JSON.stringify(parsedPlayerInfo));
+            console.log("Added missing playerId field:", parsedPlayerInfo);
+          } else if (!parsedPlayerInfo.id && parsedPlayerInfo.playerId) {
+            // If we have playerId but not id, copy playerId to id
+            parsedPlayerInfo.id = parsedPlayerInfo.playerId;
+            sessionStorage.setItem('currentPlayer', JSON.stringify(parsedPlayerInfo));
+            localStorage.setItem('currentPlayer', JSON.stringify(parsedPlayerInfo));
+            console.log("Added missing id field:", parsedPlayerInfo);
+          } else if (parsedPlayerInfo.id !== parsedPlayerInfo.playerId) {
+            // If both exist but differ, use id value for both
+            parsedPlayerInfo.playerId = parsedPlayerInfo.id;
+            sessionStorage.setItem('currentPlayer', JSON.stringify(parsedPlayerInfo));
+            localStorage.setItem('currentPlayer', JSON.stringify(parsedPlayerInfo));
+            console.log("Synchronized id and playerId fields:", parsedPlayerInfo);
+          }
+          
+          setPlayerInfo(parsedPlayerInfo);
+        } catch (parseError) {
+          console.error("Error parsing player info:", parseError);
+          
+          // Create default player info with a valid ID
+          const defaultPlayerInfo = {
+            id: Math.floor(Math.random() * 1000000) + 1, // Use a smaller, random ID that will fit in 32-bit int
+            playerId: Math.floor(Math.random() * 1000000) + 1, // Use a smaller, random ID
+            name: "Player",
+            avatar: "dog",
+            score: 0
+          };
+          
+          console.log("Using default player info:", defaultPlayerInfo);
+          sessionStorage.setItem('currentPlayer', JSON.stringify(defaultPlayerInfo));
+          localStorage.setItem('currentPlayer', JSON.stringify(defaultPlayerInfo));
+          const tempPlayerInfo = defaultPlayerInfo;
+          setPlayerInfo(tempPlayerInfo);
+        }
+
         // Try to get game mode from sessionStorage (most reliable source)
         // This should be consistently set in create-game, play-game, and quizService
         const storedGameMode = sessionStorage.getItem('gameMode');
@@ -291,6 +381,7 @@ export default function GamePage() {
               
               const sortedQuestions = [...rawQuestions].sort((a, b) => a.arrange - b.arrange);
               
+              // Format questions for the UI
               const formattedQuestions = sortedQuestions.map(q => {
                 const questionId = typeof q.id === 'string' ? parseInt(q.id, 10) : q.id;
                 
@@ -319,6 +410,9 @@ export default function GamePage() {
                 };
               });
               
+              // Also store original API question format for score calculation
+              setFormattedQuestions(sortedQuestions);
+              
               // Get the current game mode from state (may have been set from sessionStorage or API)
               const currentGameMode = gameMode;
               
@@ -331,6 +425,29 @@ export default function GamePage() {
               
               console.log("Final quiz data with processed gameMode:", completeQuizData);
               setQuizData(completeQuizData);
+
+              // If team mode, try to get group members
+              if (currentGameMode === 'team' && playerData.team) {
+                try {
+                  // Try to find group members
+                  const groupResponse = await fetch(
+                    `https://kahootclone-f7hkd0hwafgbfrfa.southeastasia-01.azurewebsites.net/api/Group/name/${encodeURIComponent(playerData.team)}`
+                  );
+                  
+                  if (groupResponse.ok) {
+                    const groupData = await groupResponse.json();
+                    console.log("Group data:", groupData);
+                    
+                    if (groupData && groupData.data) {
+                      // Store group members for team scoring
+                      const members = groupData.data.members || [];
+                      setGroupMembers(members);
+                    }
+                  }
+                } catch (groupError) {
+                  console.error("Error fetching group information:", groupError);
+                }
+              }
             } else {
               throw new Error('No questions found for this quiz.');
             }
@@ -403,69 +520,153 @@ export default function GamePage() {
     return () => clearInterval(timerInterval);
   }, [currentQuestion, gameStarted, showResults, isFeedbackShown]);
 
+  // Add a new useEffect to calculate scores when the game is over
   useEffect(() => {
-    if (showResults) {
-      const stats = calculateStats();
-      
-      const playerInfoStr = sessionStorage.getItem('currentPlayer');
-      const playerInfo = playerInfoStr ? JSON.parse(playerInfoStr) : null;
-      
-      // Create a more detailed game results object
-      const gameResults = {
-        score: stats.totalScore,
-        correctAnswers: stats.correctAnswers,
-        totalQuestions: stats.totalQuestions,
-        accuracy: stats.accuracy,
-        player: {
-          name: playerInfo?.name || 'Player',
-          avatar: playerInfo?.avatar || 'dog',
-          id: playerInfo?.id || playerInfo?.playerId || 0
-        },
-        answers: answersRecord,
-        quizId: quizData?.id || 0
+    if (showResults && allSubmittedAnswers.length > 0) {
+      const calculateFinalScore = async () => {
+        try {
+          const playerInfoStr = sessionStorage.getItem('currentPlayer');
+          const playerInfo = playerInfoStr ? JSON.parse(playerInfoStr) : null;
+          
+          if (!playerInfo || !playerInfo.id) {
+            console.error("Player info not available for score calculation");
+            return;
+          }
+          
+          console.log("Calculating final score for player:", playerInfo.id);
+          
+          // Get stats for UI
+          const stats = calculateStats();
+          
+          if (gameMode === 'solo') {
+            // For solo mode, calculate each answer's score
+            for (const answer of allSubmittedAnswers) {
+              // Find the corresponding question
+              const question = formattedQuestions.find(q => q.id === answer.questionId);
+              
+              if (question) {
+                try {
+                  // Calculate solo score through API
+                  await playerService.calculateSoloScore(
+                    answer,
+                    question
+                  );
+                } catch (error) {
+                  console.error("Error calculating solo score for answer:", error);
+                }
+              }
+            }
+          } else if (gameMode === 'team' && groupMembers.length > 0) {
+            // For team mode, calculate team score
+            try {
+              // Format group members for the API
+              const formattedGroupMembers = groupMembers.map(member => ({
+                groupId: member.groupId,
+                playerId: member.playerId,
+                rank: member.rank || 0,
+                totalScore: member.totalScore || 0,
+                joinedAt: member.joinedAt || new Date().toISOString(),
+                status: member.status || "Active"
+              }));
+              
+              // Calculate group score
+              await playerService.calculateGroupScore(
+                formattedGroupMembers,
+                allSubmittedAnswers,
+                formattedQuestions
+              );
+            } catch (error) {
+              console.error("Error calculating team score:", error);
+            }
+          }
+          
+          // Create game results object
+          const gameResults = {
+            score: stats.totalScore,
+            correctAnswers: stats.correctAnswers,
+            totalQuestions: stats.totalQuestions,
+            accuracy: stats.accuracy,
+            player: {
+              name: playerInfo?.name || 'Player',
+              avatar: playerInfo?.avatar || 'dog',
+              id: playerInfo?.id || playerInfo?.playerId || 0
+            },
+            answers: answersRecord,
+            quizId: quizData?.id || 0
+          };
+          
+          // Store player results
+          try {
+            const playerResultData = [{
+              name: playerInfo?.name || 'Player',
+              score: stats.totalScore,
+              correctAnswers: stats.correctAnswers,
+              totalQuestions: stats.totalQuestions,
+              timeBonus: Math.floor(stats.totalScore / 10),
+              averageAnswerTime: answersRecord.length > 0 ? 
+                answersRecord.reduce((sum, a) => sum + a.timeTaken, 0) / answersRecord.length : 0,
+              avatar: playerInfo?.avatar || 'dog',
+              group: playerInfo?.team || null,
+              id: playerInfo?.id || 0
+            }];
+            
+            console.log("Saving game results:", playerResultData);
+            
+            // Store everything in both localStorage and sessionStorage for redundancy
+            
+            // Clear previous results
+            sessionStorage.removeItem('gameResults');
+            localStorage.removeItem('gameResults');
+            
+            // Store results data
+            sessionStorage.setItem('gameResults', JSON.stringify(playerResultData));
+            localStorage.setItem('gameResults', JSON.stringify(playerResultData));
+            
+            // Store complete game data
+            sessionStorage.setItem('completeGameData', JSON.stringify(gameResults));
+            localStorage.setItem('completeGameData', JSON.stringify(gameResults));
+            
+            // Store questions and answers for reference
+            sessionStorage.setItem('playerAnswers', JSON.stringify(allSubmittedAnswers));
+            localStorage.setItem('playerAnswers', JSON.stringify(allSubmittedAnswers));
+            
+            // Store current quiz data
+            if (quizData) {
+              sessionStorage.setItem('currentQuiz', JSON.stringify(quizData));
+              localStorage.setItem('currentQuiz', JSON.stringify(quizData));
+            }
+            
+            // Store player info
+            if (playerInfo) {
+              sessionStorage.setItem('currentPlayer', JSON.stringify(playerInfo));
+              localStorage.setItem('currentPlayer', JSON.stringify(playerInfo));
+            }
+            
+            // Store formatted questions for score calculation
+            sessionStorage.setItem('formattedQuestions', JSON.stringify(formattedQuestions));
+            localStorage.setItem('formattedQuestions', JSON.stringify(formattedQuestions));
+            
+            // Redirect to results page
+            setTimeout(() => {
+              router.push('/game-results');
+            }, 500);
+          } catch (error) {
+            console.error("Error saving game results:", error);
+            router.push('/game-results');
+          }
+        } catch (calcError) {
+          console.error("Error calculating final score:", calcError);
+          
+          // Even if score calculation fails, still try to redirect to results page
+          setTimeout(() => {
+            router.push('/game-results');
+          }, 500);
+        }
       };
       
-      // Store player results in the format expected by the game-results page
-      try {
-        const playerResultData = [{
-          name: playerInfo?.name || 'Player',
-          score: stats.totalScore,
-          correctAnswers: stats.correctAnswers,
-          totalQuestions: stats.totalQuestions,
-          timeBonus: Math.floor(stats.totalScore / 10),
-          averageAnswerTime: answersRecord.length > 0 ? 
-            answersRecord.reduce((sum, a) => sum + a.timeTaken, 0) / answersRecord.length : 0,
-          avatar: playerInfo?.avatar || 'dog',
-          group: playerInfo?.team || null
-        }];
-        
-        console.log("Saving game results:", playerResultData);
-        
-        // Clear previous results first to avoid any possible corruption
-        sessionStorage.removeItem('gameResults');
-        
-        // Store the new results
-        sessionStorage.setItem('gameResults', JSON.stringify(playerResultData));
-        
-        // Also store the complete game data for reference
-        sessionStorage.setItem('completeGameData', JSON.stringify(gameResults));
-        
-        // Store current quiz data for reference on results page
-        if (quizData) {
-          sessionStorage.setItem('currentQuiz', JSON.stringify(quizData));
-        }
-        
-        // Redirect to results page after a small delay to ensure data is stored
-        setTimeout(() => {
-          router.push('/game-results');
-        }, 100);
-      } catch (error) {
-        console.error("Error saving game results:", error);
-        // If there's an error, still try to redirect
-        router.push('/game-results');
-      }
+      calculateFinalScore();
     }
-  }, [showResults, answersRecord, quizData, router]);
+  }, [showResults, allSubmittedAnswers, formattedQuestions, gameMode, groupMembers, quizData, router]);
 
   const calculateStats = () => {
     const correctAnswers = answersRecord.filter(a => a.isCorrect).length;
@@ -480,6 +681,53 @@ export default function GamePage() {
     };
   };
 
+  // Add a direct API call function to use exact player ID (bypassing any service layers)
+  const submitAnswerDirectly = (exactPlayerId: number, questionId: number, isCorrect: boolean, responseTime: number, answer: string) => {
+    try {
+      // Ensure ID is actually a number
+      const numericPlayerId = Number(exactPlayerId);
+      
+      console.log(`▶️ DIRECT SUBMIT: Using player ID ${numericPlayerId} for question ${questionId}`);
+      
+      // Create payload with the exact player ID (no transformations)
+      const payload = {
+        id: 0,
+        playerId: numericPlayerId,
+        questionId: questionId,
+        answeredAt: new Date().toISOString(),
+        isCorrect: isCorrect,
+        responseTime: responseTime,
+        answer: answer
+      };
+      
+      console.log("▶️ DIRECT SUBMIT PAYLOAD:", payload);
+      
+      // Direct API call
+      return axios.post(
+        `${API_BASE_URL}/api/PlayerAnswer`,
+        { playerAnswerDto: payload },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          }
+        }
+      ).then(response => {
+        console.log("✅ DIRECT SUBMIT SUCCESS:", response.data);
+        return response.data;
+      }).catch(error => {
+        console.error("❌ DIRECT SUBMIT ERROR:", error);
+        if (error.response) {
+          console.error("❌ API ERROR:", error.response.data);
+        }
+        throw error;
+      });
+    } catch (error) {
+      console.error("❌ DIRECT SUBMIT EXCEPTION:", error);
+      throw error;
+    }
+  };
+
   const handleSelectAnswer = (index: number) => {
     if (submittedAnswer !== null || isFeedbackShown) return;
     
@@ -488,7 +736,7 @@ export default function GamePage() {
     setSelectedAnswer(index);
     setSubmittedAnswer(index);
     setIsCorrect(isAnswerCorrect);
-    setFeedbackColor(isAnswerCorrect ? 'correct' : 'incorrect');
+    setFeedbackColor(isCorrect ? 'correct' : 'incorrect');
     setIsFeedbackShown(true);
     
     // Calculate elapsed time
@@ -532,36 +780,53 @@ export default function GamePage() {
     // Convert index to letter (A, B, C, D)
     const answerLetter = String.fromCharCode(65 + index);
     
-    // Save answer to API
+    // DIRECT ID FIX: Use the exact player ID from storage to submit the answer
     try {
-      // Extract playerId more carefully
-      const playerInfoStr = sessionStorage.getItem('currentPlayer');
-      if (playerInfoStr) {
-        const playerInfoObj = JSON.parse(playerInfoStr);
-        // Use the first available ID property
-        const playerId = playerInfoObj.id || playerInfoObj.playerId || playerInfo.id || playerInfo.playerId;
-        
-        if (playerId && currentQuestion?.id) {
-          console.log(`Submitting answer using player ID: ${playerId} and question ID: ${currentQuestion.id}`);
-          
-          // Use the service to submit the answer
-          playerService.submitAnswer(
-            parseInt(String(playerId)),
-            parseInt(String(currentQuestion.id)),
-            isAnswerCorrect,
-            elapsedTime,
-            answerLetter
-          )
-          .then(response => {
-            console.log("Answer submitted successfully:", response);
-          })
-          .catch(error => {
-            console.error("Error submitting answer:", error);
-          });
-        }
+      // Log player ID debug info
+      console.log("🔄 Current player info for submission:", playerInfo);
+      
+      // Extract the exact ID directly from playerInfo
+      // This ID should match what was returned when player was created
+      const exactPlayerId = playerInfo?.id;
+      
+      if (!exactPlayerId) {
+        console.error("⛔ No player ID found in playerInfo!");
+        return;
       }
+      
+      console.log(`🔄 Using exact player ID for submission: ${exactPlayerId}`);
+      
+      // Record submission locally for score calculation
+      const answerData = {
+        id: 0,
+        playerId: exactPlayerId,
+        questionId: currentQuestion?.id,
+        answeredAt: new Date().toISOString(),
+        isCorrect: isAnswerCorrect,
+        responseTime: elapsedTime,
+        answer: answerLetter
+      };
+      
+      setAllSubmittedAnswers(prev => {
+        const newAnswers = [...prev, answerData];
+        sessionStorage.setItem('playerAnswers', JSON.stringify(newAnswers));
+        return newAnswers;
+      });
+      
+      // COMPLETELY BYPASS the regular service and make a direct API call
+      submitAnswerDirectly(
+        exactPlayerId,
+        currentQuestion?.id,
+        isAnswerCorrect,
+        elapsedTime,
+        answerLetter
+      ).then(() => {
+        console.log("✅ Answer submitted successfully using direct method");
+      }).catch((error) => {
+        console.error("❌ Error with direct submission:", error);
+      });
     } catch (error) {
-      console.error("Error preparing answer submission:", error);
+      console.error("❌ Error in answer submission:", error);
     }
     
     // Show correct answer after a delay
@@ -588,33 +853,61 @@ export default function GamePage() {
     setFeedbackColor('incorrect'); // Always incorrect when time is up
     setPointsEarned(0); // No points when time is up
     
+    // Calculate the full time limit
+    const timeLimit = currentQuestion.timeLimit || DEFAULT_TIMER_DURATION;
+    
+    // DIRECT ID FIX: Use the exact player ID from storage to submit the timeout
     try {
-      // Extract playerId more carefully
-      const playerInfoStr = sessionStorage.getItem('currentPlayer');
-      if (playerInfoStr) {
-        const playerInfoObj = JSON.parse(playerInfoStr);
-        // Use the first available ID property
-        const playerId = playerInfoObj.id || playerInfoObj.playerId || playerInfo.id || playerInfo.playerId;
-        
-        if (playerId && currentQuestion?.id) {
-          console.log(`Submitting timeout answer using player ID: ${playerId} and question ID: ${currentQuestion.id}`);
-          
-          // Use the service to submit a timeout answer ('T' for timeout)
-          playerService.submitTimeoutAnswer(
-            parseInt(String(playerId)),
-            parseInt(String(currentQuestion.id)),
-            currentQuestion.timeLimit || DEFAULT_TIMER_DURATION
-          )
-          .then(response => {
-            console.log("Timeout answer submitted successfully:", response);
-          })
-          .catch(error => {
-            console.error("Error submitting timeout answer:", error);
-          });
-        }
+      // Log player ID debug info
+      console.log("🔄 Current player info for timeout:", playerInfo);
+      
+      // Extract the exact ID directly from playerInfo
+      const exactPlayerId = playerInfo?.id;
+      
+      if (!exactPlayerId) {
+        console.error("⛔ No player ID found in playerInfo for timeout!");
+        return;
       }
+      
+      const questionId = currentQuestion?.id;
+      if (!questionId) {
+        console.error("⛔ No question ID found for timeout!");
+        return;
+      }
+      
+      console.log(`🔄 Using exact player ID for timeout: ${exactPlayerId}`);
+      
+      // Record timeout locally for score calculation
+      const timeoutData = {
+        id: 0,
+        playerId: exactPlayerId,
+        questionId: questionId,
+        answeredAt: new Date().toISOString(),
+        isCorrect: false,
+        responseTime: timeLimit,
+        answer: 'T' // 'T' for timeout
+      };
+      
+      setAllSubmittedAnswers(prev => {
+        const newAnswers = [...prev, timeoutData];
+        sessionStorage.setItem('playerAnswers', JSON.stringify(newAnswers));
+        return newAnswers;
+      });
+      
+      // COMPLETELY BYPASS the regular service and make a direct API call
+      submitAnswerDirectly(
+        exactPlayerId,
+        questionId,
+        false, // always false for timeout
+        timeLimit,
+        'T' // 'T' for timeout
+      ).then(() => {
+        console.log("✅ Timeout submitted successfully using direct method");
+      }).catch((error) => {
+        console.error("❌ Error with direct timeout submission:", error);
+      });
     } catch (error) {
-      console.error("Error preparing timeout answer submission:", error);
+      console.error("❌ Error in timeout submission:", error);
     }
     
     // Record the timeout for final stats
@@ -622,7 +915,7 @@ export default function GamePage() {
       questionIndex: currentQuestionIndex,
       selectedAnswer: null,
       isCorrect: false,
-      timeTaken: currentQuestion.timeLimit || DEFAULT_TIMER_DURATION,
+      timeTaken: timeLimit,
       correctAnswer: currentQuestion.correctAnswer
     }]);
     

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import MainLayout from '../components/MainLayout';
 import {
   Box,
@@ -22,6 +22,13 @@ import {
   FormControl,
   Select,
   SelectChangeEvent,
+  CircularProgress,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Stack,
+  Alert
 } from '@mui/material';
 import {
   Search as SearchIcon,
@@ -32,83 +39,190 @@ import {
   BarChart as StatsIcon,
   AccessTime as TimeIcon,
 } from '@mui/icons-material';
+import { useRouter } from 'next/navigation';
 
-// Sample data for the user's play history
-const historyItems = [
-  {
-    id: 1,
-    gameTitle: 'World Geography',
-    date: 'Today at 10:30 AM',
-    score: '85%',
-    imageUrl: 'https://images.unsplash.com/photo-1526778548025-fa2f459cd5ce?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80',
-    creator: 'GeoExpert',
-    isFavorite: true,
-  },
-  {
-    id: 2,
-    gameTitle: 'Math Challenge',
-    date: 'Yesterday at 3:45 PM',
-    score: '92%',
-    imageUrl: 'https://images.unsplash.com/photo-1635070041078-e363dbe005cb?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80',
-    creator: 'MathWhiz',
-    isFavorite: false,
-  },
-  {
-    id: 3,
-    gameTitle: 'Science Quiz',
-    date: 'May 12, 2023',
-    score: '78%',
-    imageUrl: 'https://images.unsplash.com/photo-1532094349884-543bc11b234d?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80',
-    creator: 'ScienceTeacher',
-    isFavorite: true,
-  },
-  {
-    id: 4,
-    gameTitle: 'History Timeline',
-    date: 'May 8, 2023',
-    score: '65%',
-    imageUrl: 'https://images.unsplash.com/photo-1447069387593-a5de0862481e?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80',
-    creator: 'HistoryBuff',
-    isFavorite: false,
-  },
-  {
-    id: 5,
-    gameTitle: 'Literature Classics',
-    date: 'May 5, 2023',
-    score: '95%',
-    imageUrl: 'https://images.unsplash.com/photo-1512820790803-83ca734da794?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80',
-    creator: 'BookWorm',
-    isFavorite: false,
-  }
-];
+// Interface for history item
+interface HistoryItem {
+  id: number;
+  gameTitle: string;
+  date: string;
+  score: string;
+  imageUrl: string;
+  creator: string;
+  isFavorite: boolean;
+  quizId: number;
+  quizCode: string;
+  gameMode: 'solo' | 'team';
+  correctAnswers: number;
+  totalQuestions: number;
+}
 
 export default function HistoryPage() {
+  const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
   const [timeFilter, setTimeFilter] = useState('all');
+  const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [openStatsDialog, setOpenStatsDialog] = useState(false);
+  const [selectedItem, setSelectedItem] = useState<HistoryItem | null>(null);
+  const [confirmClearOpen, setConfirmClearOpen] = useState(false);
+  const [noHistoryFound, setNoHistoryFound] = useState(false);
 
-  const handleTimeFilterChange = (event: React.ChangeEvent<{ value: unknown }>) => {
-    setTimeFilter(event.target.value as string);
+  // Load history from sessionStorage/localStorage on component mount
+  useEffect(() => {
+    loadHistoryData();
+  }, []);
+
+  // Function to load history data from storage
+  const loadHistoryData = () => {
+    setLoading(true);
+    
+    try {
+      // Try to get saved history from localStorage (more persistent)
+      const savedHistory = localStorage.getItem('quizHistory');
+      let historyData: HistoryItem[] = [];
+      
+      if (savedHistory) {
+        historyData = JSON.parse(savedHistory);
+      } else {
+        // If no history in localStorage, try to get the most recent game from sessionStorage
+        const recentGameResults = sessionStorage.getItem('gameResults');
+        const recentQuizData = sessionStorage.getItem('currentQuiz');
+        const completeGameData = sessionStorage.getItem('completeGameData');
+        
+        if (recentGameResults && recentQuizData && completeGameData) {
+          const parsedResults = JSON.parse(recentGameResults);
+          const parsedQuiz = JSON.parse(recentQuizData);
+          const parsedGameData = JSON.parse(completeGameData);
+          
+          if (parsedResults.length > 0 && parsedQuiz) {
+            const playerResult = parsedResults[0];
+            
+            // Create a history item from the most recent game
+            const newHistoryItem: HistoryItem = {
+              id: Date.now(), // Use timestamp as ID
+              gameTitle: parsedQuiz.title || 'Untitled Quiz',
+              date: new Date().toLocaleString(),
+              score: `${playerResult.score}`,
+              imageUrl: parsedQuiz.thumbnailUrl || 'https://images.unsplash.com/photo-1546410531-bb4caa6b424d?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80',
+              creator: 'You', // Default creator
+              isFavorite: false,
+              quizId: parsedQuiz.id || 0,
+              quizCode: parsedQuiz.quizCode?.toString() || '000000',
+              gameMode: (parsedQuiz.gameMode === 'team' || playerResult.group) ? 'team' : 'solo',
+              correctAnswers: playerResult.correctAnswers || 0,
+              totalQuestions: playerResult.totalQuestions || 0
+            };
+            
+            historyData = [newHistoryItem];
+            
+            // Save this to localStorage for persistence
+            localStorage.setItem('quizHistory', JSON.stringify(historyData));
+          }
+        }
+      }
+      
+      if (historyData.length === 0) {
+        setNoHistoryFound(true);
+      }
+      
+      // Apply time filtering if needed
+      const filteredItems = filterHistoryByTime(historyData, timeFilter);
+      setHistoryItems(filteredItems);
+    } catch (error) {
+      console.error('Error loading history data:', error);
+      setNoHistoryFound(true);
+    } finally {
+      setLoading(false);
+    }
   };
 
+  // Filter history items by time period
+  const filterHistoryByTime = (items: HistoryItem[], filter: string) => {
+    if (filter === 'all') return items;
+    
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const weekStart = new Date(today);
+    weekStart.setDate(today.getDate() - today.getDay());
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    
+    return items.filter(item => {
+      const itemDate = new Date(item.date);
+      
+      switch(filter) {
+        case 'today':
+          return itemDate >= today;
+        case 'week':
+          return itemDate >= weekStart;
+        case 'month':
+          return itemDate >= monthStart;
+        default:
+          return true;
+      }
+    });
+  };
+
+  // Handle time filter change
+  const handleTimeFilterChange = (event: SelectChangeEvent<string>) => {
+    const newFilter = event.target.value;
+    setTimeFilter(newFilter);
+    
+    // Update filtered history items
+    const allItems = localStorage.getItem('quizHistory');
+    if (allItems) {
+      const parsedItems = JSON.parse(allItems);
+      const filteredItems = filterHistoryByTime(parsedItems, newFilter);
+      setHistoryItems(filteredItems);
+    }
+  };
+
+  // Handle clearing history
   const handleClearHistory = () => {
-    // TODO: Implement clear history functionality
-    console.log('Clearing history');
+    setConfirmClearOpen(true);
   };
 
+  // Confirm clearing history
+  const confirmClearHistory = () => {
+    localStorage.removeItem('quizHistory');
+    setHistoryItems([]);
+    setNoHistoryFound(true);
+    setConfirmClearOpen(false);
+  };
+
+  // Handle toggling favorite status
   const handleToggleFavorite = (id: number) => {
-    // TODO: Implement toggle favorite functionality
-    console.log(`Toggling favorite status for game ${id}`);
+    const updatedItems = historyItems.map(item => {
+      if (item.id === id) {
+        return {...item, isFavorite: !item.isFavorite};
+      }
+      return item;
+    });
+    
+    setHistoryItems(updatedItems);
+    localStorage.setItem('quizHistory', JSON.stringify(updatedItems));
   };
 
-  const handleReplay = (id: number) => {
-    // TODO: Implement replay functionality
-    console.log(`Replaying game ${id}`);
+  // Handle replaying a quiz
+  const handleReplay = (quizCode: string) => {
+    if (!quizCode) return;
+    
+    // Store the quiz code in sessionStorage for the play-game page
+    sessionStorage.setItem('quizCode', quizCode);
+    router.push(`/play-game?code=${quizCode}`);
   };
 
-  const handleViewStats = (id: number) => {
-    // TODO: Implement view stats functionality
-    console.log(`Viewing stats for game ${id}`);
+  // Handle viewing statistics for a quiz
+  const handleViewStats = (item: HistoryItem) => {
+    setSelectedItem(item);
+    setOpenStatsDialog(true);
   };
+
+  // Filter history items by search query
+  const filteredHistoryItems = historyItems.filter(item => 
+    item.gameTitle.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    item.creator.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   return (
     <MainLayout>
@@ -126,6 +240,7 @@ export default function HistoryPage() {
               borderRadius: 2,
               textTransform: 'none',
             }}
+            disabled={historyItems.length === 0}
           >
             Clear History
           </Button>
@@ -180,7 +295,7 @@ export default function HistoryPage() {
           >
             <Select
               value={timeFilter}
-              onChange={(event) => handleTimeFilterChange(event as any)}
+              onChange={handleTimeFilterChange}
               displayEmpty
               sx={{ bgcolor: 'background.default' }}
             >
@@ -192,110 +307,211 @@ export default function HistoryPage() {
           </FormControl>
         </Paper>
 
-        <Paper sx={{ borderRadius: 2, overflow: 'hidden', boxShadow: 1 }}>
-          <List disablePadding>
-            {historyItems.map((item, index) => (
-              <React.Fragment key={item.id}>
-                {index > 0 && <Divider />}
-                <ListItem sx={{ py: 2 }}>
-                  <ListItemAvatar>
-                    <Avatar 
-                      variant="rounded" 
-                      src={item.imageUrl} 
-                      alt={item.gameTitle}
-                      sx={{ width: 56, height: 56, borderRadius: 2 }}
-                    />
-                  </ListItemAvatar>
-                  <ListItemText
-                    primary={
-                      <Typography variant="subtitle1" component="div" fontWeight="medium">
-                        {item.gameTitle}
-                      </Typography>
-                    }
-                    secondary={
-                      <Typography variant="body2" color="text.secondary" component="div">
-                        by {item.creator}
-                        <Box sx={{ display: 'flex', alignItems: 'center', mt: 0.5 }}>
-                          <Chip 
-                            size="small" 
-                            label={item.score} 
-                            color="primary" 
-                            sx={{ mr: 1, height: 24 }} 
+        {loading ? (
+          <Box sx={{ display: 'flex', justifyContent: 'center', my: 8 }}>
+            <CircularProgress />
+          </Box>
+        ) : (
+          <>
+            {filteredHistoryItems.length > 0 ? (
+              <Paper sx={{ borderRadius: 2, overflow: 'hidden', boxShadow: 1 }}>
+                <List disablePadding>
+                  {filteredHistoryItems.map((item, index) => (
+                    <React.Fragment key={item.id}>
+                      {index > 0 && <Divider />}
+                      <ListItem sx={{ py: 2 }}>
+                        <ListItemAvatar>
+                          <Avatar 
+                            variant="rounded" 
+                            src={item.imageUrl} 
+                            alt={item.gameTitle}
+                            sx={{ width: 56, height: 56, borderRadius: 2 }}
                           />
-                          <Box sx={{ display: 'flex', alignItems: 'center', color: 'text.secondary' }}>
-                            <TimeIcon fontSize="small" sx={{ fontSize: 14, mr: 0.5 }} />
-                            <Typography variant="caption" component="span">
-                              {item.date}
+                        </ListItemAvatar>
+                        <ListItemText
+                          primary={
+                            <Typography variant="subtitle1" component="div" fontWeight="medium">
+                              {item.gameTitle}
                             </Typography>
+                          }
+                          secondary={
+                            <Typography variant="body2" color="text.secondary" component="div">
+                              by {item.creator}
+                              <Box sx={{ display: 'flex', alignItems: 'center', mt: 0.5 }}>
+                                <Chip 
+                                  size="small" 
+                                  label={item.score} 
+                                  color="primary" 
+                                  sx={{ mr: 1, height: 24 }} 
+                                />
+                                <Chip
+                                  size="small"
+                                  label={item.gameMode === 'team' ? 'Team' : 'Solo'}
+                                  color={item.gameMode === 'team' ? 'secondary' : 'default'}
+                                  sx={{ mr: 1, height: 24 }}
+                                />
+                                <Box sx={{ display: 'flex', alignItems: 'center', color: 'text.secondary' }}>
+                                  <TimeIcon fontSize="small" sx={{ fontSize: 14, mr: 0.5 }} />
+                                  <Typography variant="caption" component="span">
+                                    {item.date}
+                                  </Typography>
+                                </Box>
+                              </Box>
+                            </Typography>
+                          }
+                          sx={{ ml: 1 }}
+                        />
+                        <ListItemSecondaryAction>
+                          <Box sx={{ display: 'flex' }}>
+                            <IconButton 
+                              edge="end" 
+                              aria-label="replay" 
+                              onClick={() => handleReplay(item.quizCode)}
+                              sx={{ mr: 1 }}
+                            >
+                              <ReplayIcon />
+                            </IconButton>
+                            <IconButton 
+                              edge="end" 
+                              aria-label="favorite" 
+                              onClick={() => handleToggleFavorite(item.id)}
+                              color={item.isFavorite ? "error" : "default"}
+                              sx={{ mr: 1 }}
+                            >
+                              {item.isFavorite ? <FavoriteIcon /> : <FavoriteBorderIcon />}
+                            </IconButton>
+                            <IconButton 
+                              edge="end" 
+                              aria-label="stats" 
+                              onClick={() => handleViewStats(item)}
+                            >
+                              <StatsIcon />
+                            </IconButton>
                           </Box>
-                        </Box>
-                      </Typography>
-                    }
-                    sx={{ ml: 1 }}
-                  />
-                  <ListItemSecondaryAction>
-                    <Box sx={{ display: 'flex' }}>
-                      <IconButton 
-                        edge="end" 
-                        aria-label="replay" 
-                        onClick={() => handleReplay(item.id)}
-                        sx={{ mr: 1 }}
-                      >
-                        <ReplayIcon />
-                      </IconButton>
-                      <IconButton 
-                        edge="end" 
-                        aria-label="favorite" 
-                        onClick={() => handleToggleFavorite(item.id)}
-                        color={item.isFavorite ? "error" : "default"}
-                        sx={{ mr: 1 }}
-                      >
-                        {item.isFavorite ? <FavoriteIcon /> : <FavoriteBorderIcon />}
-                      </IconButton>
-                      <IconButton 
-                        edge="end" 
-                        aria-label="stats" 
-                        onClick={() => handleViewStats(item.id)}
-                      >
-                        <StatsIcon />
-                      </IconButton>
-                    </Box>
-                  </ListItemSecondaryAction>
-                </ListItem>
-              </React.Fragment>
-            ))}
-          </List>
-        </Paper>
-
-        {historyItems.length === 0 && (
-          <Paper
-            sx={{
-              p: 6,
-              borderRadius: 2,
-              textAlign: 'center',
-              bgcolor: 'background.paper',
-              boxShadow: 1,
-            }}
-          >
-            <TimeIcon sx={{ fontSize: 60, color: 'text.secondary', opacity: 0.3, mb: 2 }} />
-            <Typography variant="h6" color="text.secondary" gutterBottom>
-              No history yet
-            </Typography>
-            <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
-              Your recently played games will appear here so you can easily replay them.
-            </Typography>
-            <Button 
-              variant="contained" 
-              color="primary"
-              component="a"
-              href="/discover"
-              sx={{ borderRadius: 2, textTransform: 'none' }}
-            >
-              Browse Games
-            </Button>
-          </Paper>
+                        </ListItemSecondaryAction>
+                      </ListItem>
+                    </React.Fragment>
+                  ))}
+                </List>
+              </Paper>
+            ) : (
+              <Paper
+                sx={{
+                  p: 6,
+                  borderRadius: 2,
+                  textAlign: 'center',
+                  bgcolor: 'background.paper',
+                  boxShadow: 1,
+                }}
+              >
+                <TimeIcon sx={{ fontSize: 60, color: 'text.secondary', opacity: 0.3, mb: 2 }} />
+                <Typography variant="h6" color="text.secondary" gutterBottom>
+                  {noHistoryFound ? 'No history yet' : 'No matches found'}
+                </Typography>
+                <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
+                  {noHistoryFound 
+                    ? 'Your recently played games will appear here so you can easily replay them.'
+                    : 'Try adjusting your search or filter settings.'}
+                </Typography>
+                <Button 
+                  variant="contained" 
+                  color="primary"
+                  component="a"
+                  href="/discover"
+                  sx={{ borderRadius: 2, textTransform: 'none' }}
+                >
+                  Browse Games
+                </Button>
+              </Paper>
+            )}
+          </>
         )}
       </Box>
+
+      {/* Stats Dialog */}
+      <Dialog 
+        open={openStatsDialog} 
+        onClose={() => setOpenStatsDialog(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          Quiz Statistics
+        </DialogTitle>
+        <DialogContent dividers>
+          {selectedItem && (
+            <Stack spacing={2}>
+              <Typography variant="h6">{selectedItem.gameTitle}</Typography>
+              
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography>Score:</Typography>
+                <Typography variant="h6" color="primary">{selectedItem.score}</Typography>
+              </Box>
+              
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography>Correct Answers:</Typography>
+                <Typography>{`${selectedItem.correctAnswers} / ${selectedItem.totalQuestions}`}</Typography>
+              </Box>
+              
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography>Accuracy:</Typography>
+                <Typography>{`${Math.round((selectedItem.correctAnswers / selectedItem.totalQuestions) * 100)}%`}</Typography>
+              </Box>
+              
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography>Game Mode:</Typography>
+                <Chip label={selectedItem.gameMode === 'team' ? 'Team' : 'Solo'} 
+                      color={selectedItem.gameMode === 'team' ? 'secondary' : 'default'} />
+              </Box>
+              
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography>Date Played:</Typography>
+                <Typography>{selectedItem.date}</Typography>
+              </Box>
+              
+              <Alert severity="info" sx={{ mt: 2 }}>
+                You can replay this quiz to improve your score!
+              </Alert>
+            </Stack>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpenStatsDialog(false)}>Close</Button>
+          <Button 
+            variant="contained" 
+            onClick={() => {
+              setOpenStatsDialog(false);
+              if (selectedItem) handleReplay(selectedItem.quizCode);
+            }}
+            startIcon={<ReplayIcon />}
+          >
+            Replay Quiz
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Confirm Clear Dialog */}
+      <Dialog
+        open={confirmClearOpen}
+        onClose={() => setConfirmClearOpen(false)}
+      >
+        <DialogTitle>Clear History?</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Are you sure you want to clear all your play history? This action cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmClearOpen(false)}>Cancel</Button>
+          <Button 
+            onClick={confirmClearHistory} 
+            color="error" 
+            variant="contained"
+          >
+            Clear
+          </Button>
+        </DialogActions>
+      </Dialog>
     </MainLayout>
   );
 }

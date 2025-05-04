@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios, { AxiosError } from 'axios';
 
 const API_BASE_URL = 'https://kahootclone-f7hkd0hwafgbfrfa.southeastasia-01.azurewebsites.net';
 
@@ -16,6 +16,75 @@ interface PlayerResponse {
   data: any;
   message: string;
   status: number;
+}
+
+// Add interfaces for the score calculation request bodies
+interface SoloScoreRequest {
+  playerAnswer: {
+    id: number;
+    playerId: number;
+    questionId: number;
+    answeredAt: string;
+    isCorrect: boolean;
+    responseTime: number;
+    answer: string;
+  };
+  question: {
+    id: number;
+    quizId: number;
+    text: string;
+    type: string;
+    optionA: string;
+    optionB: string;
+    optionC: string;
+    optionD: string;
+    isCorrect: string;
+    score: number;
+    flag: boolean;
+    timeLimit: number;
+    arrange: number;
+  };
+}
+
+interface GroupMember {
+  groupId: number;
+  playerId: number;
+  rank: number;
+  totalScore: number;
+  joinedAt: string;
+  status: string;
+}
+
+interface PlayerAnswer {
+  id: number;
+  playerId: number;
+  questionId: number;
+  answeredAt: string;
+  isCorrect: boolean;
+  responseTime: number;
+  answer: string;
+}
+
+interface Question {
+  id: number;
+  quizId: number;
+  text: string;
+  type: string;
+  optionA: string;
+  optionB: string;
+  optionC: string;
+  optionD: string;
+  isCorrect: string;
+  score: number;
+  flag: boolean;
+  timeLimit: number;
+  arrange: number;
+}
+
+interface GroupScoreRequest {
+  groupMembers: GroupMember[];
+  playerAnswers: PlayerAnswer[];
+  questions: Question[];
 }
 
 const playerService = {
@@ -198,6 +267,108 @@ const playerService = {
   },
 
   /**
+   * Get or create a valid player ID for the current session
+   * This ensures we're using an ID that the API recognizes
+   * @param nickname Player nickname
+   * @param sessionId Game session ID
+   * @returns Promise with a valid player ID
+   */
+  getValidPlayerId: async (nickname: string, sessionId: number): Promise<number> => {
+    try {
+      // First check if we already have a stored player ID
+      const playerInfoStr = sessionStorage.getItem('currentPlayer');
+      let playerId: number | null = null;
+      
+      if (playerInfoStr) {
+        try {
+          const playerInfo = JSON.parse(playerInfoStr);
+          if (playerInfo && playerInfo.id) {
+            playerId = parseInt(String(playerInfo.id));
+            console.log(`Found existing player ID: ${playerId}`);
+          }
+        } catch (e) {
+          console.error('Error parsing player info:', e);
+        }
+      }
+      
+      // If we have a player ID and it's a reasonable number, use it
+      if (playerId && !isNaN(playerId) && playerId > 0 && playerId < 2147483647) {
+        console.log(`Using existing valid player ID: ${playerId}`);
+        return playerId;
+      }
+      
+      // Otherwise, try to get players for this session to find a match
+      try {
+        console.log(`Fetching players for session ${sessionId}`);
+        const sessionPlayers = await playerService.getPlayersBySessionId(sessionId);
+        
+        if (sessionPlayers && sessionPlayers.data && Array.isArray(sessionPlayers.data)) {
+          // Look for a player with matching nickname
+          const existingPlayer = sessionPlayers.data.find(p => p.nickname === nickname);
+          
+          if (existingPlayer && existingPlayer.id) {
+            // Found a matching player, use their ID
+            playerId = parseInt(String(existingPlayer.id));
+            console.log(`Found matching player ID from session: ${playerId}`);
+            
+            // Update stored player info
+            if (playerInfoStr) {
+              const updatedInfo = JSON.parse(playerInfoStr);
+              updatedInfo.id = playerId;
+              updatedInfo.playerId = playerId;
+              sessionStorage.setItem('currentPlayer', JSON.stringify(updatedInfo));
+              localStorage.setItem('currentPlayer', JSON.stringify(updatedInfo));
+            }
+            
+            return playerId;
+          }
+        }
+      } catch (e) {
+        console.error('Error fetching session players:', e);
+      }
+      
+      // If we can't find a valid ID, create a new player
+      console.log(`Creating new player for nickname: ${nickname}, session: ${sessionId}`);
+      const playerData = playerService.formatPlayerData(
+        nickname,
+        sessionId,
+        'alligator', // Default animal
+        'green', // Default color
+        0, // No user ID
+        null // No team
+      );
+      
+      // Create player in the API
+      const response = await playerService.createPlayer(playerData);
+      
+      if (response && response.data && response.data.id) {
+        playerId = parseInt(String(response.data.id));
+        console.log(`Created new player with ID: ${playerId}`);
+        
+        // Update stored player info
+        if (playerInfoStr) {
+          const updatedInfo = JSON.parse(playerInfoStr);
+          updatedInfo.id = playerId;
+          updatedInfo.playerId = playerId;
+          sessionStorage.setItem('currentPlayer', JSON.stringify(updatedInfo));
+          localStorage.setItem('currentPlayer', JSON.stringify(updatedInfo));
+        }
+        
+        return playerId;
+      }
+      
+      // If all else fails, return a small random ID (not ideal but better than Date.now())
+      const fallbackId = Math.floor(Math.random() * 10000) + 1;
+      console.warn(`Failed to get or create valid player ID, using fallback: ${fallbackId}`);
+      return fallbackId;
+    } catch (error) {
+      console.error('Error getting valid player ID:', error);
+      // Return a small random ID as fallback
+      return Math.floor(Math.random() * 10000) + 1;
+    }
+  },
+
+  /**
    * Submit a player's answer to a question
    * @param playerId ID of the player
    * @param questionId ID of the question
@@ -214,40 +385,49 @@ const playerService = {
     answer: string
   ): Promise<PlayerResponse> => {
     try {
-      // Ensure playerId and questionId are valid integers
-      const playerIdInt = parseInt(String(playerId), 10);
-      const questionIdInt = parseInt(String(questionId), 10);
+      // Get player information from storage to double-check
+      const playerInfoStr = sessionStorage.getItem('currentPlayer');
       
-      if (isNaN(playerIdInt) || isNaN(questionIdInt)) {
-        throw new Error(`Invalid player ID (${playerId}) or question ID (${questionId})`);
-      }
+      // CRITICAL: Never modify the player ID that was passed in
+      // The game page is passing the exact ID from storage that matches the player record
+      
+      console.log(`Submitting answer with exact playerId: ${playerId} and questionId: ${questionId}`);
       
       // Handle timeout answer with special 'T' value
       const finalAnswer = answer === '' || answer === null ? 'T' : answer;
       
-      // Create a timestamp on the server to avoid hydration issues
+      // Create answer object with EXACT IDs from parameters
       const answerData = {
         id: 0,
-        playerId: playerIdInt,
-        questionId: questionIdInt,
-        // Don't include a client-generated timestamp
-        answeredAt: null, // Let the server set this
+        playerId: playerId, // Use exact value, no conversion
+        questionId: questionId, // Use exact value, no conversion
+        answeredAt: new Date().toISOString(),
         isCorrect: isCorrect,
         responseTime: responseTime,
         answer: finalAnswer
       };
 
-      console.log("Submitting player answer:", answerData);
+      console.log("Final player answer object:", answerData);
       
+      // Fix: Wrap in playerAnswerDto as required by API
       const response = await axios.post(
         `${API_BASE_URL}/api/PlayerAnswer`,
-        answerData,
+        { playerAnswerDto: answerData }, // Wrap answer in playerAnswerDto field
         {
           headers: {
             'Content-Type': 'application/json'
           }
         }
-      );
+      ).catch((error) => {
+        console.error('Error submitting player answer to API:', error);
+        
+        if (error.response) {
+          console.error('API error response:', error.response.data);
+        }
+        
+        // Re-throw the error
+        throw error;
+      });
       
       return response.data;
     } catch (error) {
@@ -276,6 +456,7 @@ const playerService = {
       const responseTime = timeLimit; 
       
       // 'T' represents a timeout/no answer
+      // Pass the IDs exactly as is without any conversion
       return await playerService.submitAnswer(
         playerId,
         questionId,
@@ -321,6 +502,143 @@ const playerService = {
       throw error;
     }
   },
+
+  /**
+   * Calculate score for solo mode by calling the SoloScore endpoint
+   * @param playerAnswer Player answer data
+   * @param question Question data
+   * @returns Promise with calculated score response
+   */
+  calculateSoloScore: async (
+    playerAnswer: PlayerAnswer,
+    question: Question
+  ): Promise<PlayerResponse> => {
+    try {
+      console.log("Calculating solo score for player:", playerAnswer.playerId);
+      
+      // Validate required fields
+      if (!playerAnswer.playerId || !playerAnswer.questionId || !question.id) {
+        console.error("Missing required fields for solo score calculation");
+        console.error("Player answer:", playerAnswer);
+        console.error("Question:", question);
+        throw new Error("Missing required fields for solo score calculation");
+      }
+      
+      // Notice the capital letters in PlayerAnswer and Question - API expects this casing
+      const requestData = {
+        PlayerAnswer: playerAnswer, // Changed to capital P
+        Question: question // Changed to capital Q
+      };
+      
+      console.log("SoloScore request with correct casing:", requestData);
+      
+      // Fix: Use correct field names with proper casing
+      const response = await axios.post(
+        `${API_BASE_URL}/api/PlayerAnswer/SoloScore`,
+        requestData, // No longer need the "request" wrapper, just proper cased fields
+        {
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+      
+      console.log("Solo score calculation response:", response.data);
+      return response.data;
+    } catch (error: unknown) {
+      console.error('Error calculating solo score:', error);
+      
+      // If error has response data, log it
+      if (error instanceof AxiosError && error.response) {
+        console.error('API Error Response:', {
+          status: error.response.status,
+          statusText: error.response.statusText,
+          data: error.response.data
+        });
+      }
+      
+      // Return a fallback response
+      return {
+        status: 500,
+        message: "Error calculating score: " + (error instanceof Error ? error.message : "Unknown error"),
+        data: null
+      };
+    }
+  },
+  
+  /**
+   * Calculate scores for team mode by calling the GroupScore endpoint
+   * @param groupMembers Array of group members
+   * @param playerAnswers Array of player answers
+   * @param questions Array of questions
+   * @returns Promise with calculated group score response
+   */
+  calculateGroupScore: async (
+    groupMembers: GroupMember[],
+    playerAnswers: PlayerAnswer[],
+    questions: Question[]
+  ): Promise<PlayerResponse> => {
+    try {
+      console.log("Calculating group scores for group members:", groupMembers.length);
+      console.log("Request details:", {
+        groupMembers: groupMembers.length,
+        playerAnswers: playerAnswers.length,
+        questions: questions.length
+      });
+      
+      // Validate required data
+      if (!groupMembers.length || !playerAnswers.length || !questions.length) {
+        console.error("Missing required data for group score calculation");
+        console.error("Group members:", groupMembers.length);
+        console.error("Player answers:", playerAnswers.length);
+        console.error("Questions:", questions.length);
+        throw new Error("Missing required data for group score calculation");
+      }
+      
+      // Use proper casing as expected by the API
+      const requestData = {
+        GroupMembers: groupMembers, // Changed to capital G and M 
+        PlayerAnswers: playerAnswers, // Changed to capital P and A
+        Questions: questions // Changed to capital Q
+      };
+      
+      console.log("GroupScore request with correct casing:", requestData);
+      
+      // Use proper casing
+      const response = await axios.post(
+        `${API_BASE_URL}/api/PlayerAnswer/GroupScore`,
+        requestData, // No longer need the "request" wrapper, just proper cased fields
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          timeout: 10000 // 10 second timeout to allow for longer processing
+        }
+      );
+      
+      console.log("Group score calculation response:", response.data);
+      return response.data;
+    } catch (error: unknown) {
+      console.error('Error calculating group scores:', error);
+      
+      // If error has response data, log it
+      if (error instanceof AxiosError && error.response) {
+        console.error('API Error Response:', {
+          status: error.response.status,
+          statusText: error.response.statusText,
+          data: error.response.data
+        });
+      }
+      
+      // Return a fallback response
+      return {
+        status: 500,
+        message: "Error calculating team scores: " + (error instanceof Error ? error.message : "Unknown error"),
+        data: null
+      };
+    }
+  }
 };
 
 export default playerService;
