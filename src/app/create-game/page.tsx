@@ -44,7 +44,8 @@ import {
   ListItemText,
   ListItemIcon,
   ListItemSecondaryAction,
-  Grid
+  Grid,
+  FormHelperText
 } from '@mui/material';
 import { 
   Add as AddIcon, 
@@ -71,7 +72,8 @@ import {
   Groups as GroupsIcon,
   People as PeopleIcon,
   Star as StarIcon,
-  StarBorder as StarBorderIcon
+  StarBorder as StarBorderIcon,
+  Info as InfoIcon
 } from '@mui/icons-material';
 import MainLayout from '../components/MainLayout';
 import { useAuth } from '../context/AuthContext';
@@ -407,9 +409,33 @@ const CreateGamePage = () => {
 
   // Function to handle points change
   const handlePointsChange = (questionIndex: number, points: number) => {
-    const newQuestions = [...questions];
-    newQuestions[questionIndex].points = points;
-    setQuestions(newQuestions);
+    const updatedQuestions = [...questions];
+    updatedQuestions[questionIndex].points = points;
+    setQuestions(updatedQuestions);
+  };
+  
+  // Add explanation tooltip for points system
+  const getPointsExplanation = () => {
+    return (
+      <Box sx={{ mt: 1, px: 2, py: 1, bgcolor: 'info.light', borderRadius: 1, color: 'white', fontSize: '0.85rem' }}>
+        <Typography variant="subtitle2" fontWeight="bold">How points are calculated:</Typography>
+        <Typography variant="body2">
+          • Base points: The value you set here (e.g., 100, 200, etc.)
+        </Typography>
+        <Typography variant="body2">
+          • Time bonus: Players get more points for answering quickly
+        </Typography>
+        <Typography variant="body2">
+          • Formula: score = base points × (1 - timeRatio × 0.5)
+        </Typography>
+        <Typography variant="body2">
+          • If a player answers immediately, they get full points
+        </Typography>
+        <Typography variant="body2">
+          • If a player answers at the last moment, they get half points
+        </Typography>
+      </Box>
+    );
   };
 
   // Function to handle mock file upload
@@ -630,7 +656,7 @@ const CreateGamePage = () => {
           gameMode: finalGameMode // Ensure our gameMode is preserved
         };
         
-        // Store ONLY this new quiz in sessionStorage, replacing any previous quizzes
+        // Format the new quiz for display
         const formattedQuiz = {
           id: response.data.id,
           title: response.data.title || 'Untitled Quiz',
@@ -642,12 +668,37 @@ const CreateGamePage = () => {
           gameCode: response.data.quizCode ? response.data.quizCode.toString() : generatedQuizCode.toString(),
           gameMode: finalGameMode,
           teamCount: finalGameMode === 'team' ? teamCount : undefined,
-          membersPerTeam: finalGameMode === 'team' ? membersPerTeam : undefined
+          membersPerTeam: finalGameMode === 'team' ? membersPerTeam : undefined,
+          createdBy: parseInt(currentUser.id) // Add explicit createdBy field with current user ID
         };
         
-        // Save as a single-item array to match expected format in my-sets page
-        sessionStorage.setItem('myQuizzes', JSON.stringify([formattedQuiz]));
-        console.log("Saved only the new quiz to sessionStorage:", formattedQuiz);
+        // Get existing quizzes from sessionStorage that belong to the current user
+        let existingQuizzes = [];
+        try {
+          const storedQuizzes = sessionStorage.getItem('myQuizzes');
+          if (storedQuizzes) {
+            const parsedQuizzes = JSON.parse(storedQuizzes);
+            if (Array.isArray(parsedQuizzes)) {
+              // Filter to only include quizzes from the current user to avoid mixing with other users' quizzes
+              existingQuizzes = parsedQuizzes.filter(quiz => 
+                quiz.createdBy && Number(quiz.createdBy) === Number(currentUser.id)
+              );
+            }
+          }
+        } catch (error: any) {
+          console.error("Error parsing existing quizzes:", error);
+          existingQuizzes = [];
+        }
+        
+        // Check if this quiz already exists (in case of update) and remove it
+        existingQuizzes = existingQuizzes.filter(quiz => Number(quiz.id) !== Number(response.data.id));
+        
+        // Add the new quiz to the existing quizzes for this user
+        const updatedQuizzes = [...existingQuizzes, formattedQuiz];
+        
+        // Save the updated array to sessionStorage
+        sessionStorage.setItem('myQuizzes', JSON.stringify(updatedQuizzes));
+        console.log("Saved updated quizzes to sessionStorage:", updatedQuizzes);
         
         sessionStorage.setItem(`quiz_${response.data.id}`, JSON.stringify(savedData));
         
@@ -1544,7 +1595,35 @@ const CreateGamePage = () => {
                         <MenuItem value={100}>100 pts</MenuItem>
                         <MenuItem value={150}>150 pts</MenuItem>
                         <MenuItem value={200}>200 pts</MenuItem>
+                        <MenuItem value={300}>300 pts</MenuItem>
                       </Select>
+                      <FormHelperText>
+                        Points for correct answer
+                        <Tooltip title={
+                          <Box sx={{ p: 1 }}>
+                            <Typography variant="subtitle2" fontWeight="bold">How points are calculated:</Typography>
+                            <Typography variant="body2">
+                              • Base points: The value you set here (e.g., 100)
+                            </Typography>
+                            <Typography variant="body2">
+                              • Time bonus: Players get more points for answering quickly
+                            </Typography>
+                            <Typography variant="body2">
+                              • Formula: score = base points × (1 - timeRatio × 0.5)
+                            </Typography>
+                            <Typography variant="body2">
+                              • Players who answer immediately get full points
+                            </Typography>
+                            <Typography variant="body2">
+                              • Players who answer at the last moment get half points
+                            </Typography>
+                          </Box>
+                        } arrow>
+                          <IconButton size="small" color="primary" sx={{ ml: 1, p: 0 }}>
+                            <InfoIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      </FormHelperText>
                     </FormControl>
                     
                     <Box sx={{ display: 'flex', gap: 1 }}>

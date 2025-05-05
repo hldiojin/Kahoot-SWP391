@@ -574,9 +574,26 @@ const quizService = {
         response.data.data = [];
       }
       
-      // Store the quizzes in sessionStorage
-      if (response.data && response.data.data) {
-        sessionStorage.setItem('myQuizzes', JSON.stringify(response.data.data));
+      // Process the quizzes to ensure they all have createdBy property set correctly
+      if (response.data && response.data.data && Array.isArray(response.data.data)) {
+        const processedQuizzes = response.data.data.map((quiz: any) => {
+          return {
+            ...quiz,
+            createdBy: quiz.createdBy || parseInt(userId) // Ensure createdBy is set
+          };
+        });
+        
+        // Store only this user's quizzes in sessionStorage, completely replacing any existing data
+        sessionStorage.removeItem('myQuizzes'); // Clear existing data first
+        sessionStorage.setItem('myQuizzes', JSON.stringify(processedQuizzes));
+        console.log(`Stored ${processedQuizzes.length} quizzes with verified createdBy properties`);
+        
+        // Update the response data to use our processed quizzes
+        response.data.data = processedQuizzes;
+      } else {
+        // If no quizzes were found, ensure we clear the storage
+        sessionStorage.removeItem('myQuizzes');
+        sessionStorage.setItem('myQuizzes', JSON.stringify([]));
       }
       
       return response.data;

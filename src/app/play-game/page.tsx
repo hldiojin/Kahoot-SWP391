@@ -509,39 +509,64 @@ export default function PlayGamePage() {
         // Create player in the backend
         const playerResponse = await playerService.createPlayer(playerData);
         
-        if (playerResponse && playerResponse.data && playerResponse.data.id) {
-          console.log("Player created successfully:", playerResponse);
-          
-          // Ensure ID is stored as a number, not a string
-          const playerId = Number(playerResponse.data.id);
-          
-          // Update player information with ID
-          const playerInfoWithId = {
-            ...newPlayerInfo,
-            id: playerId,
-            playerId: playerId, // Ensure both id and playerId fields exist
-            playerCode: playerResponse.data.playerCode || Math.floor(100000 + Math.random() * 900000)
-          };
-          
-          console.log("Saving player info with ID as number:", playerInfoWithId);
-          
-          // Save to sessionStorage
-          sessionStorage.setItem('currentPlayer', JSON.stringify(playerInfoWithId));
-          localStorage.setItem('currentPlayer', JSON.stringify(playerInfoWithId));
-          
-          // Double-check game mode is correctly saved
-          sessionStorage.setItem('gameMode', gameMode);
-          sessionStorage.setItem(`quizMode_${code}`, gameMode);
-          
-          // When in team mode, store selected team in a dedicated key
-          if (gameMode === 'team' && selectedTeam) {
-            sessionStorage.setItem('selectedTeam', selectedTeam);
-          }
-          
-          // Navigate directly to the game without trying the second approach
-          router.push(`/game?code=${code}`);
-          return; // Important: Exit the function here to prevent the second API call
+        console.log("Full player creation response:", JSON.stringify(playerResponse, null, 2));
+        
+        // Check the response structure carefully
+        if (!playerResponse) {
+          console.error("❌ ERROR: No response from createPlayer API call");
+          setError('Failed to create player. Please try again.');
+          setApiLoading(false);
+          return;
         }
+        
+        // Log the status for debugging
+        console.log(`Player response status: ${playerResponse?.status}`);
+        
+        // Check if we have player data in the response
+        if (playerResponse.data) {
+          console.log("Player data from response:", JSON.stringify(playerResponse.data, null, 2));
+          
+          // Extract player ID from the data - use type assertion to handle dynamic properties
+          const responseData = playerResponse.data as any;
+          const playerId = responseData.playerId || responseData.id;
+          
+          if (playerId) {
+            const numericPlayerId = Number(playerId);
+            console.log(`✅ SUCCESS: Got playerId ${numericPlayerId} from response data`);
+            
+            // Create player info with ID
+            const playerInfoWithId = {
+              ...newPlayerInfo,
+              playerId: numericPlayerId,
+              playerCode: responseData.playerCode || Math.floor(100000 + Math.random() * 900000)
+            };
+            
+            // Save to storage
+            sessionStorage.setItem('currentPlayer', JSON.stringify(playerInfoWithId));
+            localStorage.setItem('currentPlayer', JSON.stringify(playerInfoWithId));
+            
+            // Double-check game mode is correctly saved
+            sessionStorage.setItem('gameMode', gameMode);
+            sessionStorage.setItem(`quizMode_${code}`, gameMode);
+            
+            // When in team mode, store selected team in a dedicated key
+            if (gameMode === 'team' && selectedTeam) {
+              sessionStorage.setItem('selectedTeam', selectedTeam);
+            }
+            
+            // Navigate to the game
+            router.push(`/game?code=${code}`);
+            return;
+          } else {
+            console.error("❌ ERROR: No player ID found in response data", responseData);
+          }
+        } else {
+          console.error("❌ ERROR: No data in player response");
+        }
+        
+        // If we got here, we couldn't extract a player ID
+        setError('Failed to create player. Please try again.');
+        setApiLoading(false);
       } catch (playerError) {
         console.error("Error with player service:", playerError);
         // Continue to fallback approach

@@ -31,7 +31,8 @@ import {
   CardContent,
   CardHeader,
   Alert,
-  Snackbar
+  Snackbar,
+  Grid
 } from '@mui/material';
 import { 
   EmojiEvents as TrophyIcon,
@@ -45,7 +46,12 @@ import {
   CheckCircle as CheckCircleIcon,
   Cancel as CancelIcon,
   Feedback as FeedbackIcon,
-  Calculate as CalculateIcon
+  Calculate as CalculateIcon,
+  Timer as TimerIcon,
+  Quiz as QuizIcon,
+  QuestionAnswer as QuestionAnswerIcon,
+  PriorityHigh as PriorityHighIcon,
+  Bolt as BoltIcon
 } from '@mui/icons-material';
 import { useRouter } from 'next/navigation';
 import PublicLayout from '../components/PublicLayout';
@@ -200,6 +206,680 @@ const fetchPlayerById = async (playerId: number): Promise<any> => {
   }
 };
 
+const QuestionDetails = () => {
+  const [expandedQuestion, setExpandedQuestion] = useState<number | null>(null);
+  const [questions, setQuestions] = useState<any[]>([]);
+  const [playerAnswers, setPlayerAnswers] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    try {
+      // Get questions and answers from storage
+      const storedQuestions = sessionStorage.getItem('formattedQuestions') || localStorage.getItem('formattedQuestions');
+      const storedAnswers = sessionStorage.getItem('playerAnswers') || localStorage.getItem('playerAnswers');
+      
+      if (storedQuestions && storedAnswers) {
+        const parsedQuestions = JSON.parse(storedQuestions);
+        const parsedAnswers = JSON.parse(storedAnswers);
+        
+        console.log("Loaded questions:", parsedQuestions);
+        console.log("Loaded answers:", parsedAnswers);
+        
+        setQuestions(parsedQuestions);
+        setPlayerAnswers(parsedAnswers);
+      }
+    } catch (error) {
+      console.error("Error loading question details:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const handleToggleQuestion = (questionId: number) => {
+    if (expandedQuestion === questionId) {
+      setExpandedQuestion(null);
+    } else {
+      setExpandedQuestion(questionId);
+    }
+  };
+
+  // Helper function to get letter from index (A, B, C, D)
+  const getLetterFromIndex = (index: number) => {
+    return String.fromCharCode(65 + index);
+  };
+
+  // Helper function to convert answer letter to index (A->0, B->1, etc.)
+  const letterToIndex = (letter: string) => {
+    if (letter === 'T') return -1; // Timeout
+    return letter.charCodeAt(0) - 65; // A->0, B->1, etc.
+  };
+
+  if (loading) {
+    return (
+      <Box sx={{ 
+        textAlign: 'center', 
+        my: 3,
+        p: 4,
+        borderRadius: 3,
+        bgcolor: 'rgba(255,255,255,0.7)',
+        boxShadow: '0 8px 32px rgba(0,0,0,0.08)'
+      }}>
+        <CircularProgress size={40} sx={{ color: 'primary.main' }} />
+        <Typography variant="body1" sx={{ mt: 2, fontWeight: 'medium', color: 'text.secondary' }}>
+          Loading your quiz results...
+        </Typography>
+      </Box>
+    );
+  }
+
+  if (!questions.length || !playerAnswers.length) {
+    return (
+      <Box sx={{ 
+        textAlign: 'center', 
+        my: 3,
+        p: 4,
+        borderRadius: 3,
+        bgcolor: 'rgba(255,255,255,0.7)',
+        boxShadow: '0 8px 32px rgba(0,0,0,0.08)'
+      }}>
+        <FeedbackIcon sx={{ fontSize: 40, color: 'text.secondary', mb: 1 }} />
+        <Typography variant="h6" color="text.secondary" gutterBottom>
+          No Question Details
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          We couldn't find any question data for this quiz.
+        </Typography>
+      </Box>
+    );
+  }
+
+  // Calculate overall stats
+  const totalQuestions = questions.length;
+  const correctAnswers = playerAnswers.filter(a => a.isCorrect).length;
+  const totalScore = playerAnswers.reduce((sum, a) => sum + (a.score || 0), 0);
+  const accuracy = Math.round((correctAnswers / totalQuestions) * 100);
+
+  return (
+    <Card 
+      sx={{ 
+        mt: 4, 
+        borderRadius: 3, 
+        maxWidth: 500, 
+        mx: 'auto', 
+        overflow: 'hidden',
+        boxShadow: '0 12px 24px rgba(0,0,0,0.12)',
+        border: '1px solid rgba(0,0,0,0.05)'
+      }}
+    >
+      <Box sx={{ 
+        bgcolor: 'primary.main', 
+        backgroundImage: 'linear-gradient(135deg, #6a11cb 0%, #2575fc 100%)',
+        color: 'white', 
+        position: 'relative', 
+        overflow: 'hidden'
+      }}>
+        <CardHeader 
+          title={
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <QuizIcon sx={{ mr: 1 }} />
+              <Typography variant="h6" component="span">
+                Question Details
+              </Typography>
+            </Box>
+          }
+          sx={{ 
+            textAlign: 'center', 
+            pb: 1,
+            position: 'relative',
+            zIndex: 1
+          }}
+        />
+        
+        {/* Summary Stats */}
+        <Box sx={{ 
+          p: 2, 
+          display: 'flex', 
+          justifyContent: 'space-around',
+          position: 'relative',
+          zIndex: 1,
+          '&:before': {
+            content: '""',
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            height: '1px',
+            bgcolor: 'rgba(255,255,255,0.2)'
+          }
+        }}>
+          <Box sx={{ textAlign: 'center' }}>
+            <Typography variant="body2" color="rgba(255,255,255,0.8)" gutterBottom>
+              Correct
+            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <CheckCircleIcon sx={{ fontSize: 16, mr: 0.5, color: 'success.light' }} />
+              <Typography variant="h6" fontWeight="bold">
+                {correctAnswers}/{totalQuestions}
+              </Typography>
+            </Box>
+          </Box>
+          
+          <Box sx={{ textAlign: 'center' }}>
+            <Typography variant="body2" color="rgba(255,255,255,0.8)" gutterBottom>
+              Accuracy
+            </Typography>
+            <Typography variant="h6" fontWeight="bold">
+              {accuracy}%
+            </Typography>
+          </Box>
+          
+          <Box sx={{ textAlign: 'center' }}>
+            <Typography variant="body2" color="rgba(255,255,255,0.8)" gutterBottom>
+              Score
+            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <TrophyIcon sx={{ fontSize: 16, mr: 0.5, color: '#FFD700' }} />
+              <Typography variant="h6" fontWeight="bold">
+                {totalScore}
+              </Typography>
+            </Box>
+          </Box>
+        </Box>
+        
+        {/* Background elements */}
+        <Box sx={{
+          position: 'absolute',
+          width: '150px',
+          height: '150px',
+          bgcolor: 'rgba(255,255,255,0.05)',
+          borderRadius: '50%',
+          top: '-75px',
+          right: '-75px'
+        }} />
+        <Box sx={{
+          position: 'absolute',
+          width: '100px',
+          height: '100px',
+          bgcolor: 'rgba(255,255,255,0.05)',
+          borderRadius: '50%',
+          bottom: '-50px',
+          left: '-50px'
+        }} />
+      </Box>
+      
+      {/* Questions List */}
+      <CardContent sx={{ p: 0, bgcolor: '#f9f9fc' }}>
+        <List disablePadding>
+          {questions.map((question, index) => {
+            const answer = playerAnswers.find(a => a.questionId === question.id);
+            const isCorrect = answer?.isCorrect || false;
+            const answerLetter = answer?.answer || 'T';
+            const answerIndex = letterToIndex(answerLetter);
+            const correctAnswerIndex = question.isCorrect ? 
+              question.isCorrect.charCodeAt(0) - 'A'.charCodeAt(0) : 0;
+            const isExpanded = expandedQuestion === question.id;
+            
+            return (
+              <React.Fragment key={question.id}>
+                <ListItem 
+                  component="div"
+                  onClick={() => handleToggleQuestion(question.id)}
+                  sx={{ 
+                    py: 1.5, 
+                    pl: 2, 
+                    pr: 1.5,
+                    cursor: 'pointer',
+                    borderBottom: '1px solid rgba(0,0,0,0.06)',
+                    position: 'relative',
+                    transition: 'all 0.2s ease',
+                    '&:hover': {
+                      bgcolor: 'rgba(0,0,0,0.02)'
+                    },
+                    '&:before': {
+                      content: '""',
+                      position: 'absolute',
+                      left: 0,
+                      top: 0,
+                      bottom: 0,
+                      width: 4,
+                      bgcolor: isCorrect ? 'success.main' : 'error.main',
+                      transition: 'all 0.2s ease',
+                      transform: isExpanded ? 'scaleY(1)' : 'scaleY(0.5)',
+                      opacity: isExpanded ? 1 : 0.7
+                    }
+                  }}
+                >
+                  <Box sx={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    width: '100%',
+                    gap: 1.5
+                  }}>
+                    {/* Question number with correct/incorrect indicator */}
+                    <Avatar 
+                      sx={{ 
+                        width: 36, 
+                        height: 36, 
+                        bgcolor: isCorrect ? 'success.main' : 'error.main',
+                        color: 'white',
+                        fontWeight: 'bold',
+                        boxShadow: isCorrect ? 
+                          '0 4px 10px rgba(76, 175, 80, 0.4)' : 
+                          '0 4px 10px rgba(244, 67, 54, 0.4)',
+                        transition: 'all 0.2s ease',
+                        transform: isExpanded ? 'scale(1.05)' : 'scale(1)'
+                      }}
+                    >
+                      {index + 1}
+                    </Avatar>
+                    
+                    {/* Question preview and score */}
+                    <Box sx={{ flex: 1, overflow: 'hidden' }}>
+                      <Typography 
+                        variant="body1" 
+                        fontWeight="medium" 
+                        sx={{ 
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          maxWidth: '100%',
+                          color: isExpanded ? 'primary.main' : 'text.primary'
+                        }}
+                      >
+                        {question.text}
+                      </Typography>
+                      <Box sx={{ display: 'flex', gap: 1, mt: 0.5, alignItems: 'center' }}>
+                        <Chip 
+                          size="small" 
+                          label={`${answer?.score || 0} pts`} 
+                          sx={{
+                            height: 20, 
+                            '& .MuiChip-label': { px: 1, py: 0 },
+                            bgcolor: isCorrect ? 'success.light' : 'rgba(0,0,0,0.05)',
+                            color: isCorrect ? 'white' : 'text.secondary',
+                            fontWeight: 'medium'
+                          }}
+                        />
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', alignItems: 'center' }}>
+                          <TimerIcon fontSize="small" sx={{ fontSize: 14, mr: 0.5 }} />
+                          {answer?.responseTime || 0}s
+                        </Typography>
+                      </Box>
+                    </Box>
+                    
+                    {/* Correct/incorrect icon */}
+                    <Box>
+                      {isCorrect ? (
+                        <CheckCircleIcon sx={{ color: 'success.main' }} />
+                      ) : (
+                        <CancelIcon sx={{ color: 'error.main' }} />
+                      )}
+                    </Box>
+                    
+                    {/* Expand/collapse icon */}
+                    <Box sx={{ 
+                      display: 'flex', 
+                      justifyContent: 'center', 
+                      alignItems: 'center',
+                      width: 24, 
+                      height: 24, 
+                      borderRadius: '50%',
+                      bgcolor: 'rgba(0,0,0,0.05)',
+                      transition: 'all 0.2s',
+                      transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)'
+                    }}>
+                      <ExpandMore sx={{ fontSize: 20 }} />
+                    </Box>
+                  </Box>
+                </ListItem>
+                
+                <Collapse in={isExpanded} timeout="auto" unmountOnExit>
+                  <Box sx={{ 
+                    bgcolor: 'rgba(0,0,0,0.02)',
+                    borderBottom: '1px solid rgba(0,0,0,0.06)',
+                    p: 2.5
+                  }}>
+                    {/* Question header info */}
+                    <Box sx={{ 
+                      display: 'flex', 
+                      justifyContent: 'space-between', 
+                      mb: 2.5,
+                      pb: 1.5,
+                      borderBottom: '1px dashed rgba(0,0,0,0.1)'
+                    }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                        {question.type === 'true-false' ? (
+                          <PriorityHighIcon sx={{ color: 'primary.main', mr: 0.5, fontSize: 18 }} />
+                        ) : (
+                          <QuestionAnswerIcon sx={{ color: 'primary.main', mr: 0.5, fontSize: 18 }} />
+                        )}
+                        <Typography variant="body2" fontWeight="medium" color="primary.main">
+                          {question.type === 'true-false' ? 'True/False' : 'Multiple Choice'}
+                        </Typography>
+                      </Box>
+                      
+                      <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                        <TimerIcon sx={{ color: 'text.secondary', mr: 0.5, fontSize: 18 }} />
+                        <Typography variant="body2" fontWeight="medium" color="text.secondary">
+                          {question.timeLimit}s
+                        </Typography>
+                      </Box>
+                      
+                      <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                        <TrophyIcon sx={{ color: '#FFD700', mr: 0.5, fontSize: 18 }} />
+                        <Typography variant="body2" fontWeight="medium" color="text.secondary">
+                          {question.score} points
+                        </Typography>
+                      </Box>
+                    </Box>
+                    
+                    {/* Answer options */}
+                    <Typography 
+                      variant="subtitle2" 
+                      fontWeight="medium" 
+                      gutterBottom
+                      sx={{ 
+                        mb: 1.5, 
+                        display: 'flex', 
+                        alignItems: 'center',
+                        color: 'primary.main'
+                      }}
+                    >
+                      <QuizIcon sx={{ mr: 0.75, fontSize: 18 }} />
+                      Answer Options
+                    </Typography>
+                    
+                    <Box sx={{ mb: 2 }}>
+                      {['A', 'B', 'C', 'D'].map((option, idx) => {
+                        if (question.type === 'true-false' && idx > 1) return null;
+                        
+                        const optionField = `option${option}`;
+                        if (!question[optionField]) return null;
+                        
+                        const isCorrectOption = correctAnswerIndex === idx;
+                        const isSelectedOption = answerIndex === idx;
+                        const isIncorrectSelection = isSelectedOption && !isCorrect;
+                        
+                        return (
+                          <Box 
+                            key={option} 
+                            sx={{ 
+                              display: 'flex',
+                              alignItems: 'center',
+                              py: 1.25, 
+                              px: 2,
+                              mb: 1,
+                              borderRadius: 2,
+                              position: 'relative',
+                              transition: 'all 0.2s',
+                              bgcolor: isCorrectOption ? 'rgba(76, 175, 80, 0.08)' : 
+                                      isIncorrectSelection ? 'rgba(244, 67, 54, 0.08)' : 
+                                      'white',
+                              border: isCorrectOption ? '1px solid rgba(76, 175, 80, 0.5)' : 
+                                      isIncorrectSelection ? '1px solid rgba(244, 67, 54, 0.5)' : 
+                                      '1px solid rgba(0,0,0,0.1)',
+                              boxShadow: isCorrectOption || isSelectedOption ? 
+                                '0 2px 12px rgba(0,0,0,0.08)' : 'none',
+                              '&:hover': {
+                                boxShadow: '0 2px 12px rgba(0,0,0,0.08)'
+                              }
+                            }}
+                          >
+                            {/* Option letter badge */}
+                            <Box
+                              sx={{
+                                width: 28,
+                                height: 28,
+                                borderRadius: '50%',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontWeight: 'bold',
+                                fontSize: '0.875rem',
+                                mr: 1.5,
+                                color: 'white',
+                                position: 'relative',
+                                overflow: 'hidden',
+                                bgcolor: isCorrectOption ? 'success.main' : 
+                                        isIncorrectSelection ? 'error.main' :
+                                        'primary.main',
+                                boxShadow: isCorrectOption ? '0 2px 8px rgba(76, 175, 80, 0.4)' :
+                                          isIncorrectSelection ? '0 2px 8px rgba(244, 67, 54, 0.4)' :
+                                          '0 2px 8px rgba(25, 118, 210, 0.3)'
+                              }}
+                            >
+                              {option}
+                            </Box>
+                            
+                            {/* Option text */}
+                            <Typography 
+                              variant="body2" 
+                              sx={{ 
+                                flex: 1, 
+                                fontWeight: isCorrectOption || isSelectedOption ? 'medium' : 'normal',
+                                color: isCorrectOption ? 'success.dark' : 
+                                      isIncorrectSelection ? 'error.dark' : 
+                                      'text.primary'
+                              }}
+                              component="span"
+                            >
+                              {question[optionField]}
+                            </Typography>
+                            
+                            {/* Correct/incorrect indicators */}
+                            {isCorrectOption && (
+                              <Box sx={{ ml: 1 }}>
+                                <CheckCircleIcon 
+                                  color="success" 
+                                  fontSize="small" 
+                                  sx={{ 
+                                    animation: isCorrectOption ? 'pulse 1.5s infinite' : 'none',
+                                    '@keyframes pulse': {
+                                      '0%': { opacity: 0.7 },
+                                      '50%': { opacity: 1 },
+                                      '100%': { opacity: 0.7 }
+                                    }
+                                  }} 
+                                />
+                              </Box>
+                            )}
+                            {isIncorrectSelection && (
+                              <Box sx={{ ml: 1 }}>
+                                <CancelIcon color="error" fontSize="small" />
+                              </Box>
+                            )}
+                            
+                            {/* Selection indicator */}
+                            {isSelectedOption && (
+                              <Box 
+                                sx={{ 
+                                  position: 'absolute', 
+                                  right: 0, 
+                                  top: 0, 
+                                  borderWidth: '0 30px 30px 0',
+                                  borderStyle: 'solid',
+                                  borderColor: `transparent ${isCorrect ? 'success.light' : 'error.light'} transparent transparent`
+                                }}
+                              />
+                            )}
+                          </Box>
+                        );
+                      })}
+                      
+                      {/* Show timeout option if applicable */}
+                      {answerLetter === 'T' && (
+                        <Box 
+                          sx={{ 
+                            display: 'flex',
+                            alignItems: 'center',
+                            py: 1.25, 
+                            px: 2,
+                            mb: 1,
+                            borderRadius: 2,
+                            position: 'relative',
+                            bgcolor: 'rgba(244, 67, 54, 0.08)',
+                            border: '1px solid rgba(244, 67, 54, 0.5)',
+                            boxShadow: '0 2px 12px rgba(0,0,0,0.08)'
+                          }}
+                        >
+                          <Box
+                            sx={{
+                              width: 28,
+                              height: 28,
+                              borderRadius: '50%',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontWeight: 'bold',
+                              fontSize: '0.875rem',
+                              mr: 1.5,
+                              color: 'white',
+                              bgcolor: 'error.main',
+                              boxShadow: '0 2px 8px rgba(244, 67, 54, 0.4)'
+                            }}
+                          >
+                            T
+                          </Box>
+                          <Typography variant="body2" sx={{ flex: 1, fontWeight: 'medium', color: 'error.dark' }}>
+                            No answer (Time expired)
+                          </Typography>
+                          <Box sx={{ ml: 1 }}>
+                            <CancelIcon color="error" fontSize="small" />
+                          </Box>
+                          
+                          {/* Selection indicator */}
+                          <Box 
+                            sx={{ 
+                              position: 'absolute', 
+                              right: 0, 
+                              top: 0, 
+                              borderWidth: '0 30px 30px 0',
+                              borderStyle: 'solid',
+                              borderColor: 'transparent error.light transparent transparent'
+                            }}
+                          />
+                        </Box>
+                      )}
+                    </Box>
+                    
+                    {/* Performance summary */}
+                    <Paper
+                      elevation={0}
+                      sx={{ 
+                        mt: 2, 
+                        p: 0,
+                        borderRadius: 2,
+                        overflow: 'hidden',
+                        border: '1px solid rgba(0,0,0,0.08)'
+                      }}
+                    >
+                      <Box sx={{ 
+                        p: 1.5, 
+                        bgcolor: 'rgba(25, 118, 210, 0.05)', 
+                        borderBottom: '1px solid rgba(0,0,0,0.08)'
+                      }}>
+                        <Typography variant="subtitle2" fontWeight="medium" color="primary.main">
+                          Your Performance
+                        </Typography>
+                      </Box>
+                      
+                      <Box sx={{ p: 2, bgcolor: 'white' }}>
+                        <Stack spacing={2} direction="row" sx={{ flexWrap: 'wrap', gap: 2 }}>
+                          <Box sx={{ flex: '1 1 45%', minWidth: '45%' }}>
+                            <Typography variant="body2" color="text.secondary" gutterBottom>
+                              Your Answer
+                            </Typography>
+                            <Box sx={{ 
+                              display: 'flex', 
+                              alignItems: 'center',
+                              borderRadius: 1,
+                              p: 1,
+                              bgcolor: isCorrect ? 'rgba(76, 175, 80, 0.08)' : 'rgba(244, 67, 54, 0.08)'
+                            }}>
+                              {answerLetter === 'T' ? (
+                                <Typography variant="body2" fontWeight="medium" color="error.main" component="span">
+                                  Time Expired
+                                </Typography>
+                              ) : (
+                                <Typography variant="body2" fontWeight="medium" color={isCorrect ? 'success.main' : 'error.main'} component="span">
+                                  Option {answerLetter}
+                                </Typography>
+                              )}
+                              {isCorrect ? (
+                                <CheckCircleIcon color="success" sx={{ ml: 'auto', fontSize: 20 }} />
+                              ) : (
+                                <CancelIcon color="error" sx={{ ml: 'auto', fontSize: 20 }} />
+                              )}
+                            </Box>
+                          </Box>
+                          
+                          <Box sx={{ flex: '1 1 45%', minWidth: '45%' }}>
+                            <Typography variant="body2" color="text.secondary" gutterBottom>
+                              Correct Answer
+                            </Typography>
+                            <Box sx={{ 
+                              display: 'flex', 
+                              alignItems: 'center',
+                              borderRadius: 1,
+                              p: 1,
+                              bgcolor: 'rgba(76, 175, 80, 0.08)'
+                            }}>
+                              <Typography variant="body2" fontWeight="medium" color="success.main" component="span">
+                                Option {getLetterFromIndex(correctAnswerIndex)}
+                              </Typography>
+                              <CheckCircleIcon color="success" sx={{ ml: 'auto', fontSize: 20 }} />
+                            </Box>
+                          </Box>
+                          
+                          <Box sx={{ flex: '1 1 45%', minWidth: '45%' }}>
+                            <Typography variant="body2" color="text.secondary" gutterBottom>
+                              Response Time
+                            </Typography>
+                            <Box sx={{ 
+                              display: 'flex', 
+                              alignItems: 'center',
+                              borderRadius: 1,
+                              p: 1,
+                              bgcolor: 'rgba(0,0,0,0.03)'
+                            }}>
+                              <TimerIcon sx={{ color: 'text.secondary', mr: 1, fontSize: 18 }} />
+                              <Typography variant="body2" fontWeight="medium" component="span">
+                                {answer?.responseTime || 0} seconds
+                              </Typography>
+                            </Box>
+                          </Box>
+                          
+                          <Box sx={{ flex: '1 1 45%', minWidth: '45%' }}>
+                            <Typography variant="body2" color="text.secondary" gutterBottom>
+                              Points Earned
+                            </Typography>
+                            <Box sx={{ 
+                              display: 'flex', 
+                              alignItems: 'center',
+                              borderRadius: 1,
+                              p: 1,
+                              bgcolor: 'rgba(0,0,0,0.03)'
+                            }}>
+                              <TrophyIcon sx={{ color: '#FFD700', mr: 1, fontSize: 18 }} />
+                              <Typography variant="body2" fontWeight="medium" color={isCorrect ? 'success.main' : 'text.primary'} component="span">
+                                {answer?.score || 0} points
+                              </Typography>
+                            </Box>
+                          </Box>
+                        </Stack>
+                      </Box>
+                    </Paper>
+                  </Box>
+                </Collapse>
+              </React.Fragment>
+            );
+          })}
+        </List>
+      </CardContent>
+    </Card>
+  );
+};
+
 export default function GameResultsPage() {
   const router = useRouter();
   const [playerResults, setPlayerResults] = useState<PlayerScore[]>([]);
@@ -256,118 +936,217 @@ export default function GameResultsPage() {
           formattedQuestions: formattedQuestionsData ? "✓" : "✗"
         });
         
-        // First try to determine game mode
-        const quizCode = sessionStorage.getItem('quizCode') || localStorage.getItem('quizCode');
-        let detectedGameMode: 'solo' | 'team' = 'solo';
-        
-        // Parse player info
+        // Try to parse all data first
+        let parsedResults = null;
+        let parsedQuizData = null;
         let currentPlayerData = null;
-        if (playerInfoData) {
-          try {
-            const parsedPlayerInfo = JSON.parse(playerInfoData);
-            setPlayerInfo(parsedPlayerInfo);
-            currentPlayerData = parsedPlayerInfo;
-            
-            // Detect team mode from player info
-            if (parsedPlayerInfo.team) {
-              detectedGameMode = 'team';
-              console.log("Team mode detected from player team:", parsedPlayerInfo.team);
-            }
-            
-            // Save to localStorage for persistence
-            localStorage.setItem('currentPlayer', playerInfoData);
-          } catch (err) {
-            console.error("Error parsing player info:", err);
-          }
+        let parsedAnswers = [];
+        let quizQuestions = [];
+        
+        try {
+          if (storedResults) parsedResults = JSON.parse(storedResults);
+          if (quizData) parsedQuizData = JSON.parse(quizData);
+          if (playerInfoData) currentPlayerData = JSON.parse(playerInfoData);
+          if (storedAnswers) parsedAnswers = JSON.parse(storedAnswers);
+          if (formattedQuestionsData) quizQuestions = JSON.parse(formattedQuestionsData);
+        } catch (parseError) {
+          console.error("Error parsing stored data:", parseError);
         }
         
-        // Set game mode in state
-        console.log(`Final determined game mode: ${detectedGameMode}`);
+        // Set player info
+        if (currentPlayerData) {
+          setPlayerInfo(currentPlayerData);
+        }
+        
+        // Set game mode detected from stored data
+        let detectedGameMode: 'solo' | 'team' = 'solo';
+        // Check if team info exists in player data
+        if (currentPlayerData?.team) {
+          detectedGameMode = 'team';
+          console.log("Team mode detected from player team:", currentPlayerData.team);
+        }
+        
         setGameMode(detectedGameMode);
         
-        // Set appropriate view mode
-        if (detectedGameMode === 'team') {
-          setViewMode('group');
-        } else {
-          setViewMode('player');
-        }
-        
-        // Parse quiz data
-        let parsedQuizData = null;
-        if (quizData) {
-          try {
-            parsedQuizData = JSON.parse(quizData);
-            setCurrentQuizData(parsedQuizData);
-            
-            // Save to localStorage for persistence
-            localStorage.setItem('currentQuiz', quizData);
-          } catch (err) {
-            console.error("Error parsing quiz data:", err);
-          }
-        }
-        
-        // Parse player results
-        if (storedResults) {
-          try {
-            const results = JSON.parse(storedResults);
-            if (Array.isArray(results)) {
-              setPlayerResults(results);
-              
-              // Set game title and current player if available
-              if (parsedQuizData) {
-                setGameTitle(parsedQuizData.title || "Quiz Game");
-              }
-              if (currentPlayerData) {
-                setCurrentPlayer(currentPlayerData.name || '');
-              }
-            }
-          } catch (err) {
-            console.error("Error parsing stored results:", err);
-          }
-        }
-        
-        // Parse answers
-        let parsedAnswers = [];
-        if (storedAnswers) {
-          try {
-            parsedAnswers = JSON.parse(storedAnswers);
-            if (Array.isArray(parsedAnswers)) {
-              setPlayerAnswers(parsedAnswers);
-              console.log(`Loaded ${parsedAnswers.length} player answers`);
-            }
-          } catch (err) {
-            console.error("Error parsing stored answers:", err);
-          }
-        }
-        
-        // Only proceed with score calculation if we have all required data
-        if (parsedQuizData && currentPlayerData && parsedAnswers.length > 0) {
-          // Try to use pre-formatted questions if available
-          let formattedQuestions = [];
-          if (formattedQuestionsData) {
-            try {
-              formattedQuestions = JSON.parse(formattedQuestionsData);
-              console.log(`Using ${formattedQuestions.length} pre-formatted questions`);
-            } catch (err) {
-              console.error("Error parsing formatted questions:", err);
-            }
+        // HIGHEST PRIORITY: Use player answers with scores if available
+        if (parsedAnswers && parsedAnswers.length > 0 && parsedAnswers.some((a: any) => a.score !== undefined)) {
+          console.log("Calculating results from answer scores...", parsedAnswers);
+          
+          // Count correct answers
+          const correctAnswers = parsedAnswers.filter((a: any) => a.isCorrect).length;
+          // Sum up scores - prioritize scores in the answer objects
+          const totalScore = parsedAnswers.reduce((sum: number, a: any) => sum + (a.score || 0), 0);
+          
+          // Calculate average response time
+          const totalResponseTime = parsedAnswers.reduce((sum: number, a: any) => sum + a.responseTime, 0);
+          const averageResponseTime = parsedAnswers.length > 0 ? totalResponseTime / parsedAnswers.length : 0;
+          
+          const playerScore = {
+            name: currentPlayerData?.name || 'Player',
+            avatar: currentPlayerData?.avatar || 'alligator',
+            score: totalScore,
+            correctAnswers: correctAnswers,
+            totalQuestions: parsedQuizData?.questions?.length || parsedAnswers.length,
+            timeBonus: Math.floor(totalScore * 0.1),
+            averageAnswerTime: parseFloat(averageResponseTime.toFixed(1)),
+            group: currentPlayerData?.team || null,
+            id: currentPlayerData?.playerId || currentPlayerData?.id || 0
+          };
+          
+          console.log("Calculated player score:", playerScore);
+          
+          // Save calculated results and display them
+          setPlayerResults([playerScore]);
+          setShowResults(true);
+          setScoresFinalized(true);
+          
+          // Store in session/local storage for future use
+          sessionStorage.setItem('gameResults', JSON.stringify([playerScore]));
+          localStorage.setItem('gameResults', JSON.stringify([playerScore]));
+          
+          // Set game title and player info
+          if (parsedQuizData) setGameTitle(parsedQuizData.title || "Quiz Game");
+          if (currentPlayerData) {
+            setCurrentPlayer(currentPlayerData.name || '');
+            setPlayerAvatar(currentPlayerData.avatar || 'alligator');
           }
           
-          if (formattedQuestions.length > 0) {
-            console.log("Using pre-formatted questions for calculation");
-            parsedQuizData.questions = formattedQuestions;
+          // Show confetti for good scores
+          if (totalScore > 0) setShowConfetti(true);
+        }
+        // SECOND PRIORITY: Use existing stored results
+        else if (parsedResults && Array.isArray(parsedResults) && parsedResults.length > 0) {
+          console.log("Using existing stored results:", parsedResults);
+          setPlayerResults(parsedResults);
+          setShowResults(true);
+          
+          // Set game title and player info from stored data
+          if (parsedQuizData) setGameTitle(parsedQuizData.title || "Quiz Game");
+          if (currentPlayerData) {
+            setCurrentPlayer(currentPlayerData.name || '');
+            setPlayerAvatar(currentPlayerData.avatar || 'alligator');
           }
           
-          // Calculate scores
-          await calculateFinalScores(parsedQuizData, currentPlayerData, parsedAnswers, detectedGameMode);
+          // Show confetti for good scores
+          if (parsedResults[0]?.score > 0) setShowConfetti(true);
+          
+          // No need for further calculations
+          setScoresFinalized(true);
+        }
+        // THIRD PRIORITY: Calculate scores from scratch if we have answers but no scores
+        else if (parsedAnswers && parsedAnswers.length > 0 && quizQuestions && quizQuestions.length > 0) {
+          console.log("Calculating scores from raw answers and questions");
+          
+          // Calculate scores without API calls
+          let totalScore = 0;
+          const correctAnswers = parsedAnswers.filter((a: any) => a.isCorrect).length;
+          
+          // Loop through each answer to calculate its score
+          parsedAnswers.forEach((answer: any) => {
+            if (answer.isCorrect) {
+              const question = quizQuestions.find((q: any) => q.id === answer.questionId);
+              if (question) {
+                const basePoints = question.score || 100;
+                const timeLimit = question.timeLimit || 20;
+                const timeRatio = Math.min(answer.responseTime / timeLimit, 1);
+                const timeMultiplier = 1 - (timeRatio * 0.5); // From 1.0 down to 0.5 based on time
+                const answerScore = Math.round(basePoints * timeMultiplier);
+                
+                // Add score to the answer
+                answer.score = answerScore;
+                totalScore += answerScore;
+              }
+            }
+          });
+          
+          // Store answers with calculated scores
+          sessionStorage.setItem('playerAnswers', JSON.stringify(parsedAnswers));
+          localStorage.setItem('playerAnswers', JSON.stringify(parsedAnswers));
+          
+          // Calculate average response time
+          const totalResponseTime = parsedAnswers.reduce((sum: number, a: any) => sum + a.responseTime, 0);
+          const averageResponseTime = parsedAnswers.length > 0 ? totalResponseTime / parsedAnswers.length : 0;
+          
+          const playerScore = {
+            name: currentPlayerData?.name || 'Player',
+            avatar: currentPlayerData?.avatar || 'alligator',
+            score: totalScore,
+            correctAnswers: correctAnswers,
+            totalQuestions: quizQuestions.length,
+            timeBonus: Math.floor(totalScore * 0.1),
+            averageAnswerTime: parseFloat(averageResponseTime.toFixed(1)),
+            group: currentPlayerData?.team || null,
+            id: currentPlayerData?.playerId || currentPlayerData?.id || 0
+          };
+          
+          console.log("Calculated player score locally:", playerScore);
+          
+          // Save calculated results
+          setPlayerResults([playerScore]);
+          setShowResults(true);
+          setScoresFinalized(true);
+          
+          // Store in session/local storage
+          sessionStorage.setItem('gameResults', JSON.stringify([playerScore]));
+          localStorage.setItem('gameResults', JSON.stringify([playerScore]));
+          
+          // Set game title and player info
+          if (parsedQuizData) setGameTitle(parsedQuizData.title || "Quiz Game");
+          if (currentPlayerData) {
+            setCurrentPlayer(currentPlayerData.name || '');
+            setPlayerAvatar(currentPlayerData.avatar || 'alligator');
+          }
+          
+          // Show confetti for good scores
+          if (totalScore > 0) setShowConfetti(true);
+        }
+        // Create fallback result if no stored results found but we have player data
+        else if (currentPlayerData) {
+          console.log("Creating fallback result with minimal player data");
+          
+          // Determine total questions from quiz data
+          let totalQuestions = 0;
+          if (parsedQuizData && parsedQuizData.questions) {
+            totalQuestions = parsedQuizData.questions.length;
+          }
+          
+          const fallbackResult = [{
+            name: currentPlayerData.name || 'Player',
+            score: 0, // Zero score for no answers or all incorrect
+            correctAnswers: 0,
+            totalQuestions: totalQuestions,
+            timeBonus: 0,
+            averageAnswerTime: 0,
+            avatar: currentPlayerData.avatar || 'alligator',
+            group: currentPlayerData.team || null,
+            id: currentPlayerData.playerId || currentPlayerData.id || 0
+          }];
+          
+          setPlayerResults(fallbackResult);
+          console.log("Set fallback player results:", fallbackResult);
+          
+          // Set game title and current player
+          if (parsedQuizData) {
+            setGameTitle(parsedQuizData.title || "Quiz Game");
+          }
+          setCurrentPlayer(currentPlayerData.name || '');
+          setPlayerAvatar(currentPlayerData.avatar || 'alligator');
+          
+          // Save this fallback result to storage
+          sessionStorage.setItem('gameResults', JSON.stringify(fallbackResult));
+          localStorage.setItem('gameResults', JSON.stringify(fallbackResult));
+          
+          setShowResults(true);
+          setScoresFinalized(true);
         } else {
-          console.log("Missing data for score calculation:", {
-            quiz: !!parsedQuizData,
-            player: !!currentPlayerData,
-            answers: parsedAnswers.length
+          // No valid data found
+          console.error("Insufficient data to display results");
+          setScoreMessage({
+            show: true,
+            message: 'No game data found. Please play a quiz first.',
+            severity: 'error'
           });
         }
-        
       } catch (error) {
         console.error('Error in loadDataAndCalculateScores:', error);
         setScoreMessage({
@@ -376,6 +1155,9 @@ export default function GameResultsPage() {
           severity: 'error'
         });
       } finally {
+        // Always set showResults to true after loading is complete
+        // This ensures we show something even if calculations failed
+        setShowResults(true);
         setLoading(false);
       }
     };
@@ -383,334 +1165,16 @@ export default function GameResultsPage() {
     loadDataAndCalculateScores();
   }, []);
   
-  // Function to calculate final scores
-  const calculateFinalScores = async (
-    quizData: any, 
-    playerData: any, 
-    answers: any[], 
-    mode: 'solo' | 'team'
-  ) => {
-    try {
-      setCalculatingScores(true);
-      setScoreMessage({
-        show: true,
-        message: 'Calculating final scores...',
-        severity: 'info'
-      });
-      
-      console.log(`Starting score calculation for ${mode} mode...`);
-      console.log('Player data:', playerData);
-      console.log('Quiz data:', quizData);
-      console.log('Answers:', answers.length);
-      
-      // Make sure we have the necessary data
-      if (!answers.length) {
-        console.error("No player answers available for score calculation");
-        setScoreMessage({
-          show: true,
-          message: 'No answers found to calculate score',
-          severity: 'error'
-        });
-        setCalculatingScores(false);
-        return;
-      }
-      
-      // Fetch questions if not already available
-      let questions = quizData.questions || [];
-      if (questions.length === 0) {
-        try {
-          console.log(`Fetching questions for quiz ${quizData.id}...`);
-          const response = await axios.get(
-            `${API_BASE_URL}/api/questions/quiz/${quizData.id}`,
-            { headers: { 'Accept': 'application/json' } }
-          );
-          
-          if (response.data && response.data.data) {
-            questions = response.data.data;
-            console.log(`Retrieved ${questions.length} questions`);
-          }
-        } catch (err) {
-          console.error("Error fetching questions:", err);
-        }
-      }
-      
-      if (questions.length === 0) {
-        console.error("No questions available for score calculation");
-        setScoreMessage({
-          show: true,
-          message: 'Could not calculate scores: no questions found',
-          severity: 'error'
-        });
-        setCalculatingScores(false);
-        return;
-      }
-      
-      // Calculate scores based on game mode
-      if (mode === 'team' && playerData.team) {
-        // Team mode calculation
-        console.log(`Calculating scores for team ${playerData.team}...`);
-        
-        try {
-          // Get team/group data
-          const sessionId = quizData.sessionId || quizData.id;
-          let groupResponse;
-          try {
-            console.log(`Fetching group data for session ${sessionId}...`);
-            groupResponse = await axios.get(
-              `${API_BASE_URL}/api/Group/session/${sessionId}`
-            );
-          } catch (err) {
-            console.error("Error fetching group data:", err);
-          }
-          
-          let groupMembers = [];
-          if (groupResponse && groupResponse.data && groupResponse.data.data) {
-            groupMembers = groupResponse.data.data;
-            console.log(`Loaded ${groupMembers.length} group members`);
-          } else {
-            // Try to use locally stored group members if available
-            const storedGroupMembers = sessionStorage.getItem('groupMembers') || localStorage.getItem('groupMembers');
-            if (storedGroupMembers) {
-              try {
-                groupMembers = JSON.parse(storedGroupMembers);
-                console.log(`Loaded ${groupMembers.length} group members from storage`);
-              } catch (err) {
-                console.error("Error parsing stored group members:", err);
-              }
-            }
-          }
-          
-          if (groupMembers.length > 0) {
-            console.log("Formatting group members for API...");
-            
-            // Format group members for the API
-            const formattedGroupMembers = groupMembers.map((member: any) => ({
-              groupId: member.groupId || member.id,
-              playerId: member.playerId || playerData.id,
-              rank: member.rank || 0,
-              totalScore: member.totalScore || 0,
-              joinedAt: member.joinedAt || new Date().toISOString(),
-              status: member.status || "Active"
-            }));
-            
-            // Format questions for the API
-            const formattedQuestions = questions.map((q: any) => ({
-              id: q.id,
-              quizId: q.quizId || quizData.id,
-              text: q.text || "",
-              type: q.type || "multiple-choice",
-              optionA: q.optionA || "",
-              optionB: q.optionB || "",
-              optionC: q.optionC || "",
-              optionD: q.optionD || "",
-              isCorrect: q.isCorrect || "A",
-              score: q.score || 100,
-              flag: q.flag || false,
-              timeLimit: q.timeLimit || 20,
-              arrange: q.arrange || 0
-            }));
-            
-            // Format answers to ensure all required fields
-            const formattedAnswers = answers.map(a => ({
-              id: a.id || 0,
-              playerId: a.playerId || parseInt(playerData.id),
-              questionId: a.questionId,
-              answeredAt: a.answeredAt || new Date().toISOString(),
-              isCorrect: a.isCorrect,
-              responseTime: a.responseTime,
-              answer: a.answer || "T"
-            }));
-            
-            // Call the API with properly formatted data
-            console.log("Calling GroupScore API...");
-            console.log("Group members:", formattedGroupMembers.length);
-            console.log("Player answers:", formattedAnswers.length);
-            console.log("Questions:", formattedQuestions.length);
-            
-            try {
-              // Use playerService for better error handling
-              const scoreResponse = await playerService.calculateGroupScore(
-                formattedGroupMembers,
-                formattedAnswers,
-                formattedQuestions
-              );
-              
-              console.log("Group score response:", scoreResponse);
-              setScoreMessage({
-                show: true,
-                message: 'Team scores calculated successfully!',
-                severity: 'success'
-              });
-              setScoresFinalized(true);
-            } catch (apiError) {
-              console.error("API error calculating team scores:", apiError);
-              
-              // Fallback to direct API call if service fails
-              try {
-                const scoreResponse = await axios.post(
-                  `${API_BASE_URL}/api/PlayerAnswer/GroupScore`,
-                  {
-                    GroupMembers: formattedGroupMembers,
-                    PlayerAnswers: formattedAnswers,
-                    Questions: formattedQuestions
-                  },
-                  { 
-                    headers: { 
-                      'Content-Type': 'application/json',
-                      'Accept': 'application/json'
-                    }
-                  }
-                );
-                
-                console.log("Direct API group score response:", scoreResponse.data);
-                setScoreMessage({
-                  show: true,
-                  message: 'Team scores calculated via direct API!',
-                  severity: 'success'
-                });
-                setScoresFinalized(true);
-              } catch (directApiError) {
-                console.error("Direct API call also failed:", directApiError);
-                setScoreMessage({
-                  show: true,
-                  message: 'Failed to calculate team scores after multiple attempts',
-                  severity: 'error'
-                });
-              }
-            }
-          } else {
-            console.error("No team members found");
-            setScoreMessage({
-              show: true,
-              message: 'Could not calculate team scores: no team members found',
-              severity: 'error'
-            });
-          }
-        } catch (err) {
-          console.error("Error in team score calculation:", err);
-          setScoreMessage({
-            show: true,
-            message: 'Error calculating team scores',
-            severity: 'error'
-          });
-        }
-      } else {
-        // Solo mode calculation
-        console.log("Calculating solo scores...");
-        
-        let successCount = 0;
-        let failCount = 0;
-        
-        // Calculate scores for each answer individually
-        for (const answer of answers) {
-          // Find the matching question
-          const question = questions.find((q: any) => q.id === answer.questionId);
-          
-          if (question) {
-            try {
-              // Format question for the API
-              const formattedQuestion = {
-                id: question.id,
-                quizId: question.quizId || quizData.id,
-                text: question.text || "",
-                type: question.type || "multiple-choice",
-                optionA: question.optionA || "",
-                optionB: question.optionB || "",
-                optionC: question.optionC || "",
-                optionD: question.optionD || "",
-                isCorrect: question.isCorrect || "A",
-                score: question.score || 100,
-                flag: question.flag || false,
-                timeLimit: question.timeLimit || 20,
-                arrange: question.arrange || 0
-              };
-              
-              // Format answer to ensure all required fields
-              const formattedAnswer = {
-                id: answer.id || 0,
-                playerId: answer.playerId || parseInt(playerData.id),
-                questionId: answer.questionId,
-                answeredAt: answer.answeredAt || new Date().toISOString(),
-                isCorrect: answer.isCorrect,
-                responseTime: answer.responseTime,
-                answer: answer.answer || "T"
-              };
-              
-              console.log(`Calculating score for answer to question ${answer.questionId}...`);
-              
-              try {
-                // Use playerService for better error handling
-                const scoreResponse = await playerService.calculateSoloScore(
-                  formattedAnswer,
-                  formattedQuestion
-                );
-                
-                console.log(`Answer ${answer.id} score calculated:`, scoreResponse);
-                successCount++;
-              } catch (apiError) {
-                console.error(`Service error calculating score for answer ${answer.id}:`, apiError);
-                
-                // Fallback to direct API call if service fails
-                try {
-                  const scoreResponse = await axios.post(
-                    `${API_BASE_URL}/api/PlayerAnswer/SoloScore`,
-                    {
-                      PlayerAnswer: formattedAnswer,
-                      Question: formattedQuestion
-                    },
-                    { 
-                      headers: { 
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json'
-                      }
-                    }
-                  );
-                  
-                  console.log(`Direct API answer ${answer.id} score calculated:`, scoreResponse.data);
-                  successCount++;
-                } catch (directApiError) {
-                  console.error(`Direct API call failed for answer ${answer.id}:`, directApiError);
-                  failCount++;
-                }
-              }
-            } catch (err) {
-              console.error(`Error calculating score for answer ${answer.id}:`, err);
-              failCount++;
-            }
-          } else {
-            console.warn(`No matching question found for answer ${answer.id} (question ID: ${answer.questionId})`);
-            failCount++;
-          }
-        }
-        
-        console.log(`Solo score calculation complete. Success: ${successCount}, Failed: ${failCount}`);
-        
-        if (successCount > 0) {
-          setScoreMessage({
-            show: true,
-            message: `Solo scores calculated successfully! (${successCount}/${answers.length})`,
-            severity: 'success'
-          });
-          setScoresFinalized(true);
-        } else {
-          setScoreMessage({
-            show: true,
-            message: 'Failed to calculate any scores',
-            severity: 'error'
-          });
-        }
-      }
-    } catch (error) {
-      console.error("Error in calculateFinalScores:", error);
-      setScoreMessage({
-        show: true,
-        message: 'Error calculating scores',
-        severity: 'error'
-      });
-    } finally {
-      setCalculatingScores(false);
+  // IMPORTANT: Don't add hardcoded players automatically - only show real results
+  // Delete or modify the useEffect that adds hardcoded players
+  useEffect(() => {
+    // Only add group scores for team mode
+    if (playerResults.length > 0 && gameMode === 'team') {
+      // Calculate group scores from the player results
+      const calculatedGroups = calculateGroupScores(playerResults);
+      setGroupResults(calculatedGroups);
     }
-  };
+  }, [playerResults, gameMode, playerInfo]);
 
   // Function to close the score message snackbar
   const handleCloseMessage = () => {
@@ -748,20 +1212,524 @@ export default function GameResultsPage() {
     );
   }
 
-  // Add message notification
   return (
     <>
       {/* Existing component render code */}
       <Box 
         sx={{ 
           minHeight: '100vh',
-          bgcolor: '#46178f', // Kahoot purple background
+          bgcolor: '#46178f', 
           color: 'white',
           pb: 4
         }}
       >
-        {/* Rest of the component rendering code */}
-        {/* ... */}
+        {/* Add a fallback message section for when results don't display properly */}
+        {showResults && playerResults.length === 0 && (
+          <Container maxWidth="md" sx={{ textAlign: 'center', py: 6 }}>
+            <Paper sx={{ p: 4, mb: 4, borderRadius: 3, bgcolor: 'rgba(255,255,255,0.9)' }}>
+              <Box sx={{ mb: 3 }}>
+                {playerAvatar && (
+                  <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>
+                    <Box sx={{ width: 80, height: 80 }}>
+                      <Animal
+                        name={getAnimalAvatar(playerAvatar).name}
+                        color={getAnimalAvatar(playerAvatar).color}
+                        size="100%"
+                      />
+                    </Box>
+                  </Box>
+                )}
+                <Typography variant="h4" color="primary" gutterBottom>
+                  Game Complete!
+                </Typography>
+                <Typography variant="body1" color="text.secondary">
+                  {gameTitle ? `You've completed ${gameTitle}` : "You've completed the quiz"}
+                </Typography>
+              </Box>
+              
+              <Box sx={{ mt: 4, p: 3, bgcolor: '#f9f9f9', borderRadius: 2 }}>
+                <Typography variant="h6" color="text.primary" gutterBottom>
+                  Unfortunately, you didn't get any correct answers this time.
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Don't worry! You can always try again to improve your score.
+                </Typography>
+              </Box>
+              
+              <Box sx={{ mt: 4, display: 'flex', justifyContent: 'center', gap: 2 }}>
+                <Button
+                  variant="outlined"
+                  startIcon={<HomeIcon />}
+                  onClick={() => router.push('/')}
+                >
+                  Home
+                </Button>
+                <Button
+                  variant="contained"
+                  startIcon={<RefreshIcon />}
+                  onClick={() => window.location.reload()}
+                >
+                  Refresh Results
+                </Button>
+              </Box>
+            </Paper>
+          </Container>
+        )}
+        
+        {/* Main score display section when results are available */}
+        {showResults && playerResults.length > 0 && (
+          <Container maxWidth="md" sx={{ textAlign: 'center', py: 6 }}>
+            {showConfetti && windowDimensions.width > 0 && (
+              <ReactConfetti
+                width={windowDimensions.width}
+                height={windowDimensions.height}
+                recycle={false}
+                numberOfPieces={200}
+                gravity={0.1}
+                onConfettiComplete={() => setShowConfetti(false)}
+              />
+            )}
+            
+            <Paper sx={{ p: 4, mb: 4, borderRadius: 3, bgcolor: 'rgba(255,255,255,0.9)' }}>
+              <Box sx={{ mb: 4 }}>
+                {playerResults[0]?.avatar && (
+                  <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>
+                    <Box sx={{ width: 100, height: 100 }}>
+                      <Animal
+                        name={getAnimalAvatar(playerResults[0].avatar).name}
+                        color={getAnimalAvatar(playerResults[0].avatar).color}
+                        size="100%"
+                      />
+                    </Box>
+                  </Box>
+                )}
+                <Typography variant="h4" color="primary" gutterBottom>
+                  Game Complete!
+                </Typography>
+                <Typography variant="body1" color="text.secondary">
+                  {gameTitle ? `You've completed ${gameTitle}` : "You've completed the quiz"}
+                </Typography>
+              </Box>
+              
+              {/* Score card */}
+              <Card 
+                sx={{ 
+                  mb: 4, 
+                  maxWidth: 500, 
+                  mx: 'auto',
+                  borderRadius: 3,
+                  boxShadow: '0 8px 24px rgba(0,0,0,0.12)'
+                }}
+              >
+                <CardHeader
+                  title="Your Score"
+                  sx={{ 
+                    bgcolor: 'primary.main', 
+                    color: 'white',
+                    textAlign: 'center',
+                    pb: 1
+                  }}
+                />
+                <CardContent sx={{ p: 4 }}>
+                  <Typography 
+                    variant="h2" 
+                    color="primary" 
+                    sx={{ 
+                      fontWeight: 'bold', 
+                      textAlign: 'center',
+                      mb: 2
+                    }}
+                  >
+                    {playerResults[0]?.score || 0}
+                  </Typography>
+                  
+                  <Stack spacing={2} sx={{ mt: 3 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Typography variant="body1" color="text.secondary">
+                        Correct Answers:
+                      </Typography>
+                      <Typography variant="body1" fontWeight="bold">
+                        {playerResults[0]?.correctAnswers || 0} / {playerResults[0]?.totalQuestions || 0}
+                      </Typography>
+                    </Box>
+                    
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Typography variant="body1" color="text.secondary">
+                        Accuracy:
+                      </Typography>
+                      <Typography variant="body1" fontWeight="bold">
+                        {playerResults[0]?.totalQuestions ? 
+                          Math.round((playerResults[0]?.correctAnswers / playerResults[0]?.totalQuestions) * 100) : 0}%
+                      </Typography>
+                    </Box>
+                    
+                    {playerResults[0]?.timeBonus !== undefined && playerResults[0]?.timeBonus > 0 && (
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <Typography variant="body1" color="text.secondary">
+                          Time Bonus:
+                        </Typography>
+                        <Typography variant="body1" fontWeight="bold" color="success.main">
+                          +{playerResults[0]?.timeBonus}
+                        </Typography>
+                      </Box>
+                    )}
+                    
+                    {playerResults.length > 0 && (
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <Typography variant="body1" color="text.secondary">
+                          Avg. Answer Time:
+                        </Typography>
+                        <Typography variant="body1" fontWeight="bold">
+                          {playerResults[0] && typeof playerResults[0].averageAnswerTime === 'number' 
+                            ? playerResults[0].averageAnswerTime.toFixed(1) 
+                            : '0.0'}s
+                        </Typography>
+                      </Box>
+                    )}
+                  </Stack>
+                </CardContent>
+              </Card>
+
+              {/* Add Question Details - integrate with same styling */}
+              <QuestionDetails />
+
+              {/* Add Leaderboard */}
+              {playerResults.length > 1 && (
+                <Card 
+                  sx={{ 
+                    mb: 4, 
+                    maxWidth: 500, 
+                    mx: 'auto',
+                    borderRadius: 3,
+                    boxShadow: '0 8px 24px rgba(0,0,0,0.12)'
+                  }}
+                >
+                  <CardHeader
+                    title="Leaderboard"
+                    sx={{ 
+                      bgcolor: 'primary.main', 
+                      color: 'white',
+                      textAlign: 'center',
+                      pb: 1
+                    }}
+                  />
+                  <CardContent sx={{ p: 0 }}>
+                    <List sx={{ width: '100%', p: 0 }}>
+                      {playerResults.map((player, index) => (
+                        <ListItem
+                          key={index}
+                          sx={{
+                            py: 2,
+                            px: 3,
+                            borderBottom: index < playerResults.length - 1 ? '1px solid rgba(0,0,0,0.12)' : 'none',
+                            bgcolor: player.name === playerInfo?.name ? 'rgba(25, 118, 210, 0.08)' : 'transparent'
+                          }}
+                        >
+                          <ListItemAvatar>
+                            <Avatar
+                              sx={{
+                                width: 40,
+                                height: 40,
+                                bgcolor: index === 0 ? 'gold' : index === 1 ? 'silver' : index === 2 ? '#cd7f32' : 'grey.300'
+                              }}
+                            >
+                              {index + 1}
+                            </Avatar>
+                          </ListItemAvatar>
+                          <ListItemText
+                            primary={
+                              <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                <Box sx={{ width: 30, height: 30, mr: 1 }}>
+                                  {player.avatar && (
+                                    <Animal
+                                      name={getAnimalAvatar(player.avatar).name}
+                                      color={getAnimalAvatar(player.avatar).color}
+                                      size="100%"
+                                    />
+                                  )}
+                                </Box>
+                                <Typography variant="body1" fontWeight={player.name === playerInfo?.name ? 'bold' : 'normal'}>
+                                  {player.name}
+                                  {player.name === playerInfo?.name && ' (You)'}
+                                </Typography>
+                              </Box>
+                            }
+                            secondary={
+                              <Typography variant="body2" color="text.secondary">
+                                {player.correctAnswers || 0}/{player.totalQuestions || 0} correct
+                              </Typography>
+                            }
+                          />
+                          <Typography
+                            variant="h6"
+                            color={index === 0 ? 'primary' : 'text.primary'}
+                            fontWeight={index === 0 ? 'bold' : 'medium'}
+                          >
+                            {player.score}
+                          </Typography>
+                        </ListItem>
+                      ))}
+                    </List>
+                  </CardContent>
+                </Card>
+              )}
+              
+              {/* Add Team Leaderboard for team mode */}
+              {gameMode === 'team' && groupResults.length > 0 && (
+                <Card 
+                  sx={{ 
+                    mt: 5, 
+                    mb: 4, 
+                    maxWidth: 500, 
+                    mx: 'auto',
+                    borderRadius: 3,
+                    boxShadow: '0 12px 24px rgba(0,0,0,0.12)',
+                    border: '1px solid rgba(0,0,0,0.05)',
+                    overflow: 'hidden'
+                  }}
+                >
+                  <Box sx={{ 
+                    bgcolor: '#2e7d32',  // Using green as a differentiation from Question Details
+                    backgroundImage: 'linear-gradient(135deg, #2e7d32 0%, #388e3c 100%)',
+                    color: 'white', 
+                    position: 'relative', 
+                    overflow: 'hidden'
+                  }}>
+                    <CardHeader
+                      title={
+                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <GroupsIcon sx={{ mr: 1 }} />
+                          <Typography variant="h6" component="span">
+                            Team Rankings
+                          </Typography>
+                        </Box>
+                      }
+                      sx={{ 
+                        textAlign: 'center', 
+                        pb: 1,
+                        position: 'relative',
+                        zIndex: 1
+                      }}
+                    />
+                    
+                    {/* Summary Stats */}
+                    <Box sx={{ 
+                      p: 2, 
+                      display: 'flex', 
+                      justifyContent: 'space-around',
+                      position: 'relative',
+                      zIndex: 1,
+                      '&:before': {
+                        content: '""',
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        height: '1px',
+                        bgcolor: 'rgba(255,255,255,0.2)'
+                      }
+                    }}>
+                      <Box sx={{ textAlign: 'center' }}>
+                        <Typography variant="body2" color="rgba(255,255,255,0.8)" gutterBottom>
+                          Teams
+                        </Typography>
+                        <Typography variant="h6" fontWeight="bold">
+                          {groupResults.length}
+                        </Typography>
+                      </Box>
+                      
+                      <Box sx={{ textAlign: 'center' }}>
+                        <Typography variant="body2" color="rgba(255,255,255,0.8)" gutterBottom>
+                          Top Score
+                        </Typography>
+                        <Typography variant="h6" fontWeight="bold">
+                          {groupResults[0]?.score || 0}
+                        </Typography>
+                      </Box>
+                      
+                      <Box sx={{ textAlign: 'center' }}>
+                        <Typography variant="body2" color="rgba(255,255,255,0.8)" gutterBottom>
+                          Your Team
+                        </Typography>
+                        <Typography variant="h6" fontWeight="bold">
+                          #{groupResults.findIndex(g => g.name === (playerInfo?.team || "Your Team")) + 1 || '-'}
+                        </Typography>
+                      </Box>
+                    </Box>
+                    
+                    {/* Background elements */}
+                    <Box sx={{
+                      position: 'absolute',
+                      width: '150px',
+                      height: '150px',
+                      bgcolor: 'rgba(255,255,255,0.05)',
+                      borderRadius: '50%',
+                      top: '-75px',
+                      right: '-75px'
+                    }} />
+                    <Box sx={{
+                      position: 'absolute',
+                      width: '100px',
+                      height: '100px',
+                      bgcolor: 'rgba(255,255,255,0.05)',
+                      borderRadius: '50%',
+                      bottom: '-50px',
+                      left: '-50px'
+                    }} />
+                  </Box>
+                  
+                  <CardContent sx={{ p: 0, bgcolor: '#f9f9fc' }}>
+                    <List disablePadding>
+                      {groupResults.map((group, index) => {
+                        const isYourTeam = group.name === (playerInfo?.team || "Your Team");
+                        return (
+                          <Box
+                            key={index}
+                            sx={{
+                              position: 'relative',
+                              '&:before': {
+                                content: '""',
+                                position: 'absolute',
+                                left: 0,
+                                top: 0,
+                                bottom: 0,
+                                width: 4,
+                                bgcolor: isYourTeam ? 'success.main' : 'transparent',
+                                transition: 'all 0.2s ease'
+                              }
+                            }}
+                          >
+                            <ListItem
+                              sx={{
+                                py: 2,
+                                px: 3,
+                                borderBottom: index < groupResults.length - 1 ? '1px solid rgba(0,0,0,0.06)' : 'none',
+                                bgcolor: isYourTeam ? 'rgba(46, 125, 50, 0.08)' : 'transparent',
+                                transition: 'background-color 0.2s ease',
+                                '&:hover': {
+                                  bgcolor: isYourTeam ? 'rgba(46, 125, 50, 0.12)' : 'rgba(0,0,0,0.02)'
+                                }
+                              }}
+                            >
+                              <ListItemAvatar sx={{ minWidth: 50 }}>
+                                <Avatar
+                                  sx={{
+                                    width: 36,
+                                    height: 36,
+                                    fontSize: '1.2rem',
+                                    fontWeight: 'bold',
+                                    bgcolor: index === 0 ? '#FFD700' : 
+                                            index === 1 ? '#C0C0C0' : 
+                                            index === 2 ? '#CD7F32' : 
+                                            'grey.300',
+                                    color: index < 3 ? 'rgba(0,0,0,0.8)' : 'white',
+                                    boxShadow: index < 3 ? '0 2px 8px rgba(0,0,0,0.15)' : 'none'
+                                  }}
+                                >
+                                  {index + 1}
+                                </Avatar>
+                              </ListItemAvatar>
+                              
+                              <ListItemText
+                                primary={
+                                  <Typography 
+                                    variant="body1" 
+                                    fontWeight={isYourTeam ? 'bold' : 'medium'}
+                                    component="div"
+                                    sx={{ 
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      color: isYourTeam ? 'success.dark' : 'text.primary'
+                                    }}
+                                  >
+                                    {group.name}
+                                    {isYourTeam && (
+                                      <Chip 
+                                        label="Your Team" 
+                                        size="small" 
+                                        color="success" 
+                                        sx={{ ml: 1, height: 20 }}
+                                      />
+                                    )}
+                                  </Typography>
+                                }
+                                secondary={
+                                  <Box sx={{ display: 'flex', alignItems: 'center', mt: 0.5 }}>
+                                    <GroupsIcon sx={{ fontSize: 16, mr: 0.5, color: 'text.secondary' }} />
+                                    <Typography 
+                                      variant="body2" 
+                                      color="text.secondary"
+                                      component="span"
+                                    >
+                                      {group.memberCount} member{group.memberCount !== 1 ? 's' : ''}
+                                    </Typography>
+                                  </Box>
+                                }
+                              />
+                              
+                              <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                <Paper
+                                  elevation={0}
+                                  sx={{
+                                    px: 2,
+                                    py: 0.75,
+                                    borderRadius: 2, 
+                                    bgcolor: index === 0 ? 'rgba(255, 215, 0, 0.1)' : 
+                                             index === 1 ? 'rgba(192, 192, 192, 0.1)' : 
+                                             index === 2 ? 'rgba(205, 127, 50, 0.1)' : 
+                                             'rgba(0, 0, 0, 0.03)',
+                                    border: index === 0 ? '1px solid rgba(255, 215, 0, 0.3)' : 
+                                            index === 1 ? '1px solid rgba(192, 192, 192, 0.3)' : 
+                                            index === 2 ? '1px solid rgba(205, 127, 50, 0.3)' : 
+                                            '1px solid rgba(0, 0, 0, 0.06)'
+                                  }}
+                                >
+                                  <Typography
+                                    variant="h6"
+                                    color={index === 0 ? '#9e6c00' : 
+                                           index === 1 ? '#5c5c5c' : 
+                                           index === 2 ? '#8b4513' : 
+                                           'text.primary'}
+                                    fontWeight="bold"
+                                    sx={{ 
+                                      display: 'flex', 
+                                      alignItems: 'center',
+                                      fontSize: '1.125rem'
+                                    }}
+                                  >
+                                    {index === 0 && <TrophyIcon sx={{ mr: 0.5, fontSize: 18, color: '#FFD700' }} />}
+                                    {group.score}
+                                  </Typography>
+                                </Paper>
+                              </Box>
+                            </ListItem>
+                          </Box>
+                        );
+                      })}
+                    </List>
+                  </CardContent>
+                </Card>
+              )}
+              
+              <Box sx={{ mt: 4, display: 'flex', justifyContent: 'center', gap: 2 }}>
+                <Button
+                  variant="outlined"
+                  startIcon={<HomeIcon />}
+                  onClick={() => router.push('/')}
+                >
+                  Home
+                </Button>
+                <Button
+                  variant="contained"
+                  startIcon={<RefreshIcon />}
+                  onClick={() => window.location.reload()}
+                >
+                  Refresh Results
+                </Button>
+              </Box>
+            </Paper>
+          </Container>
+        )}
       </Box>
       
       {/* Add the score message snackbar */}

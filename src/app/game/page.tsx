@@ -16,7 +16,9 @@ import {
   DialogContent,
   DialogTitle,
   Slide,
-  SlideProps
+  SlideProps,
+  Tooltip,
+  Divider
 } from '@mui/material';
 import { 
   CheckCircle as CorrectIcon,
@@ -24,7 +26,11 @@ import {
   EmojiEvents as TrophyIcon,
   Timer as TimerIcon,
   Person as PersonIcon,
-  Groups as GroupsIcon
+  Groups as GroupsIcon,
+  Quiz as QuizIcon,
+  QuestionAnswer as QuestionAnswerIcon,
+  PriorityHigh as PriorityHighIcon,
+  Bolt as BoltIcon
 } from '@mui/icons-material';
 import { motion } from 'framer-motion';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -231,13 +237,14 @@ export default function GamePage() {
         if (debugPlayerInfo) {
           try {
             const parsedPlayerInfo = JSON.parse(debugPlayerInfo);
-            console.log('🔴 STORED PLAYER INFO:', parsedPlayerInfo);
-            console.log('🔴 ID TYPE:', typeof parsedPlayerInfo.id);
+            console.log('🔴 STORED PLAYER INFO [DETAILED]:', JSON.stringify(parsedPlayerInfo, null, 2));
+            console.log('🔴 PLAYER ID VALUE:', parsedPlayerInfo.playerId);
+            console.log('🔴 PLAYER ID TYPE:', typeof parsedPlayerInfo.playerId);
             
-            // Ensure ID is a number not a string
-            if (typeof parsedPlayerInfo.id === 'string') {
-              console.log('🔴 CONVERTING STRING ID TO NUMBER');
-              parsedPlayerInfo.id = Number(parsedPlayerInfo.id);
+            // Ensure playerId is a number not a string
+            if (typeof parsedPlayerInfo.playerId === 'string') {
+              console.log('🔴 CONVERTING STRING PLAYERID TO NUMBER');
+              parsedPlayerInfo.playerId = Number(parsedPlayerInfo.playerId);
               sessionStorage.setItem('currentPlayer', JSON.stringify(parsedPlayerInfo));
             }
           } catch (e) {
@@ -262,40 +269,23 @@ export default function GamePage() {
           parsedPlayerInfo = JSON.parse(playerInfoStr);
           
           // Log player info for debugging
-          console.log("Player info from sessionStorage:", parsedPlayerInfo);
+          console.log("CRITICAL - Original player info from sessionStorage:", JSON.stringify(parsedPlayerInfo, null, 2));
           
-          // Ensure player has an ID and both id and playerId are the same
-          if (!parsedPlayerInfo.id && !parsedPlayerInfo.playerId) {
-            console.warn("Player info missing ID fields, this will cause errors");
-            
-            // Try to set a default ID to prevent errors
-            const defaultId = Math.floor(Math.random() * 100000) + 1;
-            parsedPlayerInfo.id = defaultId;
-            parsedPlayerInfo.playerId = defaultId;
-            
-            // Update sessionStorage with the fixed player info
-            sessionStorage.setItem('currentPlayer', JSON.stringify(parsedPlayerInfo));
-            localStorage.setItem('currentPlayer', JSON.stringify(parsedPlayerInfo));
-            console.log("Updated player info with default ID:", parsedPlayerInfo);
-          } else if (parsedPlayerInfo.id && !parsedPlayerInfo.playerId) {
-            // If we have id but not playerId, copy id to playerId
-            parsedPlayerInfo.playerId = parsedPlayerInfo.id;
-            sessionStorage.setItem('currentPlayer', JSON.stringify(parsedPlayerInfo));
-            localStorage.setItem('currentPlayer', JSON.stringify(parsedPlayerInfo));
-            console.log("Added missing playerId field:", parsedPlayerInfo);
-          } else if (!parsedPlayerInfo.id && parsedPlayerInfo.playerId) {
-            // If we have playerId but not id, copy playerId to id
-            parsedPlayerInfo.id = parsedPlayerInfo.playerId;
-            sessionStorage.setItem('currentPlayer', JSON.stringify(parsedPlayerInfo));
-            localStorage.setItem('currentPlayer', JSON.stringify(parsedPlayerInfo));
-            console.log("Added missing id field:", parsedPlayerInfo);
-          } else if (parsedPlayerInfo.id !== parsedPlayerInfo.playerId) {
-            // If both exist but differ, use id value for both
-            parsedPlayerInfo.playerId = parsedPlayerInfo.id;
-            sessionStorage.setItem('currentPlayer', JSON.stringify(parsedPlayerInfo));
-            localStorage.setItem('currentPlayer', JSON.stringify(parsedPlayerInfo));
-            console.log("Synchronized id and playerId fields:", parsedPlayerInfo);
+          // DO NOT generate random IDs or modify the original playerId
+          // Just ensure playerId is a number
+          if (parsedPlayerInfo.playerId) {
+            parsedPlayerInfo.playerId = Number(parsedPlayerInfo.playerId);
+            console.log("Using playerId from storage:", parsedPlayerInfo.playerId);
+          } else if (parsedPlayerInfo.id) {
+            parsedPlayerInfo.playerId = Number(parsedPlayerInfo.id);
+            console.log("Setting playerId from id field:", parsedPlayerInfo.playerId);
+          } else {
+            console.error("⚠️ NO VALID ID FIELDS FOUND! This will cause 'Invalid PlayerId' errors");
           }
+          
+          // Update storage with converted playerId
+          sessionStorage.setItem('currentPlayer', JSON.stringify(parsedPlayerInfo));
+          localStorage.setItem('currentPlayer', JSON.stringify(parsedPlayerInfo));
           
           setPlayerInfo(parsedPlayerInfo);
         } catch (parseError) {
@@ -303,14 +293,18 @@ export default function GamePage() {
           
           // Create default player info with a valid ID
           const defaultPlayerInfo = {
-            id: Math.floor(Math.random() * 1000000) + 1, // Use a smaller, random ID that will fit in 32-bit int
-            playerId: Math.floor(Math.random() * 1000000) + 1, // Use a smaller, random ID
+            playerId: null, // DO NOT use a random ID - this will cause errors
             name: "Player",
             avatar: "dog",
             score: 0
           };
           
-          console.log("Using default player info:", defaultPlayerInfo);
+          console.error("⚠️ CRITICAL ERROR: Could not parse player info and no valid playerId found");
+          console.log("Using placeholder player info:", defaultPlayerInfo);
+          
+          // Set error to show a message to the user
+          setError("No valid player information found. Please return to the join page.");
+          
           sessionStorage.setItem('currentPlayer', JSON.stringify(defaultPlayerInfo));
           localStorage.setItem('currentPlayer', JSON.stringify(defaultPlayerInfo));
           const tempPlayerInfo = defaultPlayerInfo;
@@ -528,57 +522,75 @@ export default function GamePage() {
           const playerInfoStr = sessionStorage.getItem('currentPlayer');
           const playerInfo = playerInfoStr ? JSON.parse(playerInfoStr) : null;
           
-          if (!playerInfo || !playerInfo.id) {
+          // Check and log player info to help debug
+          console.log("Player info for score calculation:", playerInfo);
+          
+          // Improved player ID retrieval - check all possible fields and log detailed info
+          const playerId = playerInfo?.playerId || playerInfo?.id;
+          console.log(`Using player ID for score calculation: ${playerId}, type: ${typeof playerId}`);
+          
+          if (!playerId) {
             console.error("Player info not available for score calculation");
-            return;
-          }
-          
-          console.log("Calculating final score for player:", playerInfo.id);
-          
-          // Get stats for UI
-          const stats = calculateStats();
-          
-          if (gameMode === 'solo') {
-            // For solo mode, calculate each answer's score
-            for (const answer of allSubmittedAnswers) {
-              // Find the corresponding question
-              const question = formattedQuestions.find(q => q.id === answer.questionId);
-              
-              if (question) {
-                try {
-                  // Calculate solo score through API
-                  await playerService.calculateSoloScore(
-                    answer,
-                    question
-                  );
-                } catch (error) {
-                  console.error("Error calculating solo score for answer:", error);
+            // Continue anyway to attempt showing results
+          } else {
+            console.log("Calculating final score for player:", playerId);
+            
+            // Get stats for solo mode calculation
+            const initialStats = calculateStats();
+            console.log("Initial game stats:", initialStats);
+            
+            if (gameMode === 'solo') {
+              // For solo mode, calculate each answer's score
+              for (const answer of allSubmittedAnswers) {
+                // Find the corresponding question
+                const question = formattedQuestions.find(q => q.id === answer.questionId);
+                
+                if (question) {
+                  try {
+                    // Make sure we're sending the actual answer data, not zeroed out values
+                    console.log("Calculating solo score with:", {
+                      answer: answer,
+                      question: question
+                    });
+                    
+                    // Calculate solo score through API
+                    await playerService.calculateSoloScore(
+                      answer,
+                      question
+                    );
+                  } catch (error) {
+                    console.error("Error calculating solo score for answer:", error);
+                  }
                 }
               }
-            }
-          } else if (gameMode === 'team' && groupMembers.length > 0) {
-            // For team mode, calculate team score
-            try {
-              // Format group members for the API
-              const formattedGroupMembers = groupMembers.map(member => ({
-                groupId: member.groupId,
-                playerId: member.playerId,
-                rank: member.rank || 0,
-                totalScore: member.totalScore || 0,
-                joinedAt: member.joinedAt || new Date().toISOString(),
-                status: member.status || "Active"
-              }));
-              
-              // Calculate group score
-              await playerService.calculateGroupScore(
-                formattedGroupMembers,
-                allSubmittedAnswers,
-                formattedQuestions
-              );
-            } catch (error) {
-              console.error("Error calculating team score:", error);
+            } else if (gameMode === 'team' && groupMembers.length > 0) {
+              // For team mode, calculate team score
+              try {
+                // Format group members for the API
+                const formattedGroupMembers = groupMembers.map(member => ({
+                  groupId: member.groupId,
+                  playerId: member.playerId,
+                  rank: member.rank || 0,
+                  totalScore: member.totalScore || 0,
+                  joinedAt: member.joinedAt || new Date().toISOString(),
+                  status: member.status || "Active"
+                }));
+                
+                // Calculate group score
+                await playerService.calculateGroupScore(
+                  formattedGroupMembers,
+                  allSubmittedAnswers,
+                  formattedQuestions
+                );
+              } catch (error) {
+                console.error("Error calculating team score:", error);
+              }
             }
           }
+          
+          // Get fresh stats for result display
+          const stats = calculateStats();
+          console.log("Final stats for display:", stats);
           
           // Create game results object
           const gameResults = {
@@ -589,7 +601,7 @@ export default function GamePage() {
             player: {
               name: playerInfo?.name || 'Player',
               avatar: playerInfo?.avatar || 'dog',
-              id: playerInfo?.id || playerInfo?.playerId || 0
+              id: playerId || 0
             },
             answers: answersRecord,
             quizId: quizData?.id || 0
@@ -602,12 +614,11 @@ export default function GamePage() {
               score: stats.totalScore,
               correctAnswers: stats.correctAnswers,
               totalQuestions: stats.totalQuestions,
-              timeBonus: Math.floor(stats.totalScore / 10),
-              averageAnswerTime: answersRecord.length > 0 ? 
-                answersRecord.reduce((sum, a) => sum + a.timeTaken, 0) / answersRecord.length : 0,
+              timeBonus: stats.timeBonus || Math.floor(stats.totalScore * 0.1),
+              averageAnswerTime: stats.averageTime || parseFloat((answersRecord.reduce((sum, a) => sum + (a.timeTaken || 0), 0) / Math.max(answersRecord.length, 1)).toFixed(1)),
               avatar: playerInfo?.avatar || 'dog',
               group: playerInfo?.team || null,
-              id: playerInfo?.id || 0
+              id: playerId || 0
             }];
             
             console.log("Saving game results:", playerResultData);
@@ -646,16 +657,73 @@ export default function GamePage() {
             sessionStorage.setItem('formattedQuestions', JSON.stringify(formattedQuestions));
             localStorage.setItem('formattedQuestions', JSON.stringify(formattedQuestions));
             
+            // Double check we've stored the results before redirecting
+            const checkResults = sessionStorage.getItem('gameResults');
+            if (!checkResults) {
+              console.warn("Game results weren't stored properly. Creating a minimal record.");
+              
+              // Create a minimal record to ensure we have something to show
+              const minimalResult = [{
+                name: playerInfo?.name || 'Player',
+                score: 0, 
+                correctAnswers: 0,
+                totalQuestions: quizData?.questions?.length || 0,
+                avatar: playerInfo?.avatar || 'dog',
+                id: playerId || 0
+              }];
+              
+              sessionStorage.setItem('gameResults', JSON.stringify(minimalResult));
+              localStorage.setItem('gameResults', JSON.stringify(minimalResult));
+            }
+            
             // Redirect to results page
             setTimeout(() => {
               router.push('/game-results');
             }, 500);
           } catch (error) {
             console.error("Error saving game results:", error);
+            
+            // Create emergency fallback result to ensure something is shown
+            try {
+              const emergencyResult = [{
+                name: playerInfo?.name || 'Player',
+                score: stats.totalScore,
+                correctAnswers: stats.correctAnswers,
+                totalQuestions: stats.totalQuestions,
+                avatar: playerInfo?.avatar || 'dog',
+                id: playerId || 0
+              }];
+              
+              sessionStorage.setItem('gameResults', JSON.stringify(emergencyResult));
+              localStorage.setItem('gameResults', JSON.stringify(emergencyResult));
+              console.log("Created emergency fallback result before redirecting");
+            } catch (e) {
+              console.error("Failed to create emergency fallback:", e);
+            }
+            
             router.push('/game-results');
           }
         } catch (calcError) {
           console.error("Error calculating final score:", calcError);
+          
+          // Create a basic minimal result to ensure something shows up
+          try {
+            if (playerInfo) {
+              const minimalResult = [{
+                name: playerInfo?.name || 'Player',
+                score: 0,
+                correctAnswers: 0,
+                totalQuestions: quizData?.questions?.length || 0,
+                avatar: playerInfo?.avatar || 'dog'
+              }];
+              
+              sessionStorage.setItem('gameResults', JSON.stringify(minimalResult));
+              localStorage.setItem('gameResults', JSON.stringify(minimalResult));
+              console.log("Created minimal result before redirecting due to calculation error");
+            }
+          } catch (e) {
+            console.error("Failed to create minimal result:", e);
+          }
           
           // Even if score calculation fails, still try to redirect to results page
           setTimeout(() => {
@@ -673,39 +741,162 @@ export default function GamePage() {
     const totalQuestions = quizData?.questions?.length || 0;
     const accuracy = totalQuestions > 0 ? (correctAnswers / totalQuestions) * 100 : 0;
     
-    return {
-      totalScore: score,
+    // Calculate total score from all submitted answers
+    let calculatedTotalScore = 0;
+    
+    // Use submitted answers with scores if available
+    if (allSubmittedAnswers.length > 0 && allSubmittedAnswers.some(a => a.score !== undefined)) {
+      calculatedTotalScore = allSubmittedAnswers.reduce((sum, a) => sum + (a.score || 0), 0);
+      console.log("📊 Calculated total score from submitted answers:", calculatedTotalScore);
+    } else {
+      // Fallback to calculated score from state
+      calculatedTotalScore = score;
+      console.log("📊 Using score from state:", calculatedTotalScore);
+    }
+    
+    // Calculate average response time
+    const totalTime = answersRecord.reduce((sum, a) => sum + (a.timeTaken || 0), 0);
+    const averageTime = answersRecord.length > 0 ? totalTime / answersRecord.length : 0;
+    
+    // Create full stats object
+    const stats = {
+      totalScore: calculatedTotalScore,
       correctAnswers,
       totalQuestions,
-      accuracy: Math.round(accuracy)
+      accuracy: Math.round(accuracy),
+      averageTime: parseFloat(averageTime.toFixed(1)),
+      timeBonus: Math.floor(calculatedTotalScore * 0.1) // Estimate time bonus
     };
+    
+    console.log("📊 Final game stats:", stats);
+    return stats;
   };
 
+  // Add a useEffect to store the latest score data for the results page
+  useEffect(() => {
+    // Make sure we store the latest score whenever it changes
+    if (allSubmittedAnswers.length > 0) {
+      // Create a player result object for the results page
+      const playerData = sessionStorage.getItem('currentPlayer') || localStorage.getItem('currentPlayer');
+      // Use a properly typed playerInfo object
+      let playerInfo: {
+        playerId: number;
+        name?: string;
+        avatar?: string;
+        team?: string;
+        id?: number;
+      } = { playerId: 0, name: 'Player', avatar: 'alligator' };
+      
+      try {
+        if (playerData) {
+          playerInfo = JSON.parse(playerData);
+        }
+      } catch (e) {
+        console.error("Error parsing player data:", e);
+      }
+      
+      // Calculate the final stats
+      const stats = calculateStats();
+      
+      // Create the game result object
+      const gameResult = {
+        name: playerInfo.name || 'Player',
+        avatar: playerInfo.avatar || 'alligator',
+        score: stats.totalScore,
+        correctAnswers: stats.correctAnswers,
+        totalQuestions: stats.totalQuestions,
+        timeBonus: stats.timeBonus,
+        averageAnswerTime: stats.averageTime,
+        group: playerInfo.team || null,
+        id: playerInfo.playerId || playerInfo.id || 0
+      };
+      
+      console.log("🎮 Storing game result:", gameResult);
+      
+      // Store the result for the results page
+      sessionStorage.setItem('gameResults', JSON.stringify([gameResult]));
+      localStorage.setItem('gameResults', JSON.stringify([gameResult]));
+    }
+  }, [allSubmittedAnswers, score]);
+
   // Add a direct API call function to use exact player ID (bypassing any service layers)
-  const submitAnswerDirectly = (exactPlayerId: number, questionId: number, isCorrect: boolean, responseTime: number, answer: string) => {
+  const submitAnswerDirectly = (exactPlayerId: number, questionId: number, isCorrect: boolean, responseTime: number, answer: string, score: number) => {
     try {
+      // ⚠️ CRITICAL CHECK - If this isn't your actual player ID, we need to find where it's coming from
+      // Log suspicious values to help debug
+      if (exactPlayerId > 10000) {
+        console.error(`⚠️ SUSPICIOUS PLAYER ID: ${exactPlayerId} - This is likely a generated ID, not from the API`);
+        console.error("Current playerInfo object:", JSON.stringify(playerInfo, null, 2));
+        console.error("SessionStorage playerInfo:", sessionStorage.getItem('currentPlayer'));
+        
+        // Try to recover by getting the correct ID from storage
+        try {
+          const stored = sessionStorage.getItem('currentPlayer');
+          if (stored) {
+            const parsed = JSON.parse(stored);
+            if (parsed.playerId && parsed.playerId < 10000) {
+              console.log(`🔄 RECOVERING with stored playerId: ${parsed.playerId}`);
+              exactPlayerId = Number(parsed.playerId);
+            }
+          }
+        } catch (e) {
+          console.error("Error recovering playerId:", e);
+        }
+      }
+      
       // Ensure ID is actually a number
       const numericPlayerId = Number(exactPlayerId);
       
+      // Debug player ID information
+      console.log(`🔍 PLAYER ID DEBUG:
+      - Original exactPlayerId: ${exactPlayerId} (type: ${typeof exactPlayerId})
+      - Converted numericPlayerId: ${numericPlayerId} (type: ${typeof numericPlayerId})
+      - Is valid number: ${!isNaN(numericPlayerId)}
+      - Player info from storage: ${sessionStorage.getItem('currentPlayer')}`);
+      
+      // Ensure responseTime is an integer
+      const intResponseTime = Math.round(responseTime);
+      
       console.log(`▶️ DIRECT SUBMIT: Using player ID ${numericPlayerId} for question ${questionId}`);
       
-      // Create payload with the exact player ID (no transformations)
+      // Get the session ID and quiz ID if available
+      let quizId = null;
+      let sessionCode = null;
+      try {
+        if (quizData) {
+          quizId = quizData.id;
+          console.log(`Found quizId: ${quizId}`);
+        }
+        
+        // Try to get sessionId from URL
+        const urlSearchParams = new URLSearchParams(window.location.search);
+        sessionCode = urlSearchParams.get('code');
+        if (sessionCode) {
+          console.log(`Found session code: ${sessionCode}`);
+        }
+      } catch (e) {
+        console.error("Error getting session/quiz info:", e);
+      }
+      
+      // Create payload without wrapper (this format works)
       const payload = {
         id: 0,
         playerId: numericPlayerId,
-        questionId: questionId,
+        questionId: Number(questionId), // Also ensure questionId is numeric
         answeredAt: new Date().toISOString(),
         isCorrect: isCorrect,
-        responseTime: responseTime,
-        answer: answer
+        responseTime: intResponseTime, // Use integer value
+        answer: answer,
+        score: score // Add calculated score to the answer data
       };
       
-      console.log("▶️ DIRECT SUBMIT PAYLOAD:", payload);
+      // Log the payload we're sending
+      console.log("▶️ DIRECT SUBMIT PAYLOAD:", JSON.stringify(payload, null, 2));
       
-      // Direct API call
+      // Make a single API call with the unwrapped payload - which has been confirmed to work
       return axios.post(
         `${API_BASE_URL}/api/PlayerAnswer`,
-        { playerAnswerDto: payload },
+        payload, // Direct payload without wrapper
         {
           headers: {
             'Content-Type': 'application/json',
@@ -718,7 +909,7 @@ export default function GamePage() {
       }).catch(error => {
         console.error("❌ DIRECT SUBMIT ERROR:", error);
         if (error.response) {
-          console.error("❌ API ERROR:", error.response.data);
+          console.error("❌ API ERROR RESPONSE:", error.response.data);
         }
         throw error;
       });
@@ -736,7 +927,7 @@ export default function GamePage() {
     setSelectedAnswer(index);
     setSubmittedAnswer(index);
     setIsCorrect(isAnswerCorrect);
-    setFeedbackColor(isCorrect ? 'correct' : 'incorrect');
+    setFeedbackColor(isAnswerCorrect ? 'correct' : 'incorrect');
     setIsFeedbackShown(true);
     
     // Calculate elapsed time
@@ -746,9 +937,19 @@ export default function GamePage() {
     );
     setAnswerTime(parseFloat(elapsedTime.toFixed(1)));
     
+    // Ensure elapsedTime is an integer for the API
+    const intElapsedTime = Math.round(elapsedTime);
+    
     // Calculate points based on speed and correctness
     const pointsForQuestion = currentQuestion.points || 100;
-    const timeRatio = elapsedTime / (currentQuestion.timeLimit || DEFAULT_TIMER_DURATION);
+    const timeLimit = currentQuestion.timeLimit || DEFAULT_TIMER_DURATION;
+    const timeRatio = elapsedTime / timeLimit;
+    
+    // Score formula: base points * (1 - (time taken / time limit) * 0.5)
+    // This means:
+    // - If you answer immediately (timeRatio = 0), you get full points (pointsForQuestion)
+    // - If you answer at the last second (timeRatio = 1), you get half points (pointsForQuestion * 0.5)
+    // - Linear scaling in between
     const timeMultiplier = 1 - timeRatio * 0.5; // Max multiplier is 1, min is 0.5
     
     let currentPointsEarned = 0;
@@ -782,44 +983,82 @@ export default function GamePage() {
     
     // DIRECT ID FIX: Use the exact player ID from storage to submit the answer
     try {
-      // Log player ID debug info
-      console.log("🔄 Current player info for submission:", playerInfo);
+      // Get player info directly from storage for the most up-to-date values
+      const freshPlayerInfo = sessionStorage.getItem('currentPlayer');
+      let storedPlayerId = null;
       
-      // Extract the exact ID directly from playerInfo
-      // This ID should match what was returned when player was created
-      const exactPlayerId = playerInfo?.id;
+      if (freshPlayerInfo) {
+        try {
+          const parsed = JSON.parse(freshPlayerInfo);
+          if (parsed.playerId) {
+            storedPlayerId = Number(parsed.playerId);
+            console.log(`✅ Found stored playerId: ${storedPlayerId}`);
+          }
+        } catch (e) {
+          console.error("Error parsing player info:", e);
+        }
+      }
+      
+      // Log player ID debug info
+      console.log("🔄 Current player info for submission:", JSON.stringify(playerInfo, null, 2));
+      
+      // Use the stored playerId if available, otherwise fall back to playerInfo
+      // Prioritize the playerId field, fall back to id if needed
+      const exactPlayerId = storedPlayerId || playerInfo?.playerId || playerInfo?.id;
+      const exactQuestionId = currentQuestion?.id;
+      
+      // Add debug to show the exact ID being used
+      console.log(`🔹 PLAYER AND QUESTION ID DEBUGGING:
+      - playerId from playerInfo: ${playerInfo?.playerId} (type: ${typeof playerInfo?.playerId})
+      - id from playerInfo: ${playerInfo?.id} (type: ${typeof playerInfo?.id})
+      - USING exactPlayerId: ${exactPlayerId} (type: ${typeof exactPlayerId})
+      - Question ID: ${exactQuestionId} (type: ${typeof exactQuestionId})
+      - Current question data: ${JSON.stringify(currentQuestion, null, 2)}`);
       
       if (!exactPlayerId) {
         console.error("⛔ No player ID found in playerInfo!");
         return;
       }
       
+      if (!exactQuestionId) {
+        console.error("⛔ No question ID found in currentQuestion!");
+        return;
+      }
+      
       console.log(`🔄 Using exact player ID for submission: ${exactPlayerId}`);
       
-      // Record submission locally for score calculation
+      // Record submission locally for score calculation - ENSURE SCORE IS INCLUDED
       const answerData = {
         id: 0,
         playerId: exactPlayerId,
-        questionId: currentQuestion?.id,
+        questionId: exactQuestionId,
         answeredAt: new Date().toISOString(),
         isCorrect: isAnswerCorrect,
-        responseTime: elapsedTime,
-        answer: answerLetter
+        responseTime: intElapsedTime, // Use integer value
+        answer: answerLetter,
+        score: currentPointsEarned // CRITICAL: Include the calculated score
       };
       
+      // Log the answer data with score
+      console.log("🔢 Answer with score:", answerData);
+      
+      // Save to both session and local storage for redundancy
       setAllSubmittedAnswers(prev => {
         const newAnswers = [...prev, answerData];
+        // Store in both session and local storage to prevent data loss
         sessionStorage.setItem('playerAnswers', JSON.stringify(newAnswers));
+        localStorage.setItem('playerAnswers', JSON.stringify(newAnswers));
         return newAnswers;
       });
       
       // COMPLETELY BYPASS the regular service and make a direct API call
       submitAnswerDirectly(
         exactPlayerId,
-        currentQuestion?.id,
+        exactQuestionId,
         isAnswerCorrect,
-        elapsedTime,
-        answerLetter
+        intElapsedTime, // Use integer value
+        answerLetter,
+        currentPointsEarned // Pass calculated score to direct submission function
       ).then(() => {
         console.log("✅ Answer submitted successfully using direct method");
       }).catch((error) => {
@@ -856,13 +1095,39 @@ export default function GamePage() {
     // Calculate the full time limit
     const timeLimit = currentQuestion.timeLimit || DEFAULT_TIMER_DURATION;
     
+    // Make sure timeLimit is an integer
+    const intTimeLimit = Math.round(timeLimit);
+    
     // DIRECT ID FIX: Use the exact player ID from storage to submit the timeout
     try {
-      // Log player ID debug info
-      console.log("🔄 Current player info for timeout:", playerInfo);
+      // Get player info directly from storage for the most up-to-date values
+      const freshPlayerInfo = sessionStorage.getItem('currentPlayer');
+      let storedPlayerId = null;
       
-      // Extract the exact ID directly from playerInfo
-      const exactPlayerId = playerInfo?.id;
+      if (freshPlayerInfo) {
+        try {
+          const parsed = JSON.parse(freshPlayerInfo);
+          if (parsed.playerId) {
+            storedPlayerId = Number(parsed.playerId);
+            console.log(`✅ Found stored playerId for timeout: ${storedPlayerId}`);
+          }
+        } catch (e) {
+          console.error("Error parsing player info for timeout:", e);
+        }
+      }
+      
+      // Log player ID debug info
+      console.log("🔄 Current player info for timeout:", JSON.stringify(playerInfo, null, 2));
+      
+      // Use the stored playerId if available, otherwise fall back to playerInfo
+      // Prioritize the playerId field, fall back to id if needed
+      const exactPlayerId = storedPlayerId || playerInfo?.playerId || playerInfo?.id;
+      
+      // Add debug to show the exact ID being used
+      console.log(`🔹 TIMEOUT PLAYER ID DEBUGGING:
+      - playerId from playerInfo: ${playerInfo?.playerId}
+      - id from playerInfo: ${playerInfo?.id}
+      - USING exactPlayerId: ${exactPlayerId}`);
       
       if (!exactPlayerId) {
         console.error("⛔ No player ID found in playerInfo for timeout!");
@@ -884,13 +1149,20 @@ export default function GamePage() {
         questionId: questionId,
         answeredAt: new Date().toISOString(),
         isCorrect: false,
-        responseTime: timeLimit,
-        answer: 'T' // 'T' for timeout
+        responseTime: intTimeLimit, // Use integer value
+        answer: 'T', // 'T' for timeout
+        score: 0 // CRITICAL: Include the score (0 for timeout)
       };
       
+      // Log the timeout data
+      console.log("⏰ Timeout with score:", timeoutData);
+      
+      // Save to both session and local storage for redundancy
       setAllSubmittedAnswers(prev => {
         const newAnswers = [...prev, timeoutData];
+        // Store in both session and local storage to prevent data loss
         sessionStorage.setItem('playerAnswers', JSON.stringify(newAnswers));
+        localStorage.setItem('playerAnswers', JSON.stringify(newAnswers));
         return newAnswers;
       });
       
@@ -899,8 +1171,9 @@ export default function GamePage() {
         exactPlayerId,
         questionId,
         false, // always false for timeout
-        timeLimit,
-        'T' // 'T' for timeout
+        intTimeLimit,
+        'T', // 'T' for timeout
+        0 // No points for timeout
       ).then(() => {
         console.log("✅ Timeout submitted successfully using direct method");
       }).catch((error) => {
@@ -916,7 +1189,9 @@ export default function GamePage() {
       selectedAnswer: null,
       isCorrect: false,
       timeTaken: timeLimit,
-      correctAnswer: currentQuestion.correctAnswer
+      correctAnswer: currentQuestion.correctAnswer,
+      points: 0, // Add points (0) for timeout
+      timeBonus: 0 // No time bonus for timeout
     }]);
     
     // Show correct answer after a delay
@@ -1144,6 +1419,44 @@ export default function GamePage() {
         }} 
       />
       
+      {/* Add progress through quiz indicator */}
+      <Box sx={{ 
+        width: '100%', 
+        display: 'flex', 
+        justifyContent: 'center', 
+        alignItems: 'center',
+        py: 1, 
+        bgcolor: 'rgba(255,255,255,0.1)'
+      }}>
+        <Box sx={{ width: '80%', maxWidth: 600, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          <Box sx={{ 
+            width: '100%', 
+            display: 'flex', 
+            justifyContent: 'space-between', 
+            mb: 0.5,
+            px: 1,
+            color: 'rgba(255,255,255,0.8)',
+            fontSize: '0.75rem'
+          }}>
+            <span>Question Progress</span>
+            <span>{currentQuestionIndex + 1} of {quizData?.questions?.length || 0}</span>
+          </Box>
+          <LinearProgress 
+            variant="determinate" 
+            value={(currentQuestionIndex / (quizData?.questions?.length - 1 || 1)) * 100} 
+            sx={{ 
+              width: '100%', 
+              height: 8, 
+              borderRadius: 4,
+              bgcolor: 'rgba(255,255,255,0.2)',
+              '& .MuiLinearProgress-bar': {
+                bgcolor: 'white'
+              }
+            }}
+          />
+        </Box>
+      </Box>
+      
       <Box sx={{ 
         p: 2, 
         display: 'flex', 
@@ -1168,6 +1481,21 @@ export default function GamePage() {
           <TimerIcon />
           <Typography variant="h6" fontWeight="bold">
             {timeLeft}s
+          </Typography>
+        </Box>
+        
+        <Box sx={{ 
+          display: 'flex', 
+          alignItems: 'center',
+          gap: 1,
+          p: 1,
+          px: 2,
+          borderRadius: 4,
+          bgcolor: 'rgba(255,255,255,0.2)'
+        }}>
+          <TrophyIcon sx={{ color: '#FFD700' }} />
+          <Typography variant="h6" fontWeight="bold">
+            {score}
           </Typography>
         </Box>
         
@@ -1201,7 +1529,7 @@ export default function GamePage() {
               bgcolor: 'white',
               boxShadow: '0 8px 30px rgba(0,0,0,0.1)',
               mb: 4,
-              minHeight: '120px',
+              minHeight: '150px', // Increased height for additional details
               display: 'flex',
               flexDirection: 'column',
               justifyContent: 'center',
@@ -1209,14 +1537,29 @@ export default function GamePage() {
               overflow: 'hidden'
             }}
           >
-            <Typography 
-              variant="h5" 
-              align="center"
-              sx={{ fontWeight: 'bold', color: '#333' }}
-            >
-              {currentQuestion?.question || 'Loading question...'}
-            </Typography>
+            {/* Question Type Badge */}
+            <Box sx={{ 
+              position: 'absolute',
+              top: 10,
+              left: 10,
+              display: 'flex',
+              alignItems: 'center',
+              bgcolor: '#f0f0f0',
+              px: 1.5,
+              py: 0.5,
+              borderRadius: 4,
+              fontSize: '0.8rem',
+              color: '#555'
+            }}>
+              {currentQuestion?.questionType === 'true-false' ? (
+                <PriorityHighIcon sx={{ fontSize: '1rem', mr: 0.5 }} />
+              ) : (
+                <QuestionAnswerIcon sx={{ fontSize: '1rem', mr: 0.5 }} />
+              )}
+              {currentQuestion?.questionType === 'true-false' ? 'True/False' : 'Multiple Choice'}
+            </Box>
             
+            {/* Points Badge */}
             <Box sx={{ 
               position: 'absolute',
               top: 10,
@@ -1230,10 +1573,88 @@ export default function GamePage() {
               fontSize: '0.8rem',
               color: '#555'
             }}>
+              <TrophyIcon sx={{ fontSize: '1rem', mr: 0.5, color: '#FFD700' }} />
               <Box sx={{ mr: 1, fontWeight: 'bold' }}>
                 {currentQuestion?.points || 100}
               </Box>
               points
+            </Box>
+            
+            {/* Question Number */}
+            <Box sx={{ 
+              mb: 2,
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+            }}>
+              <Chip 
+                icon={<QuizIcon />}
+                label={`Question ${currentQuestionIndex + 1} of ${quizData?.questions?.length || 0}`}
+                sx={{ 
+                  bgcolor: 'primary.main', 
+                  color: 'white',
+                  fontWeight: 'medium',
+                  mb: 1
+                }}
+              />
+            </Box>
+            
+            {/* Question Text */}
+            <Typography 
+              variant="h5" 
+              align="center"
+              sx={{ fontWeight: 'bold', color: '#333', mb: 2 }}
+            >
+              {currentQuestion?.question || 'Loading question...'}
+            </Typography>
+            
+            {/* Question Details */}
+            <Box sx={{ 
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              gap: 2,
+              mt: 1
+            }}>
+              {/* Time Limit Badge */}
+              <Chip
+                icon={<TimerIcon sx={{ color: getTimerColor(timerPercentage) }} />}
+                label={`${currentQuestion?.timeLimit || DEFAULT_TIMER_DURATION}s`}
+                variant="outlined"
+                size="small"
+              />
+              
+              {/* Speed Bonus Badge */}
+              <Tooltip 
+                title={
+                  <React.Fragment>
+                    <Typography variant="subtitle2" color="inherit">Scoring Explanation</Typography>
+                    <Typography variant="body2" sx={{ mt: 1 }}>
+                      Score = base points × (1 - (time taken / time limit) × 0.5)
+                    </Typography>
+                    <Box sx={{ mt: 1 }}>
+                      <Typography variant="body2">
+                        • Answer immediately: 100% of base points
+                      </Typography>
+                      <Typography variant="body2">
+                        • Answer at time limit: 50% of base points
+                      </Typography>
+                      <Typography variant="body2">
+                        • Answer in between: Linear scaling
+                      </Typography>
+                    </Box>
+                  </React.Fragment>
+                }
+                arrow
+                placement="top"
+              >
+                <Chip
+                  icon={<BoltIcon sx={{ color: '#FF9800' }} />}
+                  label="Speed Bonus"
+                  variant="outlined"
+                  size="small"
+                />
+              </Tooltip>
             </Box>
           </Paper>
         </motion.div>
@@ -1448,6 +1869,53 @@ export default function GamePage() {
               }}>
                 +{pointsEarned} points
               </Box>
+              
+              {/* Enhanced score breakdown */}
+              {pointsEarned > 0 && (
+                <Box sx={{ mt: 3, bgcolor: 'rgba(255,255,255,0.1)', p: 2, borderRadius: 2 }}>
+                  <Typography variant="subtitle2" color="rgba(255,255,255,0.9)" sx={{ mb: 1 }}>
+                    Score Breakdown:
+                  </Typography>
+                  
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                    <Typography variant="body2" color="rgba(255,255,255,0.8)">
+                      Base Points:
+                    </Typography>
+                    <Typography variant="body2" color="white" fontWeight="medium">
+                      {currentQuestion?.points || 100}
+                    </Typography>
+                  </Box>
+                  
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                    <Typography variant="body2" color="rgba(255,255,255,0.8)">
+                      Response Time:
+                    </Typography>
+                    <Typography variant="body2" color="white" fontWeight="medium">
+                      {answerTime.toFixed(1)}s
+                    </Typography>
+                  </Box>
+                  
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                    <Typography variant="body2" color="rgba(255,255,255,0.8)">
+                      Time Bonus:
+                    </Typography>
+                    <Typography variant="body2" color="white" fontWeight="medium">
+                      {Math.round(pointsEarned - (currentQuestion?.points || 100) * 0.5)}
+                    </Typography>
+                  </Box>
+                  
+                  <Divider sx={{ borderColor: 'rgba(255,255,255,0.2)', my: 1 }} />
+                  
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <Typography variant="body2" color="white" fontWeight="medium">
+                      Total Score:
+                    </Typography>
+                    <Typography variant="body2" color="white" fontWeight="bold">
+                      {pointsEarned}
+                    </Typography>
+                  </Box>
+                </Box>
+              )}
               
               {/* Show time bonus information */}
               {pointsEarned > 0 && (

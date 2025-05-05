@@ -37,6 +37,8 @@ import {
   Avatar,
   Badge,
   Tooltip,
+  Snackbar,
+  Alert
 } from '@mui/material';
 import {
   Search as SearchIcon,
@@ -107,6 +109,15 @@ export default function MySetsPage() {
   const [quizQuestions, setQuizQuestions] = useState<any[]>([]);
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [detailsError, setDetailsError] = useState<string | null>(null);
+  const [notification, setNotification] = useState<{
+    open: boolean;
+    message: string;
+    type: 'success' | 'error' | 'info' | 'warning';
+  }>({
+    open: false,
+    message: '',
+    type: 'info'
+  });
 
   // Helper function to ensure data is properly formatted for GameCard
   const formatQuizForDisplay = (quiz: any) => {
@@ -143,19 +154,86 @@ export default function MySetsPage() {
             const response = await quizService.getMyQuizzes(parseInt(currentUser.id));
             
             if (response && response.data) {
-              const formattedQuizzes = Array.isArray(response.data) 
-                ? response.data.map(formatQuizForDisplay)
+              // Filter to ensure we only get quizzes created by this user
+              const serverQuizzes = Array.isArray(response.data) 
+                ? response.data.filter(quiz => {
+                    if (quiz.createdBy) {
+                      return Number(quiz.createdBy) === Number(currentUser.id);
+                    }
+                    return true; // Keep quizzes with no createdBy for backward compatibility
+                  })
                 : [];
               
-              // Save quizzes to sessionStorage for future reference
-              sessionStorage.setItem('myQuizzes', JSON.stringify(formattedQuizzes));
-              console.log("Saved fetched quizzes to sessionStorage:", formattedQuizzes);
+              // Format the quizzes from server
+              const formattedServerQuizzes = serverQuizzes.map(formatQuizForDisplay);
               
-              setMySets(formattedQuizzes);
+              // Get existing quizzes from sessionStorage
+              let localQuizzes = [];
+              try {
+                const storedQuizzes = sessionStorage.getItem('myQuizzes');
+                if (storedQuizzes) {
+                  const parsedQuizzes = JSON.parse(storedQuizzes);
+                  if (Array.isArray(parsedQuizzes)) {
+                    // Filter to only get quizzes from the current user
+                    localQuizzes = parsedQuizzes.filter(quiz => 
+                      quiz.createdBy && Number(quiz.createdBy) === Number(currentUser.id)
+                    );
+                  }
+                }
+              } catch (error) {
+                console.error("Error loading local quizzes:", error);
+                localQuizzes = [];
+              }
+              
+              // Merge server and local quizzes, prioritizing server data for duplicates
+              const serverQuizIds = formattedServerQuizzes.map(quiz => quiz.id);
+              
+              // Keep local quizzes that don't exist on server
+              const uniqueLocalQuizzes = localQuizzes.filter(quiz => 
+                !serverQuizIds.includes(quiz.id)
+              );
+              
+              // Combine server quizzes with unique local quizzes
+              const mergedQuizzes = [...formattedServerQuizzes, ...uniqueLocalQuizzes];
+              
+              // Save the merged quizzes to sessionStorage
+              sessionStorage.setItem('myQuizzes', JSON.stringify(mergedQuizzes));
+              console.log("Saved merged quizzes to sessionStorage:", mergedQuizzes);
+              
+              setMySets(mergedQuizzes);
+              
+              // Show success notification
+              setNotification({
+                open: true,
+                message: `Found ${mergedQuizzes.length} quizzes (${formattedServerQuizzes.length} from server, ${uniqueLocalQuizzes.length} from local storage)`,
+                type: "success"
+              });
             } else {
               console.warn("Quiz API returned null or undefined data");
-              setMySets([]);
-              setError("No quiz data available. The server returned an empty response.");
+              // Just use local quizzes if API returned nothing
+              const storedQuizzes = sessionStorage.getItem('myQuizzes');
+              if (storedQuizzes) {
+                try {
+                  const parsedQuizzes = JSON.parse(storedQuizzes);
+                  const userQuizzes = Array.isArray(parsedQuizzes)
+                    ? parsedQuizzes.filter(quiz => 
+                        quiz.createdBy && Number(quiz.createdBy) === Number(currentUser.id)
+                      )
+                    : [];
+                  setMySets(userQuizzes);
+                  setNotification({
+                    open: true,
+                    message: `API returned no data. Using ${userQuizzes.length} locally stored quizzes.`,
+                    type: "warning"
+                  });
+                } catch (error) {
+                  setMySets([]);
+                  setError("No quiz data available. The server returned an empty response.");
+                }
+              } else {
+                setMySets([]);
+                setError("No quiz data available. The server returned an empty response.");
+              }
             }
           } catch (error: any) {
             console.error("Error fetching quizzes:", error);
@@ -167,10 +245,18 @@ export default function MySetsPage() {
                 const parsedQuizzes = JSON.parse(storedQuizzes);
                 console.log("Using cached quizzes as fallback:", parsedQuizzes);
                 
-                // Map the API quiz format to the format expected by GameCard component
-                const formattedQuizzes = Array.isArray(parsedQuizzes) 
-                  ? parsedQuizzes.map(formatQuizForDisplay)
+                // Filter by user ID here too
+                const userQuizzes = Array.isArray(parsedQuizzes) 
+                  ? parsedQuizzes.filter(quiz => {
+                      if (quiz.createdBy) {
+                        return Number(quiz.createdBy) === Number(currentUser.id);
+                      }
+                      return true;
+                    })
                   : [];
+                
+                // Map the API quiz format to the format expected by GameCard component
+                const formattedQuizzes = userQuizzes.map(formatQuizForDisplay);
                 
                 setMySets(formattedQuizzes);
                 setError("⚠️ Using cached quiz data. Server returned an error: " + (error.message || "Unknown error"));
@@ -220,7 +306,7 @@ export default function MySetsPage() {
 
   // Load sets from sessionStorage when component mounts
   useEffect(() => {
-    // Try to get quizzes from sessionStorage (should only contain the latest created quiz)
+    // Try to get quizzes from sessionStorage
     const storedQuizzes = sessionStorage.getItem('myQuizzes');
     
     if (storedQuizzes) {
@@ -229,10 +315,23 @@ export default function MySetsPage() {
         const parsedQuizzes = JSON.parse(storedQuizzes);
         console.log("Loaded quizzes from sessionStorage:", parsedQuizzes);
         
-        // Map the API quiz format to the format expected by GameCard component
-        const formattedQuizzes = Array.isArray(parsedQuizzes) 
-          ? parsedQuizzes.map(formatQuizForDisplay)
+        // Get current user ID
+        const currentUser = authService.getCurrentUser();
+        const userId = currentUser?.id || 0;
+        
+        // Filter quizzes to only show ones created by the current user
+        const userQuizzes = Array.isArray(parsedQuizzes) 
+          ? parsedQuizzes.filter(quiz => {
+              // If createdBy is available, use it for filtering
+              if (quiz.createdBy) {
+                return Number(quiz.createdBy) === Number(userId);
+              }
+              return true; // Keep quizzes with no createdBy for backward compatibility
+            })
           : [];
+        
+        // Map the API quiz format to the format expected by GameCard component
+        const formattedQuizzes = userQuizzes.map(formatQuizForDisplay);
         
         setMySets(formattedQuizzes);
         setLoading(false);
@@ -339,8 +438,112 @@ export default function MySetsPage() {
     setResultsDialogOpen(false);
   };
   
-  const handleRefreshQuizzes = () => {
-    fetchQuizzesFromAPI();
+  const handleRefreshQuizzes = async () => {
+    setLoading(true);
+    
+    try {
+      // Get current user ID
+      const currentUser = authService.getCurrentUser();
+      const userId = currentUser?.id || 0;
+      
+      if (!userId) {
+        setError("User ID not found. Please log in again.");
+        setLoading(false);
+        return;
+      }
+      
+      // Call API directly to refresh quizzes
+      const response = await quizService.fetchAndStoreMyQuizzes();
+      
+      if (response && response.data) {
+        // Filter to ensure we only get quizzes created by this user
+        const serverQuizzes = Array.isArray(response.data) 
+          ? response.data.filter(quiz => {
+              if (quiz.createdBy) {
+                return Number(quiz.createdBy) === Number(userId);
+              }
+              return true; // Keep quizzes with no createdBy for backward compatibility
+            })
+          : [];
+        
+        const formattedServerQuizzes = serverQuizzes.map(formatQuizForDisplay);
+        
+        // Get existing quizzes from sessionStorage
+        let localQuizzes = [];
+        try {
+          const storedQuizzes = sessionStorage.getItem('myQuizzes');
+          if (storedQuizzes) {
+            const parsedQuizzes = JSON.parse(storedQuizzes);
+            if (Array.isArray(parsedQuizzes)) {
+              // Filter to only get quizzes from the current user
+              localQuizzes = parsedQuizzes.filter(quiz => 
+                quiz.createdBy && Number(quiz.createdBy) === Number(userId)
+              );
+            }
+          }
+        } catch (error) {
+          console.error("Error loading local quizzes:", error);
+          localQuizzes = [];
+        }
+        
+        // Merge server and local quizzes, prioritizing server data for duplicates
+        const serverQuizIds = formattedServerQuizzes.map(quiz => quiz.id);
+        
+        // Keep local quizzes that don't exist on server
+        const uniqueLocalQuizzes = localQuizzes.filter(quiz => 
+          !serverQuizIds.includes(quiz.id)
+        );
+        
+        // Combine server quizzes with unique local quizzes
+        const mergedQuizzes = [...formattedServerQuizzes, ...uniqueLocalQuizzes];
+        
+        // Save the merged quizzes to sessionStorage
+        sessionStorage.setItem('myQuizzes', JSON.stringify(mergedQuizzes));
+        
+        // Update state
+        setMySets(mergedQuizzes);
+        setError(null);
+        
+        // Show success notification
+        setNotification({
+          open: true,
+          message: `Successfully refreshed. Found ${mergedQuizzes.length} quizzes (${formattedServerQuizzes.length} from server, ${uniqueLocalQuizzes.length} from local cache).`,
+          type: "success"
+        });
+      }
+    } catch (error: any) {
+      console.error("Error refreshing quizzes:", error);
+      setError(`Failed to refresh quizzes: ${error.message || 'Unknown error'}`);
+      
+      // Get current user ID again inside this scope to fix TypeScript error
+      const currentUser = authService.getCurrentUser();
+      const userId = currentUser?.id || 0;
+      
+      // Try to load from local storage as fallback
+      try {
+        const storedQuizzes = sessionStorage.getItem('myQuizzes');
+        if (storedQuizzes) {
+          const parsedQuizzes = JSON.parse(storedQuizzes);
+          const userQuizzes = Array.isArray(parsedQuizzes)
+            ? parsedQuizzes.filter(quiz => 
+                quiz.createdBy && Number(quiz.createdBy) === Number(userId)
+              )
+            : [];
+          setMySets(userQuizzes);
+        }
+      } catch (localError) {
+        console.error("Error loading local quizzes as fallback:", localError);
+      }
+      
+      // Show error notification
+      setNotification({
+        open: true,
+        message: `Error refreshing quizzes: ${error.message || 'Unknown error'}`,
+        type: "error"
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleViewDetails = async (game: any) => {
@@ -398,12 +601,38 @@ export default function MySetsPage() {
 
   // Function to clear all quizzes
   const clearAllQuizzes = () => {
-    // Clear sessionStorage
+    // Completely clear the myQuizzes from sessionStorage
     sessionStorage.removeItem('myQuizzes');
+    console.log("Cleared all quizzes from sessionStorage");
+    
     // Clear state
     setMySets([]);
-    // Show confirmation
     setError(null);
+    
+    // Show confirmation
+    setNotification({
+      open: true,
+      message: "Cleared all cached quizzes from your browser",
+      type: "success"
+    });
+  };
+
+  // Function to handle notification close
+  const handleCloseNotification = () => {
+    setNotification({...notification, open: false});
+  };
+
+  // Function to copy game code to clipboard
+  const copyGameCode = (event: React.MouseEvent, code: string) => {
+    event.stopPropagation(); // Prevent triggering the card click
+    navigator.clipboard.writeText(code);
+    
+    // Show notification
+    setNotification({
+      open: true,
+      message: `Game code ${code} copied to clipboard!`,
+      type: "success"
+    });
   };
 
   return (
@@ -423,7 +652,7 @@ export default function MySetsPage() {
                 textTransform: 'none',
               }}
             >
-              Clear All
+              Clear Cache
             </Button>
             <Button
               variant="outlined"
@@ -558,6 +787,38 @@ export default function MySetsPage() {
                           gameCode={String(game.gameCode || "")}
                           gameMode={game.gameMode || "solo"}
                         />
+                        
+                        {/* Add game code display if available */}
+                        {game.gameCode && (
+                          <Box 
+                            onClick={(e) => copyGameCode(e, game.gameCode)}
+                            sx={{ 
+                              position: 'absolute',
+                              bottom: 10,
+                              right: 10,
+                              bgcolor: 'primary.main',
+                              color: 'white',
+                              px: 2,
+                              py: 0.5,
+                              borderRadius: 5,
+                              fontSize: '0.8rem',
+                              fontWeight: 'bold',
+                              boxShadow: 1,
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 0.5,
+                              cursor: 'pointer',
+                              '&:hover': {
+                                bgcolor: 'primary.dark',
+                                transform: 'scale(1.05)'
+                              },
+                              transition: 'all 0.2s ease'
+                            }}
+                          >
+                            <CopyIcon fontSize="small" />
+                            {game.gameCode}
+                          </Box>
+                        )}
                       </Box>
                     </Box>
                   ))}
@@ -612,6 +873,38 @@ export default function MySetsPage() {
                           gameCode={String(game.gameCode || "")}
                           gameMode={game.gameMode || "solo"}
                         />
+                        
+                        {/* Add game code display if available */}
+                        {game.gameCode && (
+                          <Box 
+                            onClick={(e) => copyGameCode(e, game.gameCode)}
+                            sx={{ 
+                              position: 'absolute',
+                              bottom: 10,
+                              right: 10,
+                              bgcolor: 'primary.main',
+                              color: 'white',
+                              px: 2,
+                              py: 0.5,
+                              borderRadius: 5,
+                              fontSize: '0.8rem',
+                              fontWeight: 'bold',
+                              boxShadow: 1,
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 0.5,
+                              cursor: 'pointer',
+                              '&:hover': {
+                                bgcolor: 'primary.dark',
+                                transform: 'scale(1.05)'
+                              },
+                              transition: 'all 0.2s ease'
+                            }}
+                          >
+                            <CopyIcon fontSize="small" />
+                            {game.gameCode}
+                          </Box>
+                        )}
                       </Box>
                     </Box>
                   ))}
@@ -1027,6 +1320,99 @@ export default function MySetsPage() {
             </DialogActions>
           </>
         )}
+      </Dialog>
+
+      {/* Add notification snackbar */}
+      <Snackbar
+        open={notification.open}
+        autoHideDuration={6000}
+        onClose={handleCloseNotification}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert 
+          onClose={handleCloseNotification} 
+          severity={notification.type}
+          sx={{ width: '100%' }}
+        >
+          {notification.message}
+        </Alert>
+      </Snackbar>
+
+      {/* Game Code Dialog */}
+      <Dialog
+        open={codeDialogOpen}
+        onClose={handleCloseCodeDialog}
+        aria-labelledby="game-code-dialog-title"
+        PaperProps={{
+          sx: {
+            borderRadius: 2,
+            overflow: 'hidden',
+            maxWidth: '400px'
+          }
+        }}
+      >
+        <DialogTitle id="game-code-dialog-title" sx={{ pb: 1 }}>
+          Game Code
+        </DialogTitle>
+        <DialogContent>
+          {selectedGame && (
+            <>
+              <Typography variant="body1" sx={{ mb: 2 }}>
+                Share this code with players to join the game:
+              </Typography>
+              <Box sx={{ 
+                display: 'flex', 
+                justifyContent: 'center', 
+                alignItems: 'center',
+                mb: 2
+              }}>
+                <Paper
+                  elevation={0}
+                  sx={{
+                    p: 2,
+                    bgcolor: 'primary.main',
+                    color: 'white',
+                    borderRadius: 2,
+                    textAlign: 'center',
+                    width: '100%'
+                  }}
+                >
+                  <Typography variant="h4" component="div" sx={{ letterSpacing: 2, fontWeight: 'bold' }}>
+                    {selectedGame.gameCode || "No code available"}
+                  </Typography>
+                </Paper>
+              </Box>
+              <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+                <Button
+                  variant="outlined"
+                  color="primary"
+                  startIcon={<CopyIcon />}
+                  onClick={() => {
+                    if (selectedGame.gameCode) {
+                      navigator.clipboard.writeText(selectedGame.gameCode);
+                      setNotification({
+                        open: true,
+                        message: `Game code ${selectedGame.gameCode} copied to clipboard!`,
+                        type: "success"
+                      });
+                    }
+                  }}
+                  sx={{ textTransform: 'none' }}
+                >
+                  Copy Code
+                </Button>
+              </Box>
+            </>
+          )}
+          {!selectedGame && (
+            <Typography color="text.secondary">No game selected or code available.</Typography>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={handleCloseCodeDialog} variant="contained" color="primary">
+            Close
+          </Button>
+        </DialogActions>
       </Dialog>
     </MainLayout>
   );

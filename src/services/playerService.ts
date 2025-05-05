@@ -3,19 +3,20 @@ import axios, { AxiosError } from 'axios';
 const API_BASE_URL = 'https://kahootclone-f7hkd0hwafgbfrfa.southeastasia-01.azurewebsites.net';
 
 interface PlayerData {
-  id: number;
-  userId: number;
+  playerId: number;
   nickname: string;
   playerCode: number;
   avatarUrl: string;
   score: number;
   sessionId: number;
+  userId?: number;
+  id?: number; // Keep as optional for backward compatibility
 }
 
 interface PlayerResponse {
-  data: any;
-  message: string;
   status: number;
+  message: string;
+  data: any; // This can be a Player object or null
 }
 
 // Add interfaces for the score calculation request bodies
@@ -95,9 +96,19 @@ const playerService = {
    */
   createPlayer: async (playerData: PlayerData): Promise<PlayerResponse> => {
     try {
+      // Prepare the data in the format expected by the API
+      const apiPlayerData = {
+        playerId: playerData.playerId || 0,
+        nickname: playerData.nickname,
+        avatarUrl: playerData.avatarUrl,
+        score: playerData.score || 0
+      };
+      
+      console.log("Creating player with API data:", apiPlayerData);
+      
       const response = await axios.post(
         `${API_BASE_URL}/api/Player`, 
-        playerData,
+        apiPlayerData,
         {
           headers: {
             'Content-Type': 'application/json'
@@ -105,7 +116,56 @@ const playerService = {
         }
       );
       
-      return response.data;
+      console.log("Raw API response:", response);
+      
+      // Handle response based on its structure
+      if (response.data) {
+        // Check for different response formats
+        if (response.data.data) {
+          // Standard format with data property
+          console.log("Response has data.data structure");
+          
+          // Transform id to playerId in response data if needed
+          if (response.data.data.id && !response.data.data.playerId) {
+            response.data.data.playerId = response.data.data.id;
+          }
+          
+          return response.data;
+        } else if (response.data.id || response.data.playerId) {
+          // The response.data is directly the player object
+          console.log("Response.data is directly the player object");
+          
+          // If the data has id but no playerId, add it
+          if (response.data.id && !response.data.playerId) {
+            response.data.playerId = response.data.id;
+          }
+          
+          // Wrap in the expected format
+          return {
+            status: response.status,
+            message: "Player created successfully",
+            data: response.data
+          };
+        } else {
+          // Unexpected format, but we still have response.data
+          console.log("Unexpected response format:", response.data);
+          
+          return {
+            status: response.status,
+            message: "Received response in unexpected format",
+            data: response.data // Pass through whatever we got
+          };
+        }
+      } else {
+        // No data in response
+        console.error("No data in API response");
+        
+        return {
+          status: response.status,
+          message: "No data in response",
+          data: null
+        };
+      }
     } catch (error) {
       console.error('Error creating player:', error);
       throw error;
@@ -244,15 +304,15 @@ const playerService = {
     
     const playerCode = hashCode(`${nickname}-${sessionId}-${Date.now()}`);
     
-    // Create the base player data
+    // Create the base player data - match the expected API format
     const playerData: PlayerData & { teamName?: string, groupName?: string, team?: string } = {
-      id: 0, // The server will assign an ID
-      userId: userId,
+      playerId: 0, // The server will assign an ID
       nickname: nickname,
       playerCode: playerCode,
       avatarUrl: playerService.formatAnimalAvatar(animalName, animalColor),
       score: 0, // Initial score is 0
-      sessionId: sessionId
+      sessionId: sessionId,
+      userId: userId // Make this optional
     };
     
     // Add team information if provided
@@ -282,8 +342,8 @@ const playerService = {
       if (playerInfoStr) {
         try {
           const playerInfo = JSON.parse(playerInfoStr);
-          if (playerInfo && playerInfo.id) {
-            playerId = parseInt(String(playerInfo.id));
+          if (playerInfo && playerInfo.playerId) {
+            playerId = parseInt(String(playerInfo.playerId));
             console.log(`Found existing player ID: ${playerId}`);
           }
         } catch (e) {
@@ -306,15 +366,14 @@ const playerService = {
           // Look for a player with matching nickname
           const existingPlayer = sessionPlayers.data.find(p => p.nickname === nickname);
           
-          if (existingPlayer && existingPlayer.id) {
+          if (existingPlayer && existingPlayer.playerId) {
             // Found a matching player, use their ID
-            playerId = parseInt(String(existingPlayer.id));
+            playerId = parseInt(String(existingPlayer.playerId));
             console.log(`Found matching player ID from session: ${playerId}`);
             
             // Update stored player info
             if (playerInfoStr) {
               const updatedInfo = JSON.parse(playerInfoStr);
-              updatedInfo.id = playerId;
               updatedInfo.playerId = playerId;
               sessionStorage.setItem('currentPlayer', JSON.stringify(updatedInfo));
               localStorage.setItem('currentPlayer', JSON.stringify(updatedInfo));
@@ -341,14 +400,13 @@ const playerService = {
       // Create player in the API
       const response = await playerService.createPlayer(playerData);
       
-      if (response && response.data && response.data.id) {
-        playerId = parseInt(String(response.data.id));
+      if (response && response.data && response.data.data && response.data.data.playerId) {
+        playerId = parseInt(String(response.data.data.playerId));
         console.log(`Created new player with ID: ${playerId}`);
         
         // Update stored player info
         if (playerInfoStr) {
           const updatedInfo = JSON.parse(playerInfoStr);
-          updatedInfo.id = playerId;
           updatedInfo.playerId = playerId;
           sessionStorage.setItem('currentPlayer', JSON.stringify(updatedInfo));
           localStorage.setItem('currentPlayer', JSON.stringify(updatedInfo));
@@ -388,34 +446,57 @@ const playerService = {
       // Get player information from storage to double-check
       const playerInfoStr = sessionStorage.getItem('currentPlayer');
       
-      // CRITICAL: Never modify the player ID that was passed in
-      // The game page is passing the exact ID from storage that matches the player record
+      // CRITICAL: Make sure playerId is a number
+      const numericPlayerId = Number(playerId);
       
-      console.log(`Submitting answer with exact playerId: ${playerId} and questionId: ${questionId}`);
+      // Special validation for playerId
+      if (isNaN(numericPlayerId) || numericPlayerId <= 0) {
+        console.error(`Invalid playerId: ${playerId} (${numericPlayerId}). Must be a positive number.`);
+        throw new Error(`Invalid playerId: ${playerId}. Must be a positive number.`);
+      }
+      
+      // Log player info from session storage
+      if (playerInfoStr) {
+        try {
+          const playerInfo = JSON.parse(playerInfoStr);
+          console.log(`Player from storage: 
+          - ID in storage: ${playerInfo.id}
+          - PlayerId in storage: ${playerInfo.playerId}
+          - Using for submission: ${numericPlayerId}`);
+        } catch (e) {
+          console.error('Error parsing player info from storage:', e);
+        }
+      }
+      
+      // CRITICAL: Make sure responseTime is an integer
+      const intResponseTime = Math.round(responseTime);
+      
+      console.log(`Submitting answer with numericPlayerId: ${numericPlayerId} and questionId: ${questionId}`);
       
       // Handle timeout answer with special 'T' value
       const finalAnswer = answer === '' || answer === null ? 'T' : answer;
       
-      // Create answer object with EXACT IDs from parameters
+      // Create answer object matching the exact API format
       const answerData = {
         id: 0,
-        playerId: playerId, // Use exact value, no conversion
-        questionId: questionId, // Use exact value, no conversion
+        playerId: numericPlayerId, // Use exact numeric value
+        questionId: Number(questionId), // Also ensure questionId is numeric
         answeredAt: new Date().toISOString(),
         isCorrect: isCorrect,
-        responseTime: responseTime,
+        responseTime: intResponseTime, // Use integer value
         answer: finalAnswer
       };
 
       console.log("Final player answer object:", answerData);
       
-      // Fix: Wrap in playerAnswerDto as required by API
+      // The API requires the playerAnswerDto wrapper
       const response = await axios.post(
         `${API_BASE_URL}/api/PlayerAnswer`,
-        { playerAnswerDto: answerData }, // Wrap answer in playerAnswerDto field
+        { playerAnswerDto: answerData }, // Wrap in playerAnswerDto as required by API
         {
           headers: {
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
           }
         }
       ).catch((error) => {
@@ -516,29 +597,44 @@ const playerService = {
     try {
       console.log("Calculating solo score for player:", playerAnswer.playerId);
       
+      // Make a copy to avoid modifying the original objects
+      const answerCopy = { ...playerAnswer };
+      const questionCopy = { ...question };
+      
+      // Ensure playerId is a number
+      answerCopy.playerId = Number(answerCopy.playerId);
+      
+      // Ensure questionId is a number
+      answerCopy.questionId = Number(answerCopy.questionId);
+      
       // Validate required fields
-      if (!playerAnswer.playerId || !playerAnswer.questionId || !question.id) {
+      if (!answerCopy.playerId || !answerCopy.questionId || !questionCopy.id) {
         console.error("Missing required fields for solo score calculation");
-        console.error("Player answer:", playerAnswer);
-        console.error("Question:", question);
+        console.error("Player answer:", answerCopy);
+        console.error("Question:", questionCopy);
         throw new Error("Missing required fields for solo score calculation");
       }
       
-      // Notice the capital letters in PlayerAnswer and Question - API expects this casing
+      // Log the actual data being sent to the API for debugging
+      console.log("SoloScore request payload:", {
+        playerAnswer: answerCopy,
+        question: questionCopy
+      });
+      
+      // The API expects both PlayerAnswer and Question directly in the request body
       const requestData = {
-        PlayerAnswer: playerAnswer, // Changed to capital P
-        Question: question // Changed to capital Q
+        playerAnswer: answerCopy,
+        question: questionCopy
       };
       
-      console.log("SoloScore request with correct casing:", requestData);
-      
-      // Fix: Use correct field names with proper casing
+      // Send request data directly
       const response = await axios.post(
         `${API_BASE_URL}/api/PlayerAnswer/SoloScore`,
-        requestData, // No longer need the "request" wrapper, just proper cased fields
+        requestData,
         {
           headers: {
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
           }
         }
       );
@@ -586,6 +682,17 @@ const playerService = {
         questions: questions.length
       });
       
+      // Ensure all playerIds and questionIds are numbers
+      playerAnswers.forEach(answer => {
+        answer.playerId = Number(answer.playerId);
+        answer.questionId = Number(answer.questionId);
+      });
+      
+      groupMembers.forEach(member => {
+        member.playerId = Number(member.playerId);
+        member.groupId = Number(member.groupId);
+      });
+      
       // Validate required data
       if (!groupMembers.length || !playerAnswers.length || !questions.length) {
         console.error("Missing required data for group score calculation");
@@ -595,19 +702,19 @@ const playerService = {
         throw new Error("Missing required data for group score calculation");
       }
       
-      // Use proper casing as expected by the API
+      // Use proper format for the API
       const requestData = {
-        GroupMembers: groupMembers, // Changed to capital G and M 
-        PlayerAnswers: playerAnswers, // Changed to capital P and A
-        Questions: questions // Changed to capital Q
+        groupMembers: groupMembers,
+        playerAnswers: playerAnswers,
+        questions: questions
       };
       
-      console.log("GroupScore request with correct casing:", requestData);
+      console.log("GroupScore request:", requestData);
       
-      // Use proper casing
+      // Send request directly
       const response = await axios.post(
         `${API_BASE_URL}/api/PlayerAnswer/GroupScore`,
-        requestData, // No longer need the "request" wrapper, just proper cased fields
+        requestData,
         {
           headers: {
             'Content-Type': 'application/json',
