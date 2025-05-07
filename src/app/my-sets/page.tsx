@@ -58,6 +58,8 @@ import {
   ContentCopy as CopyIcon,
   Group as GroupIcon,
   Person as PersonIcon,
+  Favorite as FavoriteIcon,
+  FavoriteBorder as FavoriteBorderIcon,
 } from '@mui/icons-material';
 import GameCard from '../components/GameCard';
 import authService from '@/services/authService';
@@ -118,6 +120,7 @@ export default function MySetsPage() {
     message: '',
     type: 'info'
   });
+  const [favoriteLoading, setFavoriteLoading] = useState<{[key: string]: boolean}>({});
 
   // Helper function to ensure data is properly formatted for GameCard
   const formatQuizForDisplay = (quiz: any) => {
@@ -167,108 +170,23 @@ export default function MySetsPage() {
               // Format the quizzes from server
               const formattedServerQuizzes = serverQuizzes.map(formatQuizForDisplay);
               
-              // Get existing quizzes from sessionStorage
-              let localQuizzes = [];
-              try {
-                const storedQuizzes = sessionStorage.getItem('myQuizzes');
-                if (storedQuizzes) {
-                  const parsedQuizzes = JSON.parse(storedQuizzes);
-                  if (Array.isArray(parsedQuizzes)) {
-                    // Filter to only get quizzes from the current user
-                    localQuizzes = parsedQuizzes.filter(quiz => 
-                      quiz.createdBy && Number(quiz.createdBy) === Number(currentUser.id)
-                    );
-                  }
-                }
-              } catch (error) {
-                console.error("Error loading local quizzes:", error);
-                localQuizzes = [];
-              }
-              
-              // Merge server and local quizzes, prioritizing server data for duplicates
-              const serverQuizIds = formattedServerQuizzes.map(quiz => quiz.id);
-              
-              // Keep local quizzes that don't exist on server
-              const uniqueLocalQuizzes = localQuizzes.filter(quiz => 
-                !serverQuizIds.includes(quiz.id)
-              );
-              
-              // Combine server quizzes with unique local quizzes
-              const mergedQuizzes = [...formattedServerQuizzes, ...uniqueLocalQuizzes];
-              
-              // Save the merged quizzes to sessionStorage
-              sessionStorage.setItem('myQuizzes', JSON.stringify(mergedQuizzes));
-              console.log("Saved merged quizzes to sessionStorage:", mergedQuizzes);
-              
-              setMySets(mergedQuizzes);
+              setMySets(formattedServerQuizzes);
               
               // Show success notification
               setNotification({
                 open: true,
-                message: `Found ${mergedQuizzes.length} quizzes (${formattedServerQuizzes.length} from server, ${uniqueLocalQuizzes.length} from local storage)`,
+                message: `Found ${formattedServerQuizzes.length} quizzes`,
                 type: "success"
               });
             } else {
               console.warn("Quiz API returned null or undefined data");
-              // Just use local quizzes if API returned nothing
-              const storedQuizzes = sessionStorage.getItem('myQuizzes');
-              if (storedQuizzes) {
-                try {
-                  const parsedQuizzes = JSON.parse(storedQuizzes);
-                  const userQuizzes = Array.isArray(parsedQuizzes)
-                    ? parsedQuizzes.filter(quiz => 
-                        quiz.createdBy && Number(quiz.createdBy) === Number(currentUser.id)
-                      )
-                    : [];
-                  setMySets(userQuizzes);
-                  setNotification({
-                    open: true,
-                    message: `API returned no data. Using ${userQuizzes.length} locally stored quizzes.`,
-                    type: "warning"
-                  });
-                } catch (error) {
-                  setMySets([]);
-                  setError("No quiz data available. The server returned an empty response.");
-                }
-              } else {
-                setMySets([]);
-                setError("No quiz data available. The server returned an empty response.");
-              }
+              setMySets([]);
+              setError("No quiz data available. The server returned an empty response.");
             }
           } catch (error: any) {
             console.error("Error fetching quizzes:", error);
-            
-            // Try to use any quizzes from sessionStorage as fallback
-            const storedQuizzes = sessionStorage.getItem('myQuizzes');
-            if (storedQuizzes) {
-              try {
-                const parsedQuizzes = JSON.parse(storedQuizzes);
-                console.log("Using cached quizzes as fallback:", parsedQuizzes);
-                
-                // Filter by user ID here too
-                const userQuizzes = Array.isArray(parsedQuizzes) 
-                  ? parsedQuizzes.filter(quiz => {
-                      if (quiz.createdBy) {
-                        return Number(quiz.createdBy) === Number(currentUser.id);
-                      }
-                      return true;
-                    })
-                  : [];
-                
-                // Map the API quiz format to the format expected by GameCard component
-                const formattedQuizzes = userQuizzes.map(formatQuizForDisplay);
-                
-                setMySets(formattedQuizzes);
-                setError("⚠️ Using cached quiz data. Server returned an error: " + (error.message || "Unknown error"));
-              } catch (parseError) {
-                console.error("Error parsing cached quizzes:", parseError);
-                setMySets([]);
-                setError("Failed to load your quiz sets. " + (error.message || "Please try again."));
-              }
-            } else {
-              setMySets([]);
-              setError("Failed to load your quiz sets. " + (error.message || "Please try again."));
-            }
+            setMySets([]);
+            setError("Failed to load your quiz sets. " + (error.message || "Please try again."));
           }
         } else {
           setError("User information not available. Please try logging in again.");
@@ -281,73 +199,17 @@ export default function MySetsPage() {
     } catch (error: any) {
       console.error("Error in fetchQuizzesFromAPI:", error);
       setError("An unexpected error occurred: " + (error.message || "Please try again."));
-      
-      // Try to use any existing quizzes in state or sessionStorage
-      if (mySets.length === 0) {
-        const storedQuizzes = sessionStorage.getItem('myQuizzes');
-        if (storedQuizzes) {
-          try {
-            const parsedQuizzes = JSON.parse(storedQuizzes);
-            const formattedQuizzes = Array.isArray(parsedQuizzes) 
-              ? parsedQuizzes.map(formatQuizForDisplay)
-              : [];
-            
-            setMySets(formattedQuizzes);
-            console.log("Using cached quizzes after error:", formattedQuizzes);
-          } catch (e) {
-            console.error("Error parsing cached quizzes after global error:", e);
-          }
-        }
-      }
+      setMySets([]);
     } finally {
       setLoading(false);
     }
   };
 
-  // Load sets from sessionStorage when component mounts
+  // Load sets when component mounts
   useEffect(() => {
-    // Try to get quizzes from sessionStorage
-    const storedQuizzes = sessionStorage.getItem('myQuizzes');
+    fetchQuizzesFromAPI();
     
-    if (storedQuizzes) {
-      try {
-        setLoading(true);
-        const parsedQuizzes = JSON.parse(storedQuizzes);
-        console.log("Loaded quizzes from sessionStorage:", parsedQuizzes);
-        
-        // Get current user ID
-        const currentUser = authService.getCurrentUser();
-        const userId = currentUser?.id || 0;
-        
-        // Filter quizzes to only show ones created by the current user
-        const userQuizzes = Array.isArray(parsedQuizzes) 
-          ? parsedQuizzes.filter(quiz => {
-              // If createdBy is available, use it for filtering
-              if (quiz.createdBy) {
-                return Number(quiz.createdBy) === Number(userId);
-              }
-              return true; // Keep quizzes with no createdBy for backward compatibility
-            })
-          : [];
-        
-        // Map the API quiz format to the format expected by GameCard component
-        const formattedQuizzes = userQuizzes.map(formatQuizForDisplay);
-        
-        setMySets(formattedQuizzes);
-        setLoading(false);
-      } catch (error) {
-        console.error("Error parsing quizzes from sessionStorage:", error);
-        // Start with empty array instead of fetching from API
-        setMySets([]);
-        setLoading(false);
-      }
-    } else {
-      // If not in sessionStorage, use empty array instead of fetching from API
-      setMySets([]);
-      setLoading(false);
-    }
-
-    // Load completed games data
+    // Load completed games data if available
     const storedCompletedGames = localStorage.getItem('completedGames');
     if (storedCompletedGames) {
       try {
@@ -439,111 +301,7 @@ export default function MySetsPage() {
   };
   
   const handleRefreshQuizzes = async () => {
-    setLoading(true);
-    
-    try {
-      // Get current user ID
-      const currentUser = authService.getCurrentUser();
-      const userId = currentUser?.id || 0;
-      
-      if (!userId) {
-        setError("User ID not found. Please log in again.");
-        setLoading(false);
-        return;
-      }
-      
-      // Call API directly to refresh quizzes
-      const response = await quizService.fetchAndStoreMyQuizzes();
-      
-      if (response && response.data) {
-        // Filter to ensure we only get quizzes created by this user
-        const serverQuizzes = Array.isArray(response.data) 
-          ? response.data.filter(quiz => {
-              if (quiz.createdBy) {
-                return Number(quiz.createdBy) === Number(userId);
-              }
-              return true; // Keep quizzes with no createdBy for backward compatibility
-            })
-          : [];
-        
-        const formattedServerQuizzes = serverQuizzes.map(formatQuizForDisplay);
-        
-        // Get existing quizzes from sessionStorage
-        let localQuizzes = [];
-        try {
-          const storedQuizzes = sessionStorage.getItem('myQuizzes');
-          if (storedQuizzes) {
-            const parsedQuizzes = JSON.parse(storedQuizzes);
-            if (Array.isArray(parsedQuizzes)) {
-              // Filter to only get quizzes from the current user
-              localQuizzes = parsedQuizzes.filter(quiz => 
-                quiz.createdBy && Number(quiz.createdBy) === Number(userId)
-              );
-            }
-          }
-        } catch (error) {
-          console.error("Error loading local quizzes:", error);
-          localQuizzes = [];
-        }
-        
-        // Merge server and local quizzes, prioritizing server data for duplicates
-        const serverQuizIds = formattedServerQuizzes.map(quiz => quiz.id);
-        
-        // Keep local quizzes that don't exist on server
-        const uniqueLocalQuizzes = localQuizzes.filter(quiz => 
-          !serverQuizIds.includes(quiz.id)
-        );
-        
-        // Combine server quizzes with unique local quizzes
-        const mergedQuizzes = [...formattedServerQuizzes, ...uniqueLocalQuizzes];
-        
-        // Save the merged quizzes to sessionStorage
-        sessionStorage.setItem('myQuizzes', JSON.stringify(mergedQuizzes));
-        
-        // Update state
-        setMySets(mergedQuizzes);
-        setError(null);
-        
-        // Show success notification
-        setNotification({
-          open: true,
-          message: `Successfully refreshed. Found ${mergedQuizzes.length} quizzes (${formattedServerQuizzes.length} from server, ${uniqueLocalQuizzes.length} from local cache).`,
-          type: "success"
-        });
-      }
-    } catch (error: any) {
-      console.error("Error refreshing quizzes:", error);
-      setError(`Failed to refresh quizzes: ${error.message || 'Unknown error'}`);
-      
-      // Get current user ID again inside this scope to fix TypeScript error
-      const currentUser = authService.getCurrentUser();
-      const userId = currentUser?.id || 0;
-      
-      // Try to load from local storage as fallback
-      try {
-        const storedQuizzes = sessionStorage.getItem('myQuizzes');
-        if (storedQuizzes) {
-          const parsedQuizzes = JSON.parse(storedQuizzes);
-          const userQuizzes = Array.isArray(parsedQuizzes)
-            ? parsedQuizzes.filter(quiz => 
-                quiz.createdBy && Number(quiz.createdBy) === Number(userId)
-              )
-            : [];
-          setMySets(userQuizzes);
-        }
-      } catch (localError) {
-        console.error("Error loading local quizzes as fallback:", localError);
-      }
-      
-      // Show error notification
-      setNotification({
-        open: true,
-        message: `Error refreshing quizzes: ${error.message || 'Unknown error'}`,
-        type: "error"
-      });
-    } finally {
-      setLoading(false);
-    }
+    await fetchQuizzesFromAPI();
   };
 
   const handleViewDetails = async (game: any) => {
@@ -601,18 +359,13 @@ export default function MySetsPage() {
 
   // Function to clear all quizzes
   const clearAllQuizzes = () => {
-    // Completely clear the myQuizzes from sessionStorage
-    sessionStorage.removeItem('myQuizzes');
-    console.log("Cleared all quizzes from sessionStorage");
-    
-    // Clear state
     setMySets([]);
     setError(null);
     
     // Show confirmation
     setNotification({
       open: true,
-      message: "Cleared all cached quizzes from your browser",
+      message: "Cleared all quizzes from the view. Refresh to load from server.",
       type: "success"
     });
   };
@@ -633,6 +386,47 @@ export default function MySetsPage() {
       message: `Game code ${code} copied to clipboard!`,
       type: "success"
     });
+  };
+
+  // Update the handleToggleFavorite function to improve UX and better sync with favorites page
+  const handleToggleFavorite = async (event: React.MouseEvent<HTMLElement>, gameId: string, isFavorite: boolean) => {
+    event.stopPropagation(); // Prevent triggering the card click
+    
+    try {
+      // Set loading state for this specific quiz
+      setFavoriteLoading(prev => ({ ...prev, [gameId]: true }));
+      
+      // Use quizService to toggle favorite status
+      await quizService.toggleFavorite(parseInt(gameId));
+      
+      // Update the local state
+      const updatedSets = mySets.map(game => {
+        if (game.id === gameId) {
+          return { ...game, favorite: !isFavorite };
+        }
+        return game;
+      });
+      
+      setMySets(updatedSets);
+      
+      // Show notification
+      setNotification({
+        open: true,
+        message: `Quiz ${isFavorite ? 'removed from' : 'added to'} favorites!`,
+        type: "success"
+      });
+      
+    } catch (error) {
+      console.error("Error toggling favorite:", error);
+      setNotification({
+        open: true,
+        message: `Failed to update favorite status: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        type: "error"
+      });
+    } finally {
+      // Clear loading state for this quiz
+      setFavoriteLoading(prev => ({ ...prev, [gameId]: false }));
+    }
   };
 
   return (
@@ -776,6 +570,26 @@ export default function MySetsPage() {
                           <MoreVertIcon />
                         </IconButton>
                       </Box>
+                      
+                      {/* Add favorite button */}
+                      <Box sx={{ position: 'absolute', top: 10, left: 10, zIndex: 1 }}>
+                        <IconButton
+                          aria-label={game.favorite ? "Remove from favorites" : "Add to favorites"}
+                          onClick={(e) => handleToggleFavorite(e, game.id, !!game.favorite)}
+                          disabled={favoriteLoading[game.id]}
+                          sx={{ 
+                            bgcolor: 'rgba(255, 255, 255, 0.8)', 
+                            '&:hover': { bgcolor: 'rgba(255, 255, 255, 0.9)' },
+                            color: game.favorite ? 'error.main' : 'action.active'
+                          }}
+                        >
+                          {favoriteLoading[game.id] ? 
+                            <CircularProgress size={24} color="inherit" /> : 
+                            (game.favorite ? <FavoriteIcon /> : <FavoriteBorderIcon />)
+                          }
+                        </IconButton>
+                      </Box>
+                      
                       <Box onClick={() => handleViewDetails(game)} sx={{ cursor: 'pointer' }}>
                         <GameCard
                           title={String(game.title || "Untitled Quiz")}
@@ -862,6 +676,26 @@ export default function MySetsPage() {
                           <MoreVertIcon />
                         </IconButton>
                       </Box>
+                      
+                      {/* Add favorite button */}
+                      <Box sx={{ position: 'absolute', top: 10, left: 10, zIndex: 1 }}>
+                        <IconButton
+                          aria-label={game.favorite ? "Remove from favorites" : "Add to favorites"}
+                          onClick={(e) => handleToggleFavorite(e, game.id, !!game.favorite)}
+                          disabled={favoriteLoading[game.id]}
+                          sx={{ 
+                            bgcolor: 'rgba(255, 255, 255, 0.8)', 
+                            '&:hover': { bgcolor: 'rgba(255, 255, 255, 0.9)' },
+                            color: game.favorite ? 'error.main' : 'action.active'
+                          }}
+                        >
+                          {favoriteLoading[game.id] ? 
+                            <CircularProgress size={24} color="inherit" /> : 
+                            (game.favorite ? <FavoriteIcon /> : <FavoriteBorderIcon />)
+                          }
+                        </IconButton>
+                      </Box>
+                      
                       <Box onClick={() => handleViewDetails(game)} sx={{ cursor: 'pointer' }}>
                         <GameCard
                           title={String(game.title || "Untitled Quiz")}

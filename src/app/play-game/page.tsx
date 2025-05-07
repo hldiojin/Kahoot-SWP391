@@ -202,6 +202,9 @@ export default function PlayGamePage() {
   const [selectedAnimal, setSelectedAnimal] = useState(defaultAnimal);
   const [selectedColor, setSelectedColor] = useState('#FF3355');
 
+  const [navigationError, setNavigationError] = useState(false);
+  const [showManualNavigation, setShowManualNavigation] = useState(false);
+
   useEffect(() => {
     const loadGame = async () => {
       try {
@@ -416,168 +419,157 @@ export default function PlayGamePage() {
   };
 
   const handleStartGame = async () => {
-    if (!gameData || !code) return;
-    
     if (!playerName.trim()) {
-      setNameError('Please enter your name to continue');
+      setNameError('Please enter your name');
       return;
     }
-    
-    if (gameMode === 'team' && !selectedTeam) {
-      setError('Please select a team before starting');
-      return;
-    }
-    
-    // Final check for known team mode quizzes before starting
-    const knownTeamModeQuiz = shouldBeTeamMode(code) || forceTeamModeForQuiz(code);
-    if (knownTeamModeQuiz && gameMode !== 'team') {
-      console.log(`🔴 Correcting gameMode from ${gameMode} to 'team' for known team quiz ${code}`);
-      setGameMode('team');
-      // If we need to force team mode but no team is selected, select the first team
-      if (!selectedTeam && teamNames.length > 0) {
-        setSelectedTeam(teamNames[0]);
-        console.log(`Auto-selecting team: ${teamNames[0]}`);
-      }
-    }
-    
-    // Save the game mode specifically for this quiz code
-    console.log(`Saving game mode ${gameMode} for quiz ${code}`);
-    sessionStorage.setItem(`quizMode_${code}`, gameMode);
-    // Also save the general game mode
-    sessionStorage.setItem('gameMode', gameMode);
     
     setApiLoading(true);
+    setNavigationError(false); // Reset navigation error state
     
     try {
-      // Use a simple avatar format instead of the playerService format
-      const avatarUrl = `simple://${selectedAnimal}/${selectedColor}`;
-      
-      // Save player information for session with proper avatar format
-      const newPlayerInfo: PlayerInfo = {
+      if (!code) {
+        throw new Error('Quiz code is missing');
+      }
+
+      // 1. Build player data according to the API's expected format
+      const playerData: PlayerInfo = {
         name: playerName,
         avatar: selectedAnimal,
         team: gameMode === 'team' ? selectedTeam : null,
         gameCode: code,
-        joinTime: new Date().toISOString(),
-        quizId: gameData.id
+        joinTime: new Date().toISOString()
       };
+
+      console.log('Joining quiz with player data:', playerData);
       
-      // Check if we've stored an updated player info with ID from previous API calls
-      const existingPlayerInfoStr = sessionStorage.getItem('currentPlayer');
-      if (existingPlayerInfoStr) {
-        try {
-          const existingPlayerInfo = JSON.parse(existingPlayerInfoStr) as PlayerInfo;
-          if (existingPlayerInfo && existingPlayerInfo.id) {
-            // Merge existing player ID with new info
-            newPlayerInfo.id = existingPlayerInfo.id;
-            newPlayerInfo.playerId = existingPlayerInfo.id;
-            newPlayerInfo.playerCode = existingPlayerInfo.playerCode;
-          }
-        } catch (e) {
-          console.error('Error parsing existing player info:', e);
-        }
-      }
+      // 2. Import required services
+      const quizService = (await import('@/services/quizService')).default;
       
-      // Now save the full player info
-      sessionStorage.setItem('currentPlayer', JSON.stringify(newPlayerInfo));
-      // Store in localStorage too for backward compatibility
-      localStorage.setItem('currentPlayer', JSON.stringify(newPlayerInfo));
-      
-      // In team mode, make sure to save the selected team
-      if (gameMode === 'team' && selectedTeam) {
-        console.log("Saving selectedTeam to sessionStorage:", selectedTeam);
-        sessionStorage.setItem('selectedTeam', selectedTeam);
-      }
-      
-      // Try to register player using playerService
+      // 3. Call the API to register player - This is the MAIN way to join
+      let playerId = 0;
       try {
-        console.log("Creating player using playerService with gameMode:", gameMode);
+        console.log(`Calling API to join quiz with code ${code}...`);
+        // Format player data for API request
+        const apiPlayerData = {
+          Id: 0,
+          NickName: playerName,
+          AvatarUrl: selectedAnimal,
+          GroupId: null,
+          GroupName: gameMode === 'team' ? selectedTeam : null,
+          GroupDescription: null
+        };
+
+        // If team mode and selectedTeam is provided
+        if (gameMode === 'team' && selectedTeam) {
+          console.log(`Using team name: ${selectedTeam} for registration`);
+          apiPlayerData.GroupName = selectedTeam;
+        }
+
+        // Call the API to register player
+        const response = await quizService.joinQuiz(code, apiPlayerData);
+        console.log('Join API response:', response);
         
-        // Add team information to the player data for team mode games
-        const playerData = playerService.formatPlayerData(
-          playerName,
-          gameData.id,
-          selectedAnimal,
-          selectedColor,
-          user?.id ? parseInt(user.id) : 0,
-          gameMode === 'team' ? selectedTeam : null // Pass team name directly
-        );
-        
-        // Log full player data for debugging
-        console.log("Formatted player data with team info:", playerData);
-        
-        // Create player in the backend
-        const playerResponse = await playerService.createPlayer(playerData);
-        
-        console.log("Full player creation response:", JSON.stringify(playerResponse, null, 2));
-        
-        // Check the response structure carefully
-        if (!playerResponse) {
-          console.error("❌ ERROR: No response from createPlayer API call");
-          setError('Failed to create player. Please try again.');
-          setApiLoading(false);
-          return;
+        if (response && response.data) {
+          playerId = response.data.playerId || 0;
+          console.log(`Player registered with ID: ${playerId}`);
+          
+          // Update player data with ID from response
+          playerData.id = playerId;
+          playerData.playerId = playerId;
         }
         
-        // Log the status for debugging
-        console.log(`Player response status: ${playerResponse?.status}`);
-        
-        // Check if we have player data in the response
-        if (playerResponse.data) {
-          console.log("Player data from response:", JSON.stringify(playerResponse.data, null, 2));
+        // API call successful - proceed
+      } catch (apiError) {
+        console.error('Error registering player via API:', apiError);
+        throw new Error(`Failed to join game: ${apiError instanceof Error ? apiError.message : 'API error'}`);
+      }
+      
+      // 4. Store player data in session storage for later use
+      try {
+        playerData.playerId = playerId; // Ensure playerId is set
+        sessionStorage.setItem('currentPlayerName', playerName);
+        sessionStorage.setItem('currentPlayerAvatar', selectedAnimal);
+        sessionStorage.setItem('currentPlayer', JSON.stringify(playerData));
+        if (gameMode === 'team') {
+          sessionStorage.setItem('currentTeam', selectedTeam);
+        }
+        console.log('Stored player data:', playerData);
+      } catch (storageError) {
+        console.error('Error storing player data:', storageError);
+        // Non-critical error, continue
+      }
+      
+      // 5. Try SignalR connection in the background without waiting
+      // This prevents blocking the user flow if SignalR fails
+      setTimeout(async () => {
+        try {
+          console.log('Attempting optional SignalR connection...');
+          const signalRService = (await import('@/services/signalRService')).default;
           
-          // Extract player ID from the data - use type assertion to handle dynamic properties
-          const responseData = playerResponse.data as any;
-          const playerId = responseData.playerId || responseData.id;
+          // Format player data for SignalR
+          const signalRPlayerData = {
+            Id: playerId,
+            NickName: playerName,
+            AvatarUrl: selectedAnimal,
+            GroupId: null,
+            GroupName: gameMode === 'team' ? selectedTeam : null,
+            GroupDescription: null
+          };
           
-          if (playerId) {
-            const numericPlayerId = Number(playerId);
-            console.log(`✅ SUCCESS: Got playerId ${numericPlayerId} from response data`);
-            
-            // Create player info with ID
-            const playerInfoWithId = {
-              ...newPlayerInfo,
-              playerId: numericPlayerId,
-              playerCode: responseData.playerCode || Math.floor(100000 + Math.random() * 900000)
-            };
-            
-            // Save to storage
-            sessionStorage.setItem('currentPlayer', JSON.stringify(playerInfoWithId));
-            localStorage.setItem('currentPlayer', JSON.stringify(playerInfoWithId));
-            
-            // Double-check game mode is correctly saved
-            sessionStorage.setItem('gameMode', gameMode);
-            sessionStorage.setItem(`quizMode_${code}`, gameMode);
-            
-            // When in team mode, store selected team in a dedicated key
-            if (gameMode === 'team' && selectedTeam) {
-              sessionStorage.setItem('selectedTeam', selectedTeam);
+          // Try SignalR connection with timeout
+          const timeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('SignalR connection timeout')), 5000);
+          });
+          
+          // Connect to SignalR if not already connected
+          const connectionPromise = (async () => {
+            if (!signalRService.isConnected()) {
+              console.log('Connecting to SignalR...');
+              await signalRService.startConnection();
+              console.log('SignalR connection established');
             }
             
-            // Navigate to the game
-            router.push(`/game?code=${code}`);
-            return;
-          } else {
-            console.error("❌ ERROR: No player ID found in response data", responseData);
-          }
-        } else {
-          console.error("❌ ERROR: No data in player response");
+            // Join the quiz room via SignalR
+            console.log(`Joining quiz ${code} via SignalR...`);
+            await signalRService.joinQuiz(code, signalRPlayerData);
+            console.log('Successfully joined quiz via SignalR');
+          })();
+          
+          // Race with timeout
+          await Promise.race([connectionPromise, timeoutPromise]);
+        } catch (signalRError) {
+          console.error('SignalR connection failed, but proceeding anyway:', signalRError);
+          // Non-blocking error, player will still be in the game via REST API
         }
+      }, 100);
+      
+      // 6. Navigate to player waiting room
+      // Don't wait for SignalR, API join is sufficient
+      const waitingRoomUrl = `/play-game/player?code=${code}&name=${encodeURIComponent(playerName)}&avatar=${selectedAnimal}`;
+      console.log('Navigating to:', waitingRoomUrl);
+      
+      // Navigate immediately
+      try {
+        router.push(waitingRoomUrl);
+        console.log('Navigation initiated');
+      } catch (navError) {
+        console.error('Navigation error:', navError);
+        // Set error state to show manual navigation option
+        setNavigationError(true);
         
-        // If we got here, we couldn't extract a player ID
-        setError('Failed to create player. Please try again.');
-        setApiLoading(false);
-      } catch (playerError) {
-        console.error("Error with player service:", playerError);
-        // Continue to fallback approach
+        // Fallback: Try direct navigation if router fails
+        window.location.href = waitingRoomUrl;
       }
       
-      // Navigate to game screen
-      router.push(`/game?code=${code}`);
-    } catch (error) {
+      // After a short delay, if we're still on this page, show manual navigation option
+      setTimeout(() => {
+        setShowManualNavigation(true);
+      }, 3000);
+      
+    } catch (error: any) {
       console.error('Error joining game:', error);
-      setError('Failed to join game. Please try again.');
-    } finally {
+      setError(`Failed to join the game: ${error.message || 'Unknown error'}. Please try again.`);
       setApiLoading(false);
     }
   };
@@ -977,8 +969,26 @@ export default function PlayGamePage() {
                   transition: 'all 0.2s',
                 }}
               >
-                {apiLoading ? 'Joining...' : 'Start Game'}
+                {apiLoading ? 'Joining...' : 'Join Game'}
               </Button>
+              
+              {/* Manual navigation link if automatic navigation fails */}
+              {(navigationError || showManualNavigation) && (
+                <Box sx={{ mt: 3, p: 2, bgcolor: 'rgba(0,0,0,0.03)', borderRadius: 2 }}>
+                  <Typography variant="body2" sx={{ mb: 1, color: 'text.secondary' }}>
+                    If you're not automatically redirected, please click the button below:
+                  </Typography>
+                  <Button
+                    variant="outlined"
+                    color="primary"
+                    fullWidth
+                    href={`/play-game/player?code=${code}&name=${encodeURIComponent(playerName)}&avatar=${selectedAnimal}`}
+                    sx={{ mt: 1 }}
+                  >
+                    Continue to Waiting Room
+                  </Button>
+                </Box>
+              )}
               
               {apiLoading && (
                 <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>

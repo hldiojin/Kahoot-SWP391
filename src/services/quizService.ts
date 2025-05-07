@@ -512,11 +512,6 @@ const quizService = {
         response.data.data = [];
       }
       
-      // Store the quizzes in sessionStorage
-      if (response.data && response.data.data) {
-        sessionStorage.setItem('myQuizzes', JSON.stringify(response.data.data));
-      }
-      
       return response.data;
     } catch (error: any) {
       console.error(`Error fetching quizzes for user ${userId}:`, error);
@@ -531,7 +526,7 @@ const quizService = {
   },
 
   /**
-   * Get all quizzes created by the current user and store them in sessionStorage
+   * Get all quizzes created by the current user from the API
    * @returns Promise with user's quizzes
    */
   fetchAndStoreMyQuizzes: async (): Promise<QuizResponse> => {
@@ -550,7 +545,7 @@ const quizService = {
       const userId = currentUser.id;
 
       // Call the API with retry mechanism for transient errors
-      console.log(`Fetching and storing quizzes for user ${userId} with retry mechanism`);
+      console.log(`Fetching quizzes for user ${userId} with retry mechanism`);
       const response = await fetchWithRetry(() => axios.get(
         `${API_BASE_URL}/api/Quiz/MySets/${userId}`,
         {
@@ -572,28 +567,6 @@ const quizService = {
       if (response.data && response.data.data === null) {
         console.warn("API returned response with null data property");
         response.data.data = [];
-      }
-      
-      // Process the quizzes to ensure they all have createdBy property set correctly
-      if (response.data && response.data.data && Array.isArray(response.data.data)) {
-        const processedQuizzes = response.data.data.map((quiz: any) => {
-          return {
-            ...quiz,
-            createdBy: quiz.createdBy || parseInt(userId) // Ensure createdBy is set
-          };
-        });
-        
-        // Store only this user's quizzes in sessionStorage, completely replacing any existing data
-        sessionStorage.removeItem('myQuizzes'); // Clear existing data first
-        sessionStorage.setItem('myQuizzes', JSON.stringify(processedQuizzes));
-        console.log(`Stored ${processedQuizzes.length} quizzes with verified createdBy properties`);
-        
-        // Update the response data to use our processed quizzes
-        response.data.data = processedQuizzes;
-      } else {
-        // If no quizzes were found, ensure we clear the storage
-        sessionStorage.removeItem('myQuizzes');
-        sessionStorage.setItem('myQuizzes', JSON.stringify([]));
       }
       
       return response.data;
@@ -749,7 +722,224 @@ const quizService = {
       favorite: favorite,
       gameMode: gameMode
     };
-  }
+  },
+
+  /**
+   * Toggle favorite status of a quiz
+   * @param quizId ID of the quiz to favorite/unfavorite
+   * @returns Promise with toggle favorite response
+   */
+  toggleFavorite: async (quizId: number): Promise<QuizResponse> => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        throw new Error('Authentication token is missing');
+      }
+
+      const response = await fetchWithRetry(() => axios.put(
+        `${API_BASE_URL}/api/Quiz/${quizId}/favorite`,
+        {},
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        }
+      ));
+      
+      // Update cached quizzes in sessionStorage with new favorite status
+      try {
+        const storedQuizzes = sessionStorage.getItem('myQuizzes');
+        if (storedQuizzes) {
+          const parsedQuizzes = JSON.parse(storedQuizzes);
+          if (Array.isArray(parsedQuizzes)) {
+            const updatedQuizzes = parsedQuizzes.map(quiz => {
+              if (quiz.id === quizId) {
+                return { ...quiz, favorite: !quiz.favorite };
+              }
+              return quiz;
+            });
+            sessionStorage.setItem('myQuizzes', JSON.stringify(updatedQuizzes));
+          }
+        }
+      } catch (error) {
+        console.error('Error updating cached quizzes:', error);
+      }
+      
+      return response.data;
+    } catch (error: any) {
+      console.error(`Error toggling favorite for quiz with ID ${quizId}:`, error);
+      
+      // Provide more helpful error message for UI display
+      if (error.response && error.response.status === 500) {
+        throw new Error(`Server error (500): The database is temporarily unavailable. We've tried multiple times to connect. Please try again in a few moments.`);
+      }
+      
+      throw error;
+    }
+  },
+
+  /**
+   * Get all favorite quizzes for a specific user
+   * @param userId ID of the user
+   * @returns Promise with user's favorite quizzes
+   */
+  getFavoriteQuizzes: async (userId: number): Promise<QuizResponse> => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        throw new Error('Authentication token is missing');
+      }
+
+      // Make sure userId is valid
+      if (!userId || isNaN(Number(userId))) {
+        const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+        userId = currentUser.id ? parseInt(currentUser.id) : 0;
+        
+        if (!userId) {
+          throw new Error('User ID is required and could not be determined automatically');
+        }
+      }
+
+      // Call the API with retry mechanism for transient errors
+      console.log(`Fetching favorite quizzes for user ${userId}`);
+      const response = await fetchWithRetry(() => axios.get(
+        `${API_BASE_URL}/api/Quiz/Favorite/${userId}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        }
+      ));
+      
+      console.log("Favorite quizzes retrieved:", response.data);
+      
+      // Check for null data and convert to empty array
+      if (!response.data) {
+        console.warn("API returned null data for getFavoriteQuizzes");
+        return { data: [], message: "No favorite quiz data available", status: 200 };
+      }
+      
+      // If data property is null, convert to empty array
+      if (response.data && response.data.data === null) {
+        console.warn("API returned response with null data property for favorites");
+        response.data.data = [];
+      }
+      
+      return response.data;
+    } catch (error: any) {
+      console.error(`Error fetching favorite quizzes for user ${userId}:`, error);
+      
+      // Provide more helpful error message for UI display
+      if (error.response && error.response.status === 500) {
+        throw new Error(`Server error (500): The database is temporarily unavailable. We've tried multiple times to connect. Please try again in a few moments.`);
+      }
+      
+      throw error;
+    }
+  },
+
+  /**
+   * Join a quiz as a non-authenticated user
+   * @param quizId ID of the quiz to join
+   * @param playerData Player information (name, avatar, etc.)
+   * @returns Promise with join quiz response
+   */
+  joinQuiz: async (quizId: number | string, playerData: any): Promise<QuizResponse> => {
+    try {
+      console.log(`Non-user joining quiz with ID ${quizId}...`, playerData);
+      
+      // Create request body - Make sure to adapt this to your API's expected format
+      const joinRequest = {
+        name: playerData.name || 'Guest',
+        avatar: playerData.avatar || 'alligator',
+        gameCode: playerData.gameCode || quizId.toString(),
+        teamName: playerData.team || null,
+        joinTime: new Date().toISOString()
+      };
+      
+      console.log('Joining quiz with data:', joinRequest);
+      
+      // Call JoinQuiz API endpoint - No authentication required for non-users
+      const response = await fetchWithRetry(() => axios.post(
+        `${API_BASE_URL}/api/Quiz/JoinQuiz/${quizId}`,
+        joinRequest,
+        {
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        }
+      ));
+      
+      console.log(`Successfully joined quiz ${quizId}:`, response.data);
+      
+      // Store player data in session storage
+      if (response.data && response.data.data) {
+        try {
+          // Save the player data with playerId from response if available
+          const responseData = response.data.data;
+          const updatedPlayerData = {
+            ...playerData,
+            playerId: responseData.playerId || responseData.id || 0,
+            id: responseData.playerId || responseData.id || 0
+          };
+          
+          // Store player data for use in other components
+          sessionStorage.setItem('currentPlayer', JSON.stringify(updatedPlayerData));
+          console.log('Stored updated player data with ID:', updatedPlayerData);
+        } catch (storageError) {
+          console.error('Error storing player data:', storageError);
+        }
+      }
+      
+      return response.data;
+    } catch (error: any) {
+      console.error(`Error joining quiz with ID ${quizId}:`, error);
+      
+      // Provide more helpful error message for UI display
+      if (error.response && error.response.status === 500) {
+        throw new Error(`Server error (500): The database is temporarily unavailable. We've tried multiple times to connect. Please try again in a few moments.`);
+      }
+      
+      throw error;
+    }
+  },
+
+  /**
+   * Start a quiz game
+   * @param quizId ID of the quiz to start
+   * @returns Promise with start quiz response
+   */
+  startQuiz: async (quizId: number): Promise<QuizResponse> => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        throw new Error('Authentication token is missing');
+      }
+
+      console.log(`Starting quiz with ID ${quizId}...`);
+      const response = await fetchWithRetry(() => axios.post(
+        `${API_BASE_URL}/api/Quiz/StartQuiz/${quizId}`,
+        {},
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        }
+      ));
+      
+      console.log(`Quiz ${quizId} started successfully:`, response.data);
+      return response.data;
+    } catch (error: any) {
+      console.error(`Error starting quiz with ID ${quizId}:`, error);
+      
+      // Provide more helpful error message for UI display
+      if (error.response && error.response.status === 500) {
+        throw new Error(`Server error (500): The database is temporarily unavailable. We've tried multiple times to connect. Please try again in a few moments.`);
+      }
+      
+      throw error;
+    }
+  },
 };
 
 export default quizService;

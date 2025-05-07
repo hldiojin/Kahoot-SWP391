@@ -335,53 +335,19 @@ function Dashboard() {
     try {
       setCreatingQuiz(true);
       
-      // Get current user information
-      const currentUser = authService.getCurrentUser();
-      if (!currentUser || !currentUser.id) {
-        console.error("User ID not available");
-        setNotificationMessage("User identification failed. Please try logging in again.");
-        setNotificationType("error");
-        setNotificationOpen(true);
-        return;
-      }
-
-      // Default quiz data with properties that don't cause hydration issues
-      const defaultQuizData = {
-        id: 0,
-        title: `New Quiz`, // We'll add date on the server side
-        description: "My new interactive quiz",
-        createdBy: parseInt(currentUser.id),
-        categoryId: 1, // Default to Education category
-        isPublic: true,
-        thumbnailUrl: "https://wallpaperaccess.com/full/5720035.jpg"
-      };
-
-      // Call API to create quiz - quizCode will be generated server-side
-      const response = await quizService.createQuiz(defaultQuizData);
-      console.log("Default quiz created successfully:", response);
-
-      // Fetch and store user quizzes for display in my-sets page
-      try {
-        await quizService.fetchAndStoreMyQuizzes();
-        console.log("User quizzes fetched and stored in sessionStorage");
-      } catch (fetchError) {
-        console.error("Error fetching user quizzes:", fetchError);
-        // Continue with the main flow even if this fails
-      }
-
-      // Show success notification
-      setNotificationMessage("Quiz created successfully! Redirecting to editor...");
+      // Show notification about redirecting to editor
+      setNotificationMessage("Redirecting to quiz editor...");
       setNotificationType("success");
       setNotificationOpen(true);
 
       // After a short delay, redirect to the quiz editor
       setTimeout(() => {
         router.push('/create-game');
-      }, 1500);
+      }, 1000);
       
     } catch (error) {
-      console.error("Error creating quiz:", error);
-      setNotificationMessage("Failed to create quiz. Please try again.");
+      console.error("Error navigating to quiz editor:", error);
+      setNotificationMessage("Failed to navigate to quiz editor. Please try again.");
       setNotificationType("error");
       setNotificationOpen(true);
     } finally {

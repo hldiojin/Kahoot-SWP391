@@ -205,16 +205,21 @@ export default function LandingPage() {
     setErrorMessage('');
     
     try {
-      // Mã thử nghiệm
+      // Test codes for development
       if (['123456', '234567', '345678', '857527', '925101'].includes(gameCode)) {
         saveRecentGameCode(gameCode);
         sessionStorage.setItem('currentGameCode', gameCode);
         sessionStorage.setItem('isTestGame', 'true');
+        
+        // Store quiz code for joining
+        localStorage.setItem('pendingQuizCode', gameCode);
+        
+        // Redirect to player join page to choose name and avatar
         router.push(`/play-game?code=${gameCode}&test=true`);
         return;
       }
       
-      // Kiểm tra quiz code bằng API với đúng endpoint và URL đầy đủ
+      // Check if the quiz code is valid using the API
       try {
         const quizResponse = await axios.get(
           `https://kahootclone-f7hkd0hwafgbfrfa.southeastasia-01.azurewebsites.net/api/Quiz/check-quiz-code/${gameCode}`
@@ -222,73 +227,48 @@ export default function LandingPage() {
         
         console.log("API Response:", quizResponse.data);
         
-        // Kiểm tra response và xử lý trường hợp chỉ có "message": "Quiz code is valid."
         if (quizResponse.data) {
+          // Handle quiz found case
           if (quizResponse.data.data) {
-            // Nếu có data, sử dụng như bình thường
-            console.log("Tìm thấy quiz:", quizResponse.data);
+            console.log("Quiz found:", quizResponse.data);
             
-            // Lưu thông tin và chuyển hướng
+            // Save game code and quiz information
             saveRecentGameCode(gameCode);
             sessionStorage.setItem('currentGameCode', gameCode);
             sessionStorage.setItem('currentQuiz', JSON.stringify(quizResponse.data.data));
             
-            // Lưu game vào sessionStorage với key specifcGameKey
-            const specificGameKey = `game_${gameCode}`;
-            const gameData = {
-              id: quizResponse.data.data.id,
-              title: quizResponse.data.data.title,
-              description: quizResponse.data.data.description,
-              coverImage: quizResponse.data.data.thumbnailUrl,
-              createdBy: quizResponse.data.data.createdBy,
-              gameMode: quizResponse.data.data.gameMode || 'solo',
-              category: quizResponse.data.data.categoryId
-            };
+            // Store quiz code for joining
+            localStorage.setItem('pendingQuizCode', gameCode);
             
-            // Lưu vào sessionStorage
-            sessionStorage.setItem(specificGameKey, JSON.stringify(gameData));
-            console.log(`Game saved to sessionStorage with key: ${specificGameKey}`);
-            
+            // Redirect to player join page to choose name and avatar
             router.push(`/play-game?code=${gameCode}`);
           } 
-          // Kiểm tra trường hợp message: "Quiz code is valid."
+          // Handle "Quiz code is valid" case (when hosting is active)
           else if (quizResponse.data.message === "Quiz code is valid.") {
-            console.log("Found valid quiz code without details:", gameCode);
+            console.log("Found valid quiz code:", gameCode);
             
-            // Lưu thông tin cơ bản
             saveRecentGameCode(gameCode);
             sessionStorage.setItem('currentGameCode', gameCode);
             
-            // Tạo dữ liệu cơ bản cho quiz
-            const specificGameKey = `game_${gameCode}`;
-            const gameData = {
-              id: parseInt(gameCode),
-              title: `Quiz ${gameCode}`,
-              description: "Quiz đã được xác nhận",
-              coverImage: 'https://source.unsplash.com/random/300x200?quiz',
-              createdBy: "Teacher",
-              gameMode: 'solo',
-              category: 1
-            };
+            // Store quiz code for joining
+            localStorage.setItem('pendingQuizCode', gameCode);
             
-            // Lưu vào sessionStorage
-            sessionStorage.setItem(specificGameKey, JSON.stringify(gameData));
-            console.log(`Basic game info saved to sessionStorage with key: ${specificGameKey}`);
-            
+            // Redirect to player join page to choose name and avatar
             router.push(`/play-game?code=${gameCode}`);
-          } else {
-            throw new Error("Không tìm thấy quiz với mã này");
+          } 
+          else {
+            throw new Error("Quiz not found with this code");
           }
         } else {
-          throw new Error("Không tìm thấy quiz với mã này");
+          throw new Error("Invalid quiz code response");
         }
       } catch (error) {
-        console.error("Không thể tìm quiz:", error);
-        setErrorMessage(`Không tìm thấy quiz với mã ${gameCode}. Vui lòng kiểm tra lại mã và thử lại.`);
+        console.error("Error checking quiz code:", error);
+        setErrorMessage(`Không tìm thấy trò chơi với mã ${gameCode}. Vui lòng kiểm tra lại.`);
       }
     } catch (error) {
-      console.error("Lỗi tham gia trò chơi:", error);
-      setErrorMessage(`Không thể tìm thấy quiz với mã ${gameCode}. Vui lòng kiểm tra lại mã và thử lại.`);
+      console.error("Error joining game:", error);
+      setErrorMessage(`Không thể tham gia trò chơi. Vui lòng thử lại sau.`);
     } finally {
       setIsJoining(false);
     }
