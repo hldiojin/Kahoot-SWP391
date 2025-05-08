@@ -30,6 +30,8 @@ import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import axios from 'axios';
+import quizService from '@/services/quizService';
+import playerService from '@/services/playerService';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
 
@@ -219,52 +221,45 @@ export default function LandingPage() {
         return;
       }
       
-      // Check if the quiz code is valid using the API
+      // Check if the quiz code is valid using quizService
       try {
-        const quizResponse = await axios.get(
-          `https://kahootclone-f7hkd0hwafgbfrfa.southeastasia-01.azurewebsites.net/api/Quiz/check-quiz-code/${gameCode}`
-        );
+        console.log(`Checking quiz code: ${gameCode}`);
+        let quizCodeResult = await quizService.checkQuizCode(gameCode);
+        console.log("Quiz code check result:", quizCodeResult);
         
-        console.log("API Response:", quizResponse.data);
+        // If the initial check fails, try fallback check
+        if (quizCodeResult && (quizCodeResult.status === 404 || quizCodeResult.status === 400)) {
+          console.log("Initial check failed, trying fallback...");
+          quizCodeResult = await quizService.fallbackCheckQuizCode(gameCode);
+          console.log("Fallback check result:", quizCodeResult);
+        }
         
-        if (quizResponse.data) {
-          // Handle quiz found case
-          if (quizResponse.data.data) {
-            console.log("Quiz found:", quizResponse.data);
+        // If the status is not 404 or 400, consider it valid
+        if (quizCodeResult && quizCodeResult.status !== 404 && quizCodeResult.status !== 400) {
+          console.log("Valid quiz code found:", gameCode);
             
-            // Save game code and quiz information
+          // Save game code for recent games
             saveRecentGameCode(gameCode);
             sessionStorage.setItem('currentGameCode', gameCode);
-            sessionStorage.setItem('currentQuiz', JSON.stringify(quizResponse.data.data));
-            
-            // Store quiz code for joining
-            localStorage.setItem('pendingQuizCode', gameCode);
-            
-            // Redirect to player join page to choose name and avatar
-            router.push(`/play-game?code=${gameCode}`);
-          } 
-          // Handle "Quiz code is valid" case (when hosting is active)
-          else if (quizResponse.data.message === "Quiz code is valid.") {
-            console.log("Found valid quiz code:", gameCode);
-            
-            saveRecentGameCode(gameCode);
-            sessionStorage.setItem('currentGameCode', gameCode);
-            
-            // Store quiz code for joining
-            localStorage.setItem('pendingQuizCode', gameCode);
-            
-            // Redirect to player join page to choose name and avatar
-            router.push(`/play-game?code=${gameCode}`);
-          } 
-          else {
-            throw new Error("Quiz not found with this code");
+          
+          // If there's quiz data, store it
+          if (quizCodeResult.data) {
+            console.log("Storing quiz data:", quizCodeResult.data);
+            sessionStorage.setItem('currentQuiz', JSON.stringify(quizCodeResult.data));
           }
+            
+            // Store quiz code for joining
+            localStorage.setItem('pendingQuizCode', gameCode);
+            
+            // Redirect to player join page to choose name and avatar
+            router.push(`/play-game?code=${gameCode}`);
         } else {
-          throw new Error("Invalid quiz code response");
+          console.error("Invalid quiz code:", quizCodeResult);
+          setErrorMessage(`Không tìm thấy trò chơi với mã ${gameCode}. Vui lòng kiểm tra lại mã hoặc liên hệ với người tạo quiz.`);
         }
       } catch (error) {
         console.error("Error checking quiz code:", error);
-        setErrorMessage(`Không tìm thấy trò chơi với mã ${gameCode}. Vui lòng kiểm tra lại.`);
+        setErrorMessage(`Không tìm thấy trò chơi với mã ${gameCode}. Vui lòng kiểm tra lại mã và đảm bảo không có khoảng trắng.`);
       }
     } catch (error) {
       console.error("Error joining game:", error);

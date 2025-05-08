@@ -3,6 +3,22 @@ import * as signalR from '@microsoft/signalr';
 // URL trực tiếp đến SignalR hub
 const SIGNALR_URL = 'https://kahootclone-f7hkd0hwafgbfrfa.southeastasia-01.azurewebsites.net/KahootSignalRServer';
 
+// Define interface for player data to include all possible properties
+interface PlayerSignalRData {
+  Id: number;
+  NickName: string;
+  AvatarUrl: string;
+  GroupId: number | null;
+  GroupName: string | null;
+  GroupDescription: string | null;
+  // Include the lower case version for API compatibility
+  groupName?: string | null;
+  // Include team property for API compatibility
+  team?: string | null;
+  // Include nickName property for API compatibility
+  nickName?: string;
+}
+
 class SignalRService {
   private connection: signalR.HubConnection | null = null;
   private static instance: SignalRService;
@@ -40,7 +56,7 @@ class SignalRService {
               skipNegotiation: true,
               transport: signalR.HttpTransportType.WebSockets
             })
-            .withAutomaticReconnect()
+            .withAutomaticReconnect([0, 2000, 5000, 10000, 15000]) // More robust reconnection policy
             .build();
             
           await this.connection.start();
@@ -54,7 +70,7 @@ class SignalRService {
         // Phương pháp 2: Dùng tất cả các phương thức với negotiation
         this.connection = new signalR.HubConnectionBuilder()
           .withUrl(SIGNALR_URL)
-          .withAutomaticReconnect()
+          .withAutomaticReconnect([0, 2000, 5000, 10000, 15000]) // More robust reconnection policy
           .build();
           
         await this.connection.start();
@@ -82,10 +98,8 @@ class SignalRService {
         await this.connection.stop();
         this.connection = null;
         this.connectionPromise = null;
-        console.log('SignalR Connection Stopped');
       }
     } catch (err) {
-      console.error('Error while stopping SignalR connection:', err);
       throw err;
     }
   }
@@ -94,53 +108,172 @@ class SignalRService {
     return this.connection?.state === signalR.HubConnectionState.Connected;
   }
   
-  // Game-related methods - Using method names that exist on the server
-  public async joinHostRoom(gameCode: string): Promise<void> {
-    await this.ensureConnection();
-    try {
-      // Try different method names that might exist on the server
-      try {
-        await this.connection!.invoke('JoinRoom', gameCode, "host");
-        console.log(`Host joined room for game: ${gameCode} using JoinRoom`);
-      } catch (err) {
-        try {
-          await this.connection!.invoke('JoinGame', gameCode, { role: "host" });
-          console.log(`Host joined room for game: ${gameCode} using JoinGame`);
-        } catch (err2) {
-          console.error('Failed to join host room with standard methods, trying fallback');
-          // Last attempt with direct room joining
-          await this.connection!.invoke('JoinGroup', `game-${gameCode}`);
-          console.log(`Host joined group for game: ${gameCode}`);
-        }
-      }
-    } catch (err) {
-      console.error('Error joining host room:', err);
-      throw err;
+  // Add method to get the connection object
+  public getConnection(): signalR.HubConnection | null {
+    return this.connection;
+  }
+
+  // Lắng nghe sự kiện player join với tên chính xác là "JoinToQuiz" từ backend
+  public onPlayerJoined(callback: (quizCode: string, player: any) => void): void {
+    this.ensureConnectionSync();
+    
+    console.log('Registering listener for JoinToQuiz event');
+    
+    // Xóa handler cũ nếu có để tránh duplicate
+    this.connection!.off("JoinToQuiz");
+    
+    // Đăng ký handler mới
+    this.connection!.on("JoinToQuiz", (quizCode: string, player: any) => {
+      console.log(`JoinToQuiz event received - Quiz: ${quizCode}`, player);
+      callback(quizCode, player);
+    });
+  }
+
+  // Lắng nghe sự kiện start quiz
+  public onStartQuiz(callback: (quizCode: string, started: boolean) => void): void {
+    this.ensureConnectionSync();
+    this.connection!.on('StartQuiz', (quizCode: string, started: boolean) => {
+      callback(quizCode, started);
+    });
+  }
+
+  // Add this new method to remove event handlers
+  public removeEventHandler(eventName: string): void {
+    if (this.isConnected() && this.connection) {
+      this.connection.off(eventName);
+      console.log(`Removed event handler for ${eventName}`);
     }
   }
-  
-  public async startGame(gameCode: string): Promise<void> {
-    await this.ensureConnection();
+
+  // Ensure connection is established for event registration
+  private ensureConnectionSync(): void {
+    if (!this.isConnected()) {
+      if (!this.connection) {
+        console.warn('Attempting to register event on disconnected SignalR hub. Will try to connect...');
+        this.connection = new signalR.HubConnectionBuilder()
+          .withUrl(SIGNALR_URL, {
+            skipNegotiation: true,
+            transport: signalR.HttpTransportType.WebSockets
+          })
+          .withAutomaticReconnect()
+          .build();
+        
+        this.startConnection().catch(err => {
+          console.error('Failed to connect while registering event:', err);
+        });
+      }
+    }
+  }
+
+  /**
+   * Directly broadcast a JoinToQuiz event to notify the host
+   * This is a fallback when other methods fail
+   * @param quizCode Quiz code to join
+   * @param playerData Player information
+   */
+  public async broadcastPlayerJoin(quizCode: string, playerData: any): Promise<void> {
+    if (!this.isConnected() || !this.connection) {
+      console.error('Cannot broadcast player join, connection not established');
+      return;
+    }
+
     try {
-      // Try different method names that might exist on the server
+      const formattedPlayerData = this.formatPlayerData(playerData);
+      console.log(`Attempting direct JoinToQuiz broadcast for quiz ${quizCode}:`, formattedPlayerData);
+      
+      // Try multiple methods in sequence to ensure one works
+      
+      // 1. Directly invoke the JoinToQuiz method on the server
       try {
-        await this.connection!.invoke('StartGame', gameCode);
-        console.log(`Game started with StartGame: ${gameCode}`);
-      } catch (err) {
+        await this.connection.invoke('JoinToQuiz', quizCode.toString(), formattedPlayerData);
+        console.log(`Direct JoinToQuiz broadcast sent for quiz ${quizCode}`);
+      } catch (err1) {
+        console.warn('Direct JoinToQuiz invoke failed:', err1);
+        
+        // 2. Try using send instead of invoke
         try {
-          await this.connection!.invoke('BeginGame', gameCode);
-          console.log(`Game started with BeginGame: ${gameCode}`);
+          await this.connection.send('JoinToQuiz', quizCode.toString(), formattedPlayerData);
+          console.log(`JoinToQuiz sent via send() for quiz ${quizCode}`);
         } catch (err2) {
-          console.error('Failed to start game with standard methods, trying fallback');
-          // Last attempt to broadcast to the game group
-          await this.connection!.invoke('SendMessage', `game-${gameCode}`, 'GameStarted', {});
-          console.log(`Game start message sent to group: ${gameCode}`);
+          console.warn('JoinToQuiz send() failed:', err2);
+        }
+      }
+      
+      // 3. Also try PlayerJoined event which might be used in some implementations
+      try {
+        await this.connection.invoke('PlayerJoined', quizCode.toString(), formattedPlayerData);
+        console.log(`PlayerJoined broadcast sent for quiz ${quizCode}`);
+      } catch (err3) {
+        console.warn('PlayerJoined invoke failed:', err3);
+      }
+      
+      // 4. Try a generic JoinQuizWithTeam event
+      if (formattedPlayerData.GroupName) {
+        try {
+          await this.connection.invoke('JoinQuizWithTeam', 
+            quizCode.toString(), 
+            formattedPlayerData,
+            formattedPlayerData.GroupName
+          );
+          console.log(`JoinQuizWithTeam broadcast sent for quiz ${quizCode} with team ${formattedPlayerData.GroupName}`);
+        } catch (err4) {
+          console.warn('JoinQuizWithTeam invoke failed:', err4);
         }
       }
     } catch (err) {
-      console.error('Error starting game via SignalR:', err);
-      throw err;
+      console.error('Error broadcasting player join:', err);
     }
+  }
+
+  /**
+   * Format player data consistently to ensure all required properties are present
+   * @param playerData Raw player data
+   * @returns Formatted player data
+   */
+  private formatPlayerData(playerData: any): PlayerSignalRData {
+    // Create base player data with required fields
+    const formattedData: PlayerSignalRData = {
+      Id: playerData.Id || playerData.id || playerData.playerId || 0,
+      NickName: playerData.NickName || playerData.nickName || playerData.name || 'Guest',
+      AvatarUrl: playerData.AvatarUrl || playerData.avatarUrl || playerData.avatar || 'alligator',
+      GroupId: playerData.GroupId || playerData.groupId || null,
+      GroupName: playerData.GroupName || playerData.groupName || playerData.team || playerData.teamName || null,
+      GroupDescription: playerData.GroupDescription || playerData.groupDescription || null,
+      // Add lowercase variants for compatibility
+      groupName: playerData.GroupName || playerData.groupName || playerData.team || playerData.teamName || null,
+      team: playerData.GroupName || playerData.groupName || playerData.team || playerData.teamName || null,
+      nickName: playerData.NickName || playerData.nickName || playerData.name || 'Guest'
+    };
+
+    return formattedData;
+  }
+
+  /**
+   * Safely connect to SignalR with improved error handling and retry logic
+   */
+  public async safeStartConnection(maxRetries: number = 3): Promise<boolean> {
+    let retryCount = 0;
+    
+    while (retryCount < maxRetries) {
+      try {
+        await this.startConnection();
+        console.log('SignalR connection successfully established');
+        return true;
+      } catch (error) {
+        retryCount++;
+        console.warn(`SignalR connection failed (attempt ${retryCount}/${maxRetries}):`, error);
+        
+        if (retryCount < maxRetries) {
+          // Exponential backoff: wait longer between each retry
+          const delay = 1000 * Math.pow(2, retryCount - 1);
+          console.log(`Retrying in ${delay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
+    }
+    
+    console.error(`Failed to connect to SignalR after ${maxRetries} attempts`);
+    return false;
   }
   
   /**
@@ -149,121 +282,127 @@ class SignalRService {
    * @param playerData Player information
    */
   public async joinQuiz(quizCode: string, playerData: any): Promise<void> {
-    await this.ensureConnection();
-    try {
-      // Ensure player data is formatted according to server expectations
-      const formattedPlayerData = {
-        Id: playerData.Id || 0,
-        NickName: playerData.NickName || playerData.name || 'Guest',
-        AvatarUrl: playerData.AvatarUrl || playerData.avatar || 'alligator',
-        GroupId: playerData.GroupId || null,
-        GroupName: playerData.GroupName || playerData.teamName || null,
-        GroupDescription: playerData.GroupDescription || null
-      };
-      
-      // Try different method names that might exist on the server
+    // Ensure we have a valid connection before proceeding
+    if (!this.isConnected()) {
       try {
-        await this.connection!.invoke('JoinGame', quizCode, formattedPlayerData);
-        console.log(`Player joined quiz with JoinGame: ${quizCode}`, formattedPlayerData);
-      } catch (joinGameErr) {
-        console.warn('JoinGame failed, trying JoinQuiz:', joinGameErr);
-        try {
-          await this.connection!.invoke('JoinQuiz', quizCode, formattedPlayerData);
-          console.log(`Player joined quiz with JoinQuiz: ${quizCode}`, formattedPlayerData);
-        } catch (joinQuizErr) {
-          console.warn('JoinQuiz failed, trying PlayerJoin:', joinQuizErr);
-          try {
-            await this.connection!.invoke('PlayerJoin', quizCode, formattedPlayerData);
-            console.log(`Player joined quiz with PlayerJoin: ${quizCode}`, formattedPlayerData);
-          } catch (playerJoinErr) {
-            console.error('All standard join methods failed, trying basic room join');
-            // Last attempt with direct room joining
-            await this.connection!.invoke('JoinGroup', `game-${quizCode}`);
-            console.log(`Player joined group for game: ${quizCode}`);
-            
-            // Broadcast player info to the group
-            await this.connection!.invoke('SendMessage', `game-${quizCode}`, 'PlayerJoined', formattedPlayerData);
-            console.log(`Player info broadcast to game group: ${quizCode}`);
-          }
+        const connected = await this.safeStartConnection();
+        if (!connected) {
+          console.warn('SignalR connection failed, continuing with REST API only');
+          return;
         }
+      } catch (error) {
+        console.warn('SignalR connection error, continuing with REST API only:', error);
+        return;
+      }
+    }
+    
+    try {
+      // Format player data consistently for all operations
+      const formattedPlayerData = this.formatPlayerData(playerData);
+      
+      // Check if this is a team player
+      const isTeamMode = !!formattedPlayerData.GroupName;
+      
+      // Log complete player data to help diagnose team mode issues
+      console.log(`Attempting to join quiz ${quizCode} via SignalR with player data:`, formattedPlayerData);
+      
+      // Special handling for team mode - log detailed team info
+      if (isTeamMode) {
+        console.log(`🟢 TEAM MODE: Player ${formattedPlayerData.NickName} joining team ${formattedPlayerData.GroupName}`);
+      }
+      
+      // First try the direct broadcast approach - only if player has an ID to avoid duplicates
+      if (formattedPlayerData.Id > 0) {
+        try {
+          await this.broadcastPlayerJoin(quizCode, formattedPlayerData);
+          console.log(`Direct JoinToQuiz broadcast successful for quiz ${quizCode}`);
+          // Continue with regular operations as well for redundancy
+        } catch (broadcastErr) {
+          console.warn('Direct JoinToQuiz broadcast failed:', broadcastErr);
+        }
+      } else {
+        console.log('Skipping direct broadcast because player has no ID yet');
+      }
+      
+      // Try AddToGroup method first - this is the standard SignalR method for joining a group
+      try {
+        await this.connection!.invoke('AddToGroup', quizCode.toString());
+        console.log(`Player added to SignalR group for quiz ${quizCode}`);
+        
+        // Then register the player with the quiz - only if the player has an ID
+        if (formattedPlayerData.Id > 0) {
+          await this.connection!.invoke('RegisterPlayer', quizCode.toString(), formattedPlayerData);
+          console.log(`Player registered for quiz ${quizCode}${formattedPlayerData.GroupName ? ` in team ${formattedPlayerData.GroupName}` : ''}`);
+          
+          // If team mode, also try calling RegisterTeamPlayer if the method exists
+          if (isTeamMode) {
+            try {
+              await this.connection!.invoke('RegisterTeamPlayer', quizCode.toString(), formattedPlayerData);
+              console.log(`Team mode: Player registered with team ${formattedPlayerData.GroupName}`);
+            } catch (teamRegisterErr) {
+              console.warn('RegisterTeamPlayer not available, using standard registration:', teamRegisterErr);
+              
+              // Try a generic PlayerJoin method with team info
+              try {
+                await this.connection!.invoke('PlayerJoin', quizCode.toString(), formattedPlayerData);
+                console.log(`PlayerJoin invoked for team player in quiz ${quizCode}`);
+              } catch (playerJoinErr) {
+                console.warn('PlayerJoin fallback failed:', playerJoinErr);
+              }
+            }
+          }
+        } else {
+          console.log('Skipping RegisterPlayer because player has no ID yet');
+        }
+        
+        return;
+      } catch (addToGroupErr) {
+        console.warn('AddToGroup method failed:', addToGroupErr);
+        
+        // Try JoinGroup as an alternative
+        try {
+          await this.connection!.invoke('JoinGroup', quizCode.toString());
+          console.log(`Player joined group for quiz ${quizCode} using JoinGroup`);
+          
+          // Also try registering the player with the quiz if JoinGroup succeeds - only if player has an ID
+          if (formattedPlayerData.Id > 0) {
+            try {
+              await this.connection!.invoke('RegisterPlayer', quizCode.toString(), formattedPlayerData);
+              console.log(`Player registered for quiz ${quizCode} after JoinGroup successful`);
+            } catch (registerErr) {
+              console.warn('RegisterPlayer failed after JoinGroup:', registerErr);
+            }
+          } else {
+            console.log('Skipping RegisterPlayer after JoinGroup because player has no ID yet');
+          }
+          
+          return;
+        } catch (joinGroupErr) {
+          console.warn('JoinGroup method failed:', joinGroupErr);
+        }
+        
+        // Final fallback - try PlayerJoin method which might be used in some implementations
+        if (formattedPlayerData.Id > 0) {
+          try {
+            await this.connection!.invoke('PlayerJoin', quizCode.toString(), formattedPlayerData);
+            console.log(`Player joined quiz ${quizCode} using PlayerJoin method`);
+            return;
+          } catch (playerJoinErr) {
+            console.warn('PlayerJoin method failed:', playerJoinErr);
+          }
+        } else {
+          console.log('Skipping PlayerJoin because player has no ID yet');
+        }
+        
+        // If we can't join a group properly, we should still be able to receive broadcasts
+        // Log a warning but don't throw an error since the REST API is the primary mechanism
+        console.warn('Could not join SignalR group. Player will be added via REST API but real-time updates may be delayed.');
+        return;
       }
     } catch (err) {
       console.error('Error joining quiz via SignalR:', err);
-      throw err;
-    }
-  }
-  
-  // Make sure connection is established before making any calls
-  private async ensureConnection(): Promise<void> {
-    if (!this.isConnected()) {
-      console.log('Connection not established, connecting now...');
-      await this.startConnection();
-      
-      // Add small delay to ensure connection is fully established
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      if (!this.isConnected()) {
-        throw new Error('Failed to establish SignalR connection');
-      }
-    }
-  }
-  
-  // Event registration methods
-  public onPlayerJoined(callback: (player: any) => void): void {
-    this.ensureConnectionSync();
-    this.connection!.on('PlayerJoined', callback);
-    
-    // Also listen for generic messages that might contain player joined info
-    this.connection!.on('ReceiveMessage', (messageType: string, data: any) => {
-      if (messageType === 'PlayerJoined') {
-        callback(data);
-      }
-    });
-  }
-  
-  public onGameStarted(callback: (gameData: any) => void): void {
-    this.ensureConnectionSync();
-    // Listen for multiple possible event names
-    this.connection!.on('GameStarted', callback);
-    this.connection!.on('StartGame', callback);
-    this.connection!.on('BeginGame', callback);
-    
-    // Also listen for generic messages that might contain game started info
-    this.connection!.on('ReceiveMessage', (messageType: string, data: any) => {
-      if (messageType === 'GameStarted' || messageType === 'BeginGame') {
-        callback(data);
-      }
-    });
-  }
-  
-  public onQuestionReceived(callback: (question: any) => void): void {
-    this.ensureConnectionSync();
-    this.connection!.on('QuestionReceived', callback);
-    this.connection!.on('NextQuestion', callback);
-    
-    // Also listen for generic messages that might contain question info
-    this.connection!.on('ReceiveMessage', (messageType: string, data: any) => {
-      if (messageType === 'QuestionReceived' || messageType === 'NextQuestion') {
-        callback(data);
-      }
-    });
-  }
-  
-  // Synchronous version of ensureConnection for event registration
-  private ensureConnectionSync(): void {
-    if (!this.isConnected()) {
-      console.warn('Attempting to register event on disconnected SignalR hub');
-      if (!this.connection) {
-        this.connection = new signalR.HubConnectionBuilder()
-          .withUrl(SIGNALR_URL)
-          .withAutomaticReconnect()
-          .build();
-          
-        // Start connection asynchronously, but don't wait
-        this.startConnection().catch(err => {
-          console.error('Failed to connect while registering event:', err);
-        });
-      }
+      // Don't throw an error, as the REST API is the primary mechanism
+      console.warn('SignalR connection failed, but player will be added via REST API');
     }
   }
 }

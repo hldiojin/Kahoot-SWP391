@@ -179,6 +179,59 @@ const Transition = React.forwardRef(function Transition(
   return <Slide direction="up" ref={ref} {...props} />;
 });
 
+// Replace submitAnswerDirectly function with this improved version
+const submitAnswerDirectly = async (exactPlayerId: number, questionId: number, isCorrect: boolean, responseTime: number, answer: string, score: number) => {
+  try {
+    console.log(`🔹 Submitting answer for player ${exactPlayerId}`);
+    
+    // Use the correct endpoint with proper data structure
+    const response = await axios.post(
+      `${API_BASE_URL}/api/PlayerAnswer`,
+      {
+        playerId: exactPlayerId,
+        questionId: questionId,
+        answeredAt: new Date().toISOString(),
+        isCorrect: isCorrect,
+        responseTime: responseTime,
+        answer: answer
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        }
+      }
+    );
+    
+    console.log("✅ Answer submitted successfully");
+    return response.data;
+  } catch (error) {
+    console.error("❌ Answer submission failed:", error);
+    
+    // Store answer locally as fallback
+    try {
+      const storedAnswers = localStorage.getItem('playerAnswers') || '[]';
+      const answers = JSON.parse(storedAnswers);
+      answers.push({
+        playerId: exactPlayerId,
+        questionId: questionId,
+        answeredAt: new Date().toISOString(),
+        isCorrect: isCorrect,
+        responseTime: responseTime,
+        answer: answer,
+        score: score
+      });
+      localStorage.setItem('playerAnswers', JSON.stringify(answers));
+      sessionStorage.setItem('playerAnswers', JSON.stringify(answers));
+      console.log('📝 Stored answer locally for fallback');
+    } catch (storageError) {
+      console.error('Failed to store locally:', storageError);
+    }
+    
+    throw error;
+  }
+};
+
 export default function GamePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -676,9 +729,13 @@ export default function GamePage() {
               localStorage.setItem('gameResults', JSON.stringify(minimalResult));
             }
             
-            // Redirect to results page
+            // Redirect to results page with explicit parameters for API fetching
             setTimeout(() => {
-              router.push('/game-results');
+              // Instead of going to /game-results directly, add query parameters for quizId and playerId
+              const quizId = quizData?.id || 0;
+              const resultUrl = `/game-results?quizId=${quizId}&playerId=${playerId}`;
+              console.log(`Navigating to results page with URL: ${resultUrl}`);
+              router.push(resultUrl);
             }, 500);
           } catch (error) {
             console.error("Error saving game results:", error);
@@ -725,9 +782,11 @@ export default function GamePage() {
             console.error("Failed to create minimal result:", e);
           }
           
-          // Even if score calculation fails, still try to redirect to results page
+          // Even if score calculation fails, still redirect to results page with available parameters
           setTimeout(() => {
-            router.push('/game-results');
+            const quizId = quizData?.id || 0;
+            const playerId = playerInfo?.playerId || playerInfo?.id || 0;
+            router.push(`/game-results?quizId=${quizId}&playerId=${playerId}`);
           }, 500);
         }
       };
@@ -818,106 +877,6 @@ export default function GamePage() {
       localStorage.setItem('gameResults', JSON.stringify([gameResult]));
     }
   }, [allSubmittedAnswers, score]);
-
-  // Add a direct API call function to use exact player ID (bypassing any service layers)
-  const submitAnswerDirectly = (exactPlayerId: number, questionId: number, isCorrect: boolean, responseTime: number, answer: string, score: number) => {
-    try {
-      // ⚠️ CRITICAL CHECK - If this isn't your actual player ID, we need to find where it's coming from
-      // Log suspicious values to help debug
-      if (exactPlayerId > 10000) {
-        console.error(`⚠️ SUSPICIOUS PLAYER ID: ${exactPlayerId} - This is likely a generated ID, not from the API`);
-        console.error("Current playerInfo object:", JSON.stringify(playerInfo, null, 2));
-        console.error("SessionStorage playerInfo:", sessionStorage.getItem('currentPlayer'));
-        
-        // Try to recover by getting the correct ID from storage
-        try {
-          const stored = sessionStorage.getItem('currentPlayer');
-          if (stored) {
-            const parsed = JSON.parse(stored);
-            if (parsed.playerId && parsed.playerId < 10000) {
-              console.log(`🔄 RECOVERING with stored playerId: ${parsed.playerId}`);
-              exactPlayerId = Number(parsed.playerId);
-            }
-          }
-        } catch (e) {
-          console.error("Error recovering playerId:", e);
-        }
-      }
-      
-      // Ensure ID is actually a number
-      const numericPlayerId = Number(exactPlayerId);
-      
-      // Debug player ID information
-      console.log(`🔍 PLAYER ID DEBUG:
-      - Original exactPlayerId: ${exactPlayerId} (type: ${typeof exactPlayerId})
-      - Converted numericPlayerId: ${numericPlayerId} (type: ${typeof numericPlayerId})
-      - Is valid number: ${!isNaN(numericPlayerId)}
-      - Player info from storage: ${sessionStorage.getItem('currentPlayer')}`);
-      
-      // Ensure responseTime is an integer
-      const intResponseTime = Math.round(responseTime);
-      
-      console.log(`▶️ DIRECT SUBMIT: Using player ID ${numericPlayerId} for question ${questionId}`);
-      
-      // Get the session ID and quiz ID if available
-      let quizId = null;
-      let sessionCode = null;
-      try {
-        if (quizData) {
-          quizId = quizData.id;
-          console.log(`Found quizId: ${quizId}`);
-        }
-        
-        // Try to get sessionId from URL
-        const urlSearchParams = new URLSearchParams(window.location.search);
-        sessionCode = urlSearchParams.get('code');
-        if (sessionCode) {
-          console.log(`Found session code: ${sessionCode}`);
-        }
-      } catch (e) {
-        console.error("Error getting session/quiz info:", e);
-      }
-      
-      // Create payload without wrapper (this format works)
-      const payload = {
-        id: 0,
-        playerId: numericPlayerId,
-        questionId: Number(questionId), // Also ensure questionId is numeric
-        answeredAt: new Date().toISOString(),
-        isCorrect: isCorrect,
-        responseTime: intResponseTime, // Use integer value
-        answer: answer,
-        score: score // Add calculated score to the answer data
-      };
-      
-      // Log the payload we're sending
-      console.log("▶️ DIRECT SUBMIT PAYLOAD:", JSON.stringify(payload, null, 2));
-      
-      // Make a single API call with the unwrapped payload - which has been confirmed to work
-      return axios.post(
-        `${API_BASE_URL}/api/PlayerAnswer`,
-        payload, // Direct payload without wrapper
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
-          }
-        }
-      ).then(response => {
-        console.log("✅ DIRECT SUBMIT SUCCESS:", response.data);
-        return response.data;
-      }).catch(error => {
-        console.error("❌ DIRECT SUBMIT ERROR:", error);
-        if (error.response) {
-          console.error("❌ API ERROR RESPONSE:", error.response.data);
-        }
-        throw error;
-      });
-    } catch (error) {
-      console.error("❌ DIRECT SUBMIT EXCEPTION:", error);
-      throw error;
-    }
-  };
 
   const handleSelectAnswer = (index: number) => {
     if (submittedAnswer !== null || isFeedbackShown) return;
@@ -1060,9 +1019,17 @@ export default function GamePage() {
         answerLetter,
         currentPointsEarned // Pass calculated score to direct submission function
       ).then(() => {
-        console.log("✅ Answer submitted successfully using direct method");
-      }).catch((error) => {
-        console.error("❌ Error with direct submission:", error);
+        console.log("✅ Answer submitted successfully using minimal approach");
+      }).catch((error: any) => {
+        console.error("❌ Error with minimal approach:", error);
+        
+        // Save locally anyway for score calculation
+        const storedAnswers = localStorage.getItem('playerAnswers');
+        const answers = storedAnswers ? JSON.parse(storedAnswers) : [];
+        answers.push(answerData); // Use the already created answerData
+        localStorage.setItem('playerAnswers', JSON.stringify(answers));
+        sessionStorage.setItem('playerAnswers', JSON.stringify(answers));
+        console.log('📝 Stored answer locally after API failure');
       });
     } catch (error) {
       console.error("❌ Error in answer submission:", error);
@@ -1175,9 +1142,17 @@ export default function GamePage() {
         'T', // 'T' for timeout
         0 // No points for timeout
       ).then(() => {
-        console.log("✅ Timeout submitted successfully using direct method");
-      }).catch((error) => {
-        console.error("❌ Error with direct timeout submission:", error);
+        console.log("✅ Timeout submitted successfully using minimal approach");
+      }).catch((error: any) => {
+        console.error("❌ Error with timeout minimal approach:", error);
+        
+        // Save locally anyway
+        const storedAnswers = localStorage.getItem('playerAnswers');
+        const answers = storedAnswers ? JSON.parse(storedAnswers) : [];
+        answers.push(timeoutData); // Use the already created timeoutData
+        localStorage.setItem('playerAnswers', JSON.stringify(answers));
+        sessionStorage.setItem('playerAnswers', JSON.stringify(answers));
+        console.log('📝 Stored timeout locally after API failure');
       });
     } catch (error) {
       console.error("❌ Error in timeout submission:", error);
@@ -1248,6 +1223,20 @@ export default function GamePage() {
       }
     }, 300); // Wait for dialog closing animation to complete
   };
+
+  // Add a useEffect to detect automatic game start
+  useEffect(() => {
+    // Check if this page was loaded after a game start redirect
+    const autoStartGame = sessionStorage.getItem('gameStarted') === 'true';
+    
+    if (autoStartGame && !gameStarted && !loading && quizData) {
+      console.log('Auto-starting game after redirect from waiting room');
+      // Clear the flag so we don't auto-start again if user refreshes
+      sessionStorage.removeItem('gameStarted');
+      // Auto-start the game
+      setGameStarted(true);
+    }
+  }, [gameStarted, loading, quizData]);
 
   if (loading) {
     return (

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Box,
   Typography,
@@ -22,7 +22,8 @@ import {
   PlayArrow as PlayIcon,
   Person as PersonIcon,
   Groups as GroupsIcon,
-  Pets as PetsIcon
+  Pets as PetsIcon,
+  People as PeopleIcon
 } from '@mui/icons-material';
 import { useRouter, useSearchParams } from 'next/navigation';
 import PublicLayout from '../components/PublicLayout';
@@ -167,6 +168,7 @@ function AnimalAvatar({ name, color }: { name: string; color?: string }) {
 interface PlayerInfo {
   name: string;
   avatar: string;
+  avatarUrl?: string;
   team: string | null;
   gameCode: string;
   joinTime: string;
@@ -174,6 +176,8 @@ interface PlayerInfo {
   playerId?: number;
   playerCode?: number;
   quizId?: number;
+  groupName?: string | null;
+  GroupName?: string | null;
 }
 
 export default function PlayGamePage() {
@@ -204,6 +208,10 @@ export default function PlayGamePage() {
 
   const [navigationError, setNavigationError] = useState(false);
   const [showManualNavigation, setShowManualNavigation] = useState(false);
+
+  // Debounce timer for player creation
+  const playerCreationTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [playerCreated, setPlayerCreated] = useState(false);
 
   useEffect(() => {
     const loadGame = async () => {
@@ -259,17 +267,47 @@ export default function PlayGamePage() {
           console.log('Saved team mode to sessionStorage');
         }
 
+        // First check if the quiz code is valid
+        console.log(`Validating quiz code ${code} before proceeding`);
+        let quizCodeCheck = await quizService.checkQuizCode(code);
+        console.log('Quiz code check result:', quizCodeCheck);
+        
+        // If the quiz code is invalid, try fallback check
+        if (quizCodeCheck.status === 404 || quizCodeCheck.status === 400) {
+          console.log('Initial quiz code check failed, trying fallback...');
+          quizCodeCheck = await quizService.fallbackCheckQuizCode(code);
+          console.log('Fallback check result:', quizCodeCheck);
+        }
+        
+        // If still invalid after fallback, show error
+        if (quizCodeCheck.status === 404 || quizCodeCheck.status === 400) {
+          console.error('Invalid quiz code after fallback check:', quizCodeCheck);
+          setError(`Quiz not found with code ${code}. Please check the code and try again.`);
+          setLoading(false);
+          return;
+        }
+
         // Call the API to get quiz by code using service
         try {
           console.log(`Fetching quiz data for code ${code} from API`);
           
-          // Get quiz data from API
+          // Use the quiz data from the checkQuizCode response if available
+          let quizData;
+          if (quizCodeCheck.data && (quizCodeCheck.data.id || quizCodeCheck.data.title)) {
+            console.log('Using quiz data from code check response');
+            quizData = quizCodeCheck.data;
+          } else {
+            // Otherwise fetch from API
+            console.log('Fetching complete quiz data from API');
           const quizResponse = await quizService.getQuizByCode(code);
           
           if (quizResponse && quizResponse.status === 200 && quizResponse.data) {
             console.log('API returned quiz data successfully:', quizResponse.data);
-            
-            const quizData = quizResponse.data;
+              quizData = quizResponse.data;
+            } else {
+              throw new Error('Failed to get quiz data');
+            }
+          }
             
             // Determine the game mode - start with checking if we already decided it should be team mode
             let gameModeSetting: 'solo' | 'team';
@@ -379,9 +417,6 @@ export default function PlayGamePage() {
                 console.error("Error fetching teams:", teamsError);
                 setTeamNames(DEFAULT_TEAM_NAMES);
               }
-            }
-          } else {
-            throw new Error("Invalid quiz data returned from API");
           }
         } catch (apiError) {
           console.error("Error fetching quiz:", apiError);
@@ -399,8 +434,32 @@ export default function PlayGamePage() {
   }, [code]);
 
   const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setPlayerName(e.target.value);
+    const newName = e.target.value;
+    setPlayerName(newName);
     setNameError('');
+    
+    // Clear any existing timer to avoid multiple API calls
+    if (playerCreationTimerRef.current) {
+      clearTimeout(playerCreationTimerRef.current);
+      playerCreationTimerRef.current = null;
+    }
+    
+    // Only attempt player creation if we have a name with sufficient length
+    // and we haven't already created a player
+    if (newName && newName.trim().length >= 2 && selectedAnimal && code && !playerCreated) {
+      // Set a debounce timer of 1 second to wait for user to finish typing
+      playerCreationTimerRef.current = setTimeout(() => {
+        console.log(`Debounce timer complete - creating player for: ${newName}`);
+        createPlayerInBackground(newName);
+      }, 1000); // 1 second debounce
+    }
+  };
+  
+  // Helper function to create a player in the background - we'll just log a message for now
+  const createPlayerInBackground = (name: string) => {
+    console.log(`[DEBUG] Would create player with name: ${name} and avatar: ${selectedAnimal}`);
+    console.log('Skipping early player creation and focusing on createPlayer during join');
+    setPlayerCreated(true); // Mark as created to prevent duplicate attempts
   };
 
   const handleTeamChange = (event: SelectChangeEvent<string>) => {
@@ -408,7 +467,7 @@ export default function PlayGamePage() {
   };
   
   // Update the handleAnimalChange function
-  const handleAnimalChange = (animal: string) => {
+  const handleAnimalChange = async (animal: string) => {
     // Ensure the animal is supported by react-animals
     const validAnimal = ANIMALS.includes(animal) ? animal : 'alligator';
     
@@ -416,6 +475,56 @@ export default function PlayGamePage() {
     
     // Set the color from our animal color map
     setSelectedColor(animalColorMap[validAnimal as keyof typeof animalColorMap] || 'orange');
+    
+    // Only attempt to create a player if we have a name and haven't created one already
+    if (playerName && playerName.trim().length >= 2 && code && !playerCreated) {
+      // Create the player right away after avatar is selected (no debounce needed)
+      createPlayerInBackground(playerName);
+    }
+  };
+
+  // Add this function to directly call the SignalR service for team mode players
+  const directSignalRNotify = async (code: string, playerData: any) => {
+    try {
+      console.log('Attempting direct SignalR notification for team player...');
+      const signalRService = (await import('@/services/signalRService')).default;
+      
+      if (!signalRService.isConnected()) {
+        await signalRService.startConnection();
+      }
+      
+      // Try to broadcast player join directly
+      await signalRService.broadcastPlayerJoin(code, playerData);
+      console.log('Direct SignalR notification completed');
+    } catch (err) {
+      console.error('Direct SignalR notification failed:', err);
+    }
+  };
+
+  // Add this alternative direct join method for team mode
+  const directJoinTeamModeQuiz = async (quizId: number, playerId: number, teamName: string): Promise<void> => {
+    try {
+      console.log(`Using direct API call to join team mode quiz: QuizId=${quizId}, PlayerId=${playerId}, Team=${teamName}`);
+      
+      // Get QuizService
+      const quizService = (await import('@/services/quizService')).default;
+      
+      // Try joining the quiz with explicit team information
+      const joinResult = await quizService.joinQuizWithTeam(
+        quizId, 
+        playerId, 
+        teamName, 
+        {
+          name: playerName,
+          avatar: selectedAnimal,
+          team: teamName
+        }
+      );
+      
+      console.log('Direct team mode join result:', joinResult);
+    } catch (err) {
+      console.warn('Direct team mode join failed:', err);
+    }
   };
 
   const handleStartGame = async () => {
@@ -432,75 +541,227 @@ export default function PlayGamePage() {
         throw new Error('Quiz code is missing');
       }
 
+      // Check if we're in team mode and have a team selected
+      if (gameMode === 'team' && !selectedTeam) {
+        setError('Please select a team to join');
+        setApiLoading(false);
+        return;
+      }
+
+      // Log team mode status
+      if (gameMode === 'team') {
+        console.log(`🟢 TEAM MODE: Player ${playerName} is joining team ${selectedTeam}`);
+      }
+
       // 1. Build player data according to the API's expected format
       const playerData: PlayerInfo = {
         name: playerName,
         avatar: selectedAnimal,
+        avatarUrl: `simple://${selectedAnimal}/${animalColorMap[selectedAnimal as keyof typeof animalColorMap] || 'orange'}`, // Use a proper avatar URL format
         team: gameMode === 'team' ? selectedTeam : null,
+        groupName: gameMode === 'team' ? selectedTeam : null, // Add groupName for compatibility
+        GroupName: gameMode === 'team' ? selectedTeam : null, // Add GroupName for SignalR format
         gameCode: code,
         joinTime: new Date().toISOString()
       };
 
       console.log('Joining quiz with player data:', playerData);
       
-      // 2. Import required services
-      const quizService = (await import('@/services/quizService')).default;
-      
-      // 3. Call the API to register player - This is the MAIN way to join
-      let playerId = 0;
-      try {
-        console.log(`Calling API to join quiz with code ${code}...`);
-        // Format player data for API request
-        const apiPlayerData = {
-          Id: 0,
-          NickName: playerName,
-          AvatarUrl: selectedAnimal,
-          GroupId: null,
-          GroupName: gameMode === 'team' ? selectedTeam : null,
-          GroupDescription: null
-        };
-
-        // If team mode and selectedTeam is provided
-        if (gameMode === 'team' && selectedTeam) {
-          console.log(`Using team name: ${selectedTeam} for registration`);
-          apiPlayerData.GroupName = selectedTeam;
+      // 2. Get the quizId from gameData or sessionStorage
+      let quizId: number | null = null;
+      if (gameData && gameData.id) {
+        quizId = gameData.id;
+      } else {
+        // Try to get quizId from sessionStorage
+        const quizDataStr = sessionStorage.getItem('currentQuiz');
+        if (quizDataStr) {
+          try {
+            const quizData = JSON.parse(quizDataStr);
+            if (quizData && quizData.id) {
+              quizId = parseInt(quizData.id);
+            }
+          } catch (e) {
+            console.error('Error parsing quiz data from sessionStorage:', e);
+          }
         }
-
-        // Call the API to register player
-        const response = await quizService.joinQuiz(code, apiPlayerData);
-        console.log('Join API response:', response);
-        
-        if (response && response.data) {
-          playerId = response.data.playerId || 0;
-          console.log(`Player registered with ID: ${playerId}`);
-          
-          // Update player data with ID from response
-          playerData.id = playerId;
-          playerData.playerId = playerId;
-        }
-        
-        // API call successful - proceed
-      } catch (apiError) {
-        console.error('Error registering player via API:', apiError);
-        throw new Error(`Failed to join game: ${apiError instanceof Error ? apiError.message : 'API error'}`);
       }
       
-      // 4. Store player data in session storage for later use
+      console.log(`Using quiz ID: ${quizId || 'unknown'} for player creation`);
+      
+      // 3. Create player using direct API call
+      let playerId = 0;
+      
+      if (quizId) {
+        try {
+          // Format player data using the exact API format
+          const playerApiData = {
+            playerId: 0,
+            nickname: playerName.trim(),
+            avatarUrl: `simple://${selectedAnimal}/${animalColorMap[selectedAnimal as keyof typeof animalColorMap] || 'orange'}`,
+            score: 0,
+            quizId: quizId,
+            // Add team information for API
+            groupName: gameMode === 'team' ? selectedTeam : null,
+            team: gameMode === 'team' ? selectedTeam : null,
+            GroupName: gameMode === 'team' ? selectedTeam : null
+          };
+          
+          console.log('Creating player with data:', playerApiData);
+          
+          // Create player using direct API call
+          const API_BASE_URL = 'https://kahootclone-f7hkd0hwafgbfrfa.southeastasia-01.azurewebsites.net';
+          const response = await axios.post(
+            `${API_BASE_URL}/api/Player`, 
+            playerApiData,
+            {
+              headers: {
+                'Content-Type': 'application/json'
+              }
+            }
+          );
+          
+          console.log('Player creation response:', response.data);
+          
+          // Extract player ID from response
+          if (typeof response.data === 'object') {
+            if (response.data.playerId) {
+              playerId = response.data.playerId;
+            } else if (response.data.id) {
+              playerId = response.data.id;
+            } else if (response.data.data && (response.data.data.playerId || response.data.data.id)) {
+              playerId = response.data.data.playerId || response.data.data.id;
+            }
+          } else if (typeof response.data === 'number') {
+            playerId = response.data;
+          }
+          
+          if (playerId) {
+            console.log(`Player created with ID: ${playerId}`);
+          
+            // Update player data with ID
+          playerData.id = playerId;
+          playerData.playerId = playerId;
+            playerData.avatarUrl = playerApiData.avatarUrl;
+            playerData.quizId = quizId;
+            
+            // If in team mode, log additional debug information
+            if (gameMode === 'team' && selectedTeam) {
+              console.log(`🟢 TEAM MODE: Player ${playerName} (ID: ${playerId}) joined team: ${selectedTeam}`);
+              
+              // For team mode, attempt direct SignalR notification immediately
+              directSignalRNotify(code, {
+                id: playerId,
+                playerId: playerId,
+                nickName: playerName,
+                name: playerName,
+                avatarUrl: playerApiData.avatarUrl,
+                avatar: selectedAnimal,
+                team: selectedTeam,
+                groupName: selectedTeam,
+                GroupName: selectedTeam,
+                quizId: quizId
+              });
+              
+              // Also try the direct team mode join method
+              try {
+                await directJoinTeamModeQuiz(quizId, playerId, selectedTeam);
+                console.log('Successfully called directJoinTeamModeQuiz');
+              } catch (teamJoinErr) {
+                console.warn('Error calling directJoinTeamModeQuiz:', teamJoinErr);
+              }
+            }
+            
+            // Try to join the player to the quiz using the JoinQuiz API
+            try {
+              console.log(`Registering player ${playerId} with quiz ${quizId}`);
+              
+              // For team mode, try the JoinTeam endpoint if available
+              if (gameMode === 'team' && selectedTeam) {
+                try {
+                  console.log(`Trying JoinTeam endpoint for player ${playerId} with team ${selectedTeam}`);
+                  const joinTeamResponse = await axios.post(
+                    `${API_BASE_URL}/api/Group/JoinTeam?playerId=${playerId}&teamName=${encodeURIComponent(selectedTeam)}&quizId=${quizId}`,
+                    {
+                      playerDTO: {
+                        playerId: playerId,
+                        nickname: playerName,
+                        avatarUrl: `simple://${selectedAnimal}/${animalColorMap[selectedAnimal as keyof typeof animalColorMap] || 'orange'}`,
+                        score: 0,
+                        quizId: quizId,
+                        groupName: selectedTeam,
+                        teamName: selectedTeam
+                      },
+                      teamName: selectedTeam,
+                      quizId: quizId
+                    },
+                    {
+                      headers: {
+                        'Content-Type': 'application/json'
+                      }
+                    }
+                  );
+                  console.log('Join team response:', joinTeamResponse.data);
+                } catch (joinTeamError) {
+                  console.warn('JoinTeam endpoint not available or failed:', joinTeamError);
+                }
+              }
+            } catch (joinError) {
+              console.warn('Error joining quiz, will continue anyway:', joinError);
+            }
+          } else {
+            console.warn('Could not extract player ID from response');
+          }
+        } catch (error: any) {
+          console.error('Error creating player:', error);
+          
+          if (error.response) {
+            console.error('API error response:', error.response.data);
+          }
+          
+          // Continue anyway to show the waiting room
+          console.warn('Player creation failed, continuing to waiting room');
+        }
+      } else {
+        console.warn('No valid quizId found for player creation');
+      }
+      
+      // 5. Store player data in session storage
       try {
-        playerData.playerId = playerId; // Ensure playerId is set
+        // Format proper player data for storage
+        const storagePlayerData = {
+          playerId: playerId,
+          id: playerId,
+          nickname: playerName,
+          name: playerName,
+          avatarUrl: `simple://${selectedAnimal}/${animalColorMap[selectedAnimal as keyof typeof animalColorMap] || 'orange'}`,
+          avatar: selectedAnimal,
+          score: 0,
+          quizId: quizId,
+          teamName: gameMode === 'team' ? selectedTeam : null,
+          groupName: gameMode === 'team' ? selectedTeam : null,
+          GroupName: gameMode === 'team' ? selectedTeam : null,
+          team: gameMode === 'team' ? selectedTeam : null,
+          gameCode: code
+        };
+        
         sessionStorage.setItem('currentPlayerName', playerName);
         sessionStorage.setItem('currentPlayerAvatar', selectedAnimal);
-        sessionStorage.setItem('currentPlayer', JSON.stringify(playerData));
+        sessionStorage.setItem('currentPlayer', JSON.stringify(storagePlayerData));
+        
+        // Also save game mode and team information to sessionStorage
+        sessionStorage.setItem('gameMode', gameMode);
         if (gameMode === 'team') {
           sessionStorage.setItem('currentTeam', selectedTeam);
+          console.log(`Saved team information to sessionStorage: ${selectedTeam}`);
         }
-        console.log('Stored player data:', playerData);
+        
+        console.log('Stored player data:', storagePlayerData);
       } catch (storageError) {
         console.error('Error storing player data:', storageError);
         // Non-critical error, continue
       }
       
-      // 5. Try SignalR connection in the background without waiting
+      // 6. Try SignalR connection in the background without waiting
       // This prevents blocking the user flow if SignalR fails
       setTimeout(async () => {
         try {
@@ -514,8 +775,12 @@ export default function PlayGamePage() {
             AvatarUrl: selectedAnimal,
             GroupId: null,
             GroupName: gameMode === 'team' ? selectedTeam : null,
+            team: gameMode === 'team' ? selectedTeam : null,
+            groupName: gameMode === 'team' ? selectedTeam : null,
             GroupDescription: null
           };
+          
+          console.log('SignalR player data:', signalRPlayerData);
           
           // Try SignalR connection with timeout
           const timeoutPromise = new Promise((_, reject) => {
@@ -528,12 +793,35 @@ export default function PlayGamePage() {
               console.log('Connecting to SignalR...');
               await signalRService.startConnection();
               console.log('SignalR connection established');
-            }
             
-            // Join the quiz room via SignalR
-            console.log(`Joining quiz ${code} via SignalR...`);
+              // Try to join the quiz via SignalR
+              try {
             await signalRService.joinQuiz(code, signalRPlayerData);
-            console.log('Successfully joined quiz via SignalR');
+                console.log('Player joined quiz via SignalR');
+                
+                // For team mode, also try the direct broadcast method
+                if (gameMode === 'team') {
+                  await signalRService.broadcastPlayerJoin(code, signalRPlayerData);
+                  console.log('Team mode: direct SignalR broadcast sent');
+                }
+              } catch (joinErr) {
+                console.warn('Error joining quiz via SignalR:', joinErr);
+              }
+            } else {
+              console.log('SignalR already connected, trying to join quiz');
+              try {
+                await signalRService.joinQuiz(code, signalRPlayerData);
+                console.log('Player joined quiz via SignalR (existing connection)');
+                
+                // For team mode, also try the direct broadcast method
+                if (gameMode === 'team') {
+                  await signalRService.broadcastPlayerJoin(code, signalRPlayerData);
+                  console.log('Team mode: direct SignalR broadcast sent');
+                }
+              } catch (joinErr) {
+                console.warn('Error joining quiz via SignalR (existing connection):', joinErr);
+              }
+            }
           })();
           
           // Race with timeout
@@ -544,9 +832,14 @@ export default function PlayGamePage() {
         }
       }, 100);
       
-      // 6. Navigate to player waiting room
-      // Don't wait for SignalR, API join is sufficient
-      const waitingRoomUrl = `/play-game/player?code=${code}&name=${encodeURIComponent(playerName)}&avatar=${selectedAnimal}`;
+      // 7. Navigate to player waiting room with team info if in team mode
+      let waitingRoomUrl = `/play-game/player?code=${code}&name=${encodeURIComponent(playerName)}&avatar=${selectedAnimal}`;
+      
+      // Add team parameter if in team mode
+      if (gameMode === 'team' && selectedTeam) {
+        waitingRoomUrl += `&team=${encodeURIComponent(selectedTeam)}`;
+      }
+      
       console.log('Navigating to:', waitingRoomUrl);
       
       // Navigate immediately
@@ -571,6 +864,126 @@ export default function PlayGamePage() {
       console.error('Error joining game:', error);
       setError(`Failed to join the game: ${error.message || 'Unknown error'}. Please try again.`);
       setApiLoading(false);
+    }
+  };
+
+  // Add this function after handleStartGame to specifically help with PlayerAnswer submissions
+  const submitAnswerWithoutTracking = async (playerId: number, questionId: number, isCorrect: boolean, responseTime: number, answer: string) => {
+    try {
+      console.log(`🔹 Submitting answer without entity tracking for player ${playerId}`);
+      
+      // Define the API base URL
+      const API_BASE_URL = 'https://kahootclone-f7hkd0hwafgbfrfa.southeastasia-01.azurewebsites.net';
+      
+      // APPROACH 1: Use URL parameters with empty body to avoid entity tracking
+      try {
+        const params = new URLSearchParams({
+          playerId: playerId.toString(),
+          questionId: questionId.toString(),
+          isCorrect: isCorrect.toString(),
+          responseTime: responseTime.toString(),
+          answer: answer,
+          timestamp: Date.now().toString()
+        }).toString();
+        
+        const response = await axios.post(
+          `${API_BASE_URL}/api/Player/${playerId}/answer/${questionId}`,
+          {
+            answer: answer,
+            isCorrect: isCorrect,
+            responseTime: responseTime,
+            timestamp: Date.now()
+          },
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json'
+            }
+          }
+        );
+        
+        console.log('✅ Answer submitted with URL parameters approach');
+        return response.data;
+      } catch (error1) {
+        console.warn('URL parameter approach failed, trying alternate endpoint');
+        
+        // APPROACH 2: Try player-specific endpoint
+        try {
+          const response = await axios.post(
+            `${API_BASE_URL}/api/Player/${playerId}/answer/${questionId}`,
+            {
+              answer: answer,
+              isCorrect: isCorrect,
+              responseTime: responseTime,
+              timestamp: Date.now()
+            },
+            {
+              headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+              }
+            }
+          );
+          
+          console.log('✅ Answer submitted with player-specific endpoint');
+          return response.data;
+        } catch (error2) {
+          console.warn('Player endpoint failed, trying direct POST without ID');
+          
+          // APPROACH 3: Try direct POST without ID field
+          try {
+            const response = await axios.post(
+              `${API_BASE_URL}/api/PlayerAnswer`,
+              {
+                // The API expects this exact format - NO id field to avoid entity tracking issues
+                playerId: playerId,
+                questionId: questionId,
+                answeredAt: new Date().toISOString(),
+                isCorrect: isCorrect,
+                responseTime: responseTime,
+                answer: answer
+                // Do not include score in this request, it's calculated by the backend
+              },
+              {
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Accept': 'application/json'
+                }
+              }
+            );
+            
+            console.log('✅ Answer submitted with direct POST without ID');
+            return response.data;
+          } catch (error3) {
+            console.error('All API approaches failed, storing locally');
+            
+            // Store answer locally as fallback
+            try {
+              const storedAnswers = localStorage.getItem('playerAnswers') || '[]';
+              const answers = JSON.parse(storedAnswers);
+              answers.push({
+                playerId: playerId,
+                questionId: questionId,
+                answeredAt: new Date().toISOString(),
+                isCorrect: isCorrect,
+                responseTime: responseTime,
+                answer: answer,
+                score: isCorrect ? 100 : 0 // Default score
+              });
+              localStorage.setItem('playerAnswers', JSON.stringify(answers));
+              sessionStorage.setItem('playerAnswers', JSON.stringify(answers));
+              console.log('📝 Stored answer locally for fallback');
+            } catch (storageError) {
+              console.error('Failed to store locally:', storageError);
+            }
+            
+            throw new Error('All submission methods failed');
+          }
+        }
+      }
+    } catch (error) {
+      console.error('❌ Answer submission failed:', error);
+      throw error;
     }
   };
 
@@ -851,101 +1264,60 @@ export default function PlayGamePage() {
 
               {/* Team Selection (Only shown for team mode) */}
               {gameMode === 'team' && (
-                <Box sx={{ mb: 4 }}>
-                  <Typography 
-                    variant="h5" 
-                    gutterBottom 
-                    sx={{ 
-                      display: 'flex', 
-                      alignItems: 'center',
-                      color: 'primary.main',
-                      fontWeight: 'bold',
-                      justifyContent: 'center', 
-                      mb: 2
-                    }}
-                  >
-                    <GroupsIcon sx={{ mr: 1.5, fontSize: '1.8rem' }} />
-                    Team Selection
-                  </Typography>
-                  
                   <Paper 
                     elevation={3} 
                     sx={{ 
                       p: 3, 
-                      bgcolor: 'rgba(66, 165, 245, 0.08)', 
+                    mb: 4,
                       borderRadius: 3,
-                      border: '1px solid rgba(66, 165, 245, 0.5)',
-                      boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
+                    background: 'linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%)',
+                    color: 'white'
                     }}
                   >
-                    <Typography 
-                      variant="subtitle1" 
-                      sx={{ 
-                        mb: 2, 
-                        textAlign: 'center', 
-                        color: 'text.secondary',
-                        fontStyle: 'italic'
-                      }}
-                    >
-                      Choose your team to join this quiz in team mode
+                  <Typography variant="h6" sx={{ mb: 2, fontWeight: 'bold', display: 'flex', alignItems: 'center' }}>
+                    <PeopleIcon sx={{ mr: 1 }} />
+                    Team Selection
                     </Typography>
                     
-                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, mb: 3, justifyContent: 'center' }}>
-                      {teamNames.map((team, index) => (
-                        <Paper
-                          key={index}
+                  <Typography variant="body2" sx={{ mb: 2 }}>
+                    This quiz uses team mode. Please select a team to join:
+                  </Typography>
+                  
+                  <FormControl fullWidth variant="outlined" sx={{ mb: 2 }}>
+                    <InputLabel id="team-select-label" sx={{ color: 'white' }}>Choose Team</InputLabel>
+                    <Select
+                      labelId="team-select-label"
+                      id="team-select"
+                      value={selectedTeam}
+                      onChange={(e) => setSelectedTeam(e.target.value)}
+                      label="Choose Team"
                           sx={{
-                            p: 2,
-                            borderRadius: 2,
-                            border: team === selectedTeam ? '2px solid' : '1px solid',
-                            borderColor: team === selectedTeam ? 'primary.main' : 'rgba(0,0,0,0.1)', 
-                            cursor: 'pointer',
-                            width: 'calc(50% - 16px)',
-                            bgcolor: team === selectedTeam ? 'rgba(33,150,243,0.1)' : 'white',
-                            textAlign: 'center',
-                            transition: 'all 0.2s ease',
-                            transform: team === selectedTeam ? 'scale(1.03)' : 'scale(1)',
-                            boxShadow: team === selectedTeam ? '0 5px 15px rgba(0,0,0,0.1)' : 'none',
-                            '&:hover': {
-                              bgcolor: 'rgba(33,150,243,0.05)',
-                              borderColor: 'primary.main',
-                              transform: 'translateY(-3px)',
-                              boxShadow: '0 5px 15px rgba(0,0,0,0.1)'
-                            }
-                          }}
-                          onClick={() => setSelectedTeam(team)}
-                        >
-                          <Avatar 
-                            sx={{ 
-                              width: 56, 
-                              height: 56, 
-                              margin: '0 auto 12px',
-                              bgcolor: ['#f44336', '#2196f3', '#4caf50', '#ff9800'][index % 4],
-                              boxShadow: '0 4px 8px rgba(0,0,0,0.1)'
+                        bgcolor: 'rgba(255,255,255,0.1)',
+                        color: 'white',
+                        '& .MuiOutlinedInput-notchedOutline': {
+                          borderColor: 'rgba(255,255,255,0.3)'
+                        },
+                        '&:hover .MuiOutlinedInput-notchedOutline': {
+                          borderColor: 'rgba(255,255,255,0.5)'
+                        },
+                        '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                          borderColor: 'white'
+                        },
+                        '& .MuiSvgIcon-root': {
+                          color: 'white'
+                        }
                             }}
                           >
-                            {team.charAt(0)}
-                          </Avatar>
-                          <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-                            {team}
-                          </Typography>
-                          {team === selectedTeam && (
-                            <Chip 
-                              size="small" 
-                              label="Selected" 
-                              color="primary" 
-                              sx={{ mt: 1 }}
-                            />
-                          )}
-                        </Paper>
+                      {teamNames.map((team) => (
+                        <MenuItem key={team} value={team}>{team}</MenuItem>
                       ))}
-                    </Box>
+                    </Select>
+                  </FormControl>
                     
-                    <Typography variant="caption" sx={{ display: 'block', mt: 2, textAlign: 'center', color: 'text.secondary' }}>
-                      In team mode, your score will contribute to your team's total. Teams compete against each other for the highest combined score.
+                  <Typography variant="caption" sx={{ display: 'block', textAlign: 'center', color: 'rgba(255,255,255,0.7)' }}>
+                    Your answers will contribute to your team's total score
                     </Typography>
                   </Paper>
-                </Box>
               )}
 
               {/* Start Game Button */}

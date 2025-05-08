@@ -53,13 +53,14 @@ import {
   PriorityHigh as PriorityHighIcon,
   Bolt as BoltIcon
 } from '@mui/icons-material';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import PublicLayout from '../components/PublicLayout';
 import { motion } from 'framer-motion';
 import dynamic from 'next/dynamic';
 import ReactConfetti from 'react-confetti';
 import playerService from '@/services/playerService';
 import axios from 'axios';
+import quizService from '@/services/quizService';
 
 const API_BASE_URL = 'https://kahootclone-f7hkd0hwafgbfrfa.southeastasia-01.azurewebsites.net';
 
@@ -202,6 +203,223 @@ const fetchPlayerById = async (playerId: number): Promise<any> => {
     return null;
   } catch (error) {
     console.error(`Error fetching player ${playerId}:`, error);
+    return null;
+  }
+};
+
+// Fix for apiResults implicit errors
+// First update the fetchQuizResults function to specify return type
+// Add a QuizResults interface near the top of the file with the other interfaces
+
+interface QuizResults {
+  players: any[];
+  totalQuestions: number;
+  gameMode?: string;
+  [key: string]: any;
+}
+
+// Add a PlayerResults interface
+interface PlayerResults {
+  name?: string;
+  nickname?: string;
+  score?: number;
+  correctAnswers?: number;
+  totalQuestions?: number;
+  timeBonus?: number;
+  averageAnswerTime?: number;
+  avatar?: string;
+  avatarUrl?: string;
+  group?: string;
+  team?: string;
+  groupName?: string;
+  id?: number;
+  playerId?: number;
+  [key: string]: any;
+}
+
+// Function to fetch player results for a quiz
+const fetchPlayerResults = async (quizId: number, playerId: number): Promise<PlayerResults | null> => {
+  try {
+    console.log(`Fetching player results for quiz ID ${quizId} and player ID ${playerId}`);
+    
+    // First try using quizService's new method which has multiple fallbacks
+    try {
+      const response = await quizService.getPlayerQuizResult(quizId, playerId);
+      console.log('getPlayerQuizResult response:', response);
+      
+      if (response && response.status === 200 && response.data) {
+        return response.data;
+      }
+    } catch (serviceError) {
+      console.warn('quizService.getPlayerQuizResult failed:', serviceError);
+    }
+    
+    // If the service method fails, try direct API call (original approach)
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/api/Quiz/Player/ResultQuiz/${quizId}?PlayerId=${playerId}`,
+        {
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json'
+          }
+        }
+      );
+      
+      if (!response.ok) {
+        console.warn(`Error fetching player results: ${response.status}`);
+      } else {
+        const data = await response.json();
+        console.log("Player results from API:", data);
+        
+        if (data && data.status === 200 && data.data) {
+          return data.data;
+        }
+      }
+    } catch (apiError) {
+      console.warn('Direct API call failed:', apiError);
+    }
+    
+    // If both approaches fail, try playerService
+    try {
+      const playerResultsFromService = await playerService.getPlayerResults(quizId, playerId);
+      console.log('playerService.getPlayerResults response:', playerResultsFromService);
+      
+      if (playerResultsFromService) {
+        return playerResultsFromService;
+      }
+    } catch (playerServiceError) {
+      console.warn('playerService.getPlayerResults failed:', playerServiceError);
+    }
+    
+    // If everything fails, generate placeholder results from localStorage
+    console.log('All API attempts failed, checking localStorage for fallback data');
+    const storedAnswers = localStorage.getItem('playerAnswers');
+    
+    if (storedAnswers) {
+      try {
+        const answers = JSON.parse(storedAnswers);
+        const relevantAnswers = answers.filter((a: any) => 
+          a.playerId === playerId || (!a.playerId && a.questionId)
+        );
+        
+        if (relevantAnswers.length > 0) {
+          const correctAnswers = relevantAnswers.filter((a: any) => a.isCorrect).length;
+          const totalScore = relevantAnswers.reduce((sum: number, a: any) => sum + (a.score || 0), 0);
+          
+          const fallbackResult = {
+            playerId: playerId,
+            nickname: 'Player',
+            quizId: quizId,
+            score: totalScore,
+            correctAnswers: correctAnswers,
+            totalQuestions: relevantAnswers.length,
+          };
+          
+          console.log('Generated fallback result from localStorage:', fallbackResult);
+          return fallbackResult;
+        }
+      } catch (parseError) {
+        console.error('Error parsing stored answers:', parseError);
+      }
+    }
+    
+    return null;
+  } catch (error) {
+    console.error("Error fetching player results:", error);
+    return null;
+  }
+};
+
+// Function to fetch aggregate quiz results (for host view)
+const fetchQuizResults = async (quizId: number): Promise<QuizResults | null> => {
+  try {
+    console.log(`Fetching aggregate quiz results for quiz ID ${quizId}`);
+    
+    // First try using quizService's new fetchQuizForHost method which has the most fallbacks
+    try {
+      console.log('Attempting to get quiz results via quizService.fetchQuizForHost...');
+      const hostResults = await quizService.fetchQuizForHost(quizId);
+      
+      console.log('fetchQuizForHost response:', hostResults);
+      
+      if (hostResults && hostResults.status === 200 && hostResults.data) {
+        console.log('Successfully got host quiz results, returning data');
+        return hostResults.data;
+      } else {
+        console.warn('fetchQuizForHost returned invalid data:', hostResults);
+      }
+    } catch (hostViewError) {
+      console.error('quizService.fetchQuizForHost failed:', hostViewError);
+    }
+    
+    // Second try with the getFormattedQuizResults method
+    try {
+      console.log('Falling back to getFormattedQuizResults...');
+      const formattedResults = await quizService.getFormattedQuizResults(quizId, true);
+      
+      if (formattedResults && formattedResults.status === 200 && formattedResults.data) {
+        console.log('Successfully got formatted quiz results, returning data');
+        return formattedResults.data;
+      } else {
+        console.warn('getFormattedQuizResults returned invalid data:', formattedResults);
+      }
+    } catch (serviceError) {
+      console.error('quizService.getFormattedQuizResults failed:', serviceError);
+    }
+    
+    // Fall back to direct API calls as a last resort
+    console.log('Attempting direct API call to ResultQuiz endpoint...');
+    const response = await fetch(
+      `${API_BASE_URL}/api/Quiz/ResultQuiz/${quizId}`,
+      {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json'
+        }
+      }
+    );
+    
+    if (!response.ok) {
+      console.warn(`Error fetching quiz results: ${response.status} ${response.statusText}`);
+      
+      // If the first endpoint fails, try the legacy endpoint
+      console.log('Trying legacy Result endpoint...');
+      const legacyResponse = await fetch(
+        `${API_BASE_URL}/api/Quiz/Result/${quizId}`,
+        {
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json'
+          }
+        }
+      );
+      
+      if (!legacyResponse.ok) {
+        console.warn(`Legacy endpoint also failed: ${legacyResponse.status}`);
+        return null;
+      }
+      
+      const legacyData = await legacyResponse.json();
+      console.log("Quiz results from legacy API:", legacyData);
+      
+      if (legacyData && legacyData.status === 200 && legacyData.data) {
+        return legacyData.data;
+      }
+      
+      return null;
+    }
+    
+    const data = await response.json();
+    console.log("Quiz aggregate results from API:", data);
+    
+    if (data && data.status === 200 && data.data) {
+      return data.data;
+    }
+    
+    return null;
+  } catch (error) {
+    console.error("Error fetching quiz results:", error);
     return null;
   }
 };
@@ -882,6 +1100,10 @@ const QuestionDetails = () => {
 
 export default function GameResultsPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const quizIdParam = searchParams.get('quizId');
+  const playerIdParam = searchParams.get('playerId');
+  const isHost = searchParams.get('host') === 'true';
   const [playerResults, setPlayerResults] = useState<PlayerScore[]>([]);
   const [groupResults, setGroupResults] = useState<GroupScore[]>([]);
   const [playerAnswers, setPlayerAnswers] = useState<PlayerAnswer[]>([]);
@@ -920,35 +1142,18 @@ export default function GameResultsPage() {
       try {
         console.log("Loading game results data...");
         
-        // Try to get data from both sessionStorage and localStorage for redundancy
-        const storedResults = sessionStorage.getItem('gameResults') || localStorage.getItem('gameResults');
+        // Get basic information from storage
         const quizData = sessionStorage.getItem('currentQuiz') || localStorage.getItem('currentQuiz') || 
                          sessionStorage.getItem('quizPreviewData') || localStorage.getItem('quizPreviewData');
         const playerInfoData = sessionStorage.getItem('currentPlayer') || localStorage.getItem('currentPlayer');
-        const storedAnswers = sessionStorage.getItem('playerAnswers') || localStorage.getItem('playerAnswers');
-        const formattedQuestionsData = sessionStorage.getItem('formattedQuestions') || localStorage.getItem('formattedQuestions');
         
-        console.log("Data found:", {
-          results: storedResults ? "✓" : "✗",
-          quiz: quizData ? "✓" : "✗",
-          player: playerInfoData ? "✓" : "✗",
-          answers: storedAnswers ? "✓" : "✗",
-          formattedQuestions: formattedQuestionsData ? "✓" : "✗"
-        });
-        
-        // Try to parse all data first
-        let parsedResults = null;
+        // Parse the basic data we have
         let parsedQuizData = null;
         let currentPlayerData = null;
-        let parsedAnswers = [];
-        let quizQuestions = [];
         
         try {
-          if (storedResults) parsedResults = JSON.parse(storedResults);
           if (quizData) parsedQuizData = JSON.parse(quizData);
           if (playerInfoData) currentPlayerData = JSON.parse(playerInfoData);
-          if (storedAnswers) parsedAnswers = JSON.parse(storedAnswers);
-          if (formattedQuestionsData) quizQuestions = JSON.parse(formattedQuestionsData);
         } catch (parseError) {
           console.error("Error parsing stored data:", parseError);
         }
@@ -958,64 +1163,185 @@ export default function GameResultsPage() {
           setPlayerInfo(currentPlayerData);
         }
         
-        // Set game mode detected from stored data
-        let detectedGameMode: 'solo' | 'team' = 'solo';
-        // Check if team info exists in player data
-        if (currentPlayerData?.team) {
-          detectedGameMode = 'team';
-          console.log("Team mode detected from player team:", currentPlayerData.team);
+        // Set basic game info if available
+        if (parsedQuizData) {
+          setGameTitle(parsedQuizData.title || "Quiz Game");
+          setCurrentQuizData(parsedQuizData);
         }
         
-        setGameMode(detectedGameMode);
+        // Get player ID and quiz ID either from URL or storage
+        const quizId = quizIdParam || parsedQuizData?.id || 0;
+        const playerId = playerIdParam || currentPlayerData?.playerId || currentPlayerData?.id || 0;
         
-        // HIGHEST PRIORITY: Use player answers with scores if available
-        if (parsedAnswers && parsedAnswers.length > 0 && parsedAnswers.some((a: any) => a.score !== undefined)) {
-          console.log("Calculating results from answer scores...", parsedAnswers);
+        console.log(`Working with quizId: ${quizId}, playerId: ${playerId}, isHost: ${isHost}`);
+        
+        // Set loading state while we fetch API data
+        setLoading(true);
+        setCalculatingScores(true);
+        
+        let apiResults: QuizResults | PlayerResults | null = null;
+        
+        // First try to get results from the API
+        if (quizId && quizId !== 0) {
+          // If we're the host, fetch aggregate results for all players
+          if (isHost) {
+            try {
+              apiResults = await fetchQuizResults(Number(quizId));
+              console.log("Host view - fetched aggregate results:", apiResults);
+              
+              if (apiResults && apiResults.players && Array.isArray(apiResults.players)) {
+                // Format player results from the aggregate data
+                const formattedResults = apiResults.players.map((player: any) => ({
+                  name: player.name || player.nickname || 'Player',
+                  score: player.score ?? 0,
+                  correctAnswers: player.correctAnswers ?? 0,
+                  totalQuestions: player.totalQuestions ?? apiResults?.totalQuestions ?? 0,
+                  timeBonus: player.timeBonus ?? 0,
+                  averageAnswerTime: player.averageAnswerTime ?? 0,
+                  avatar: player.avatar ?? player.avatarUrl ?? 'alligator',
+                  group: player.group ?? player.team ?? player.groupName ?? null,
+                  id: player.id || player.playerId || 0
+                }));
+                
+                // Sort by score in descending order
+                formattedResults.sort((a: any, b: any) => b.score - a.score);
+                
+                console.log("Formatted player results:", formattedResults);
+                setPlayerResults(formattedResults);
           
-          // Count correct answers
-          const correctAnswers = parsedAnswers.filter((a: any) => a.isCorrect).length;
-          // Sum up scores - prioritize scores in the answer objects
-          const totalScore = parsedAnswers.reduce((sum: number, a: any) => sum + (a.score || 0), 0);
-          
-          // Calculate average response time
-          const totalResponseTime = parsedAnswers.reduce((sum: number, a: any) => sum + a.responseTime, 0);
-          const averageResponseTime = parsedAnswers.length > 0 ? totalResponseTime / parsedAnswers.length : 0;
-          
-          const playerScore = {
-            name: currentPlayerData?.name || 'Player',
-            avatar: currentPlayerData?.avatar || 'alligator',
-            score: totalScore,
-            correctAnswers: correctAnswers,
-            totalQuestions: parsedQuizData?.questions?.length || parsedAnswers.length,
-            timeBonus: Math.floor(totalScore * 0.1),
-            averageAnswerTime: parseFloat(averageResponseTime.toFixed(1)),
-            group: currentPlayerData?.team || null,
-            id: currentPlayerData?.playerId || currentPlayerData?.id || 0
+                // Calculate group results if in team mode
+                if (apiResults.gameMode === 'team' || formattedResults.some((p: any) => p.group)) {
+                  setGameMode('team');
+                  const calculatedGroups = calculateGroupScores(formattedResults);
+                  setGroupResults(calculatedGroups);
+                }
+                
+                // Show confetti for the highest score
+                if (formattedResults.length > 0 && formattedResults[0].score > 0) {
+                  setShowConfetti(true);
+                }
+                
+                setShowResults(true);
+                setScoresFinalized(true);
+              } else {
+                console.log("No valid player results in the aggregate data");
+                // Try fallback to stored results if API data is empty
+                fallbackToStoredResults();
+              }
+            } catch (error) {
+              console.error("Error processing aggregate results:", error);
+              fallbackToStoredResults();
+            }
+          } 
+          // Player view - fetch only this player's results
+          else if (playerId && playerId !== 0) {
+            try {
+              apiResults = await fetchPlayerResults(Number(quizId), Number(playerId));
+              console.log("Player view - fetched player results:", apiResults);
+              
+              if (apiResults) {
+                // Format the player results
+                const playerResult = {
+                  name: currentPlayerData?.name || apiResults.name || apiResults.nickname || 'Player',
+                  score: apiResults.score || 0,
+                  correctAnswers: apiResults.correctAnswers || 0,
+                  totalQuestions: apiResults.totalQuestions || parsedQuizData?.questions?.length || 0,
+                  timeBonus: apiResults.timeBonus || 0,
+                  averageAnswerTime: apiResults.averageAnswerTime || 0,
+                  avatar: currentPlayerData?.avatar || apiResults.avatar || apiResults.avatarUrl || 'alligator',
+                  group: currentPlayerData?.team || apiResults.group || apiResults.team || apiResults.groupName || null,
+                  id: playerId
           };
           
-          console.log("Calculated player score:", playerScore);
-          
-          // Save calculated results and display them
-          setPlayerResults([playerScore]);
+                console.log("Formatted player result:", playerResult);
+                setPlayerResults([playerResult]);
+                setCurrentPlayer(playerResult.name);
+                setPlayerAvatar(playerResult.avatar);
+                
+                // Show confetti for good scores
+                if (playerResult.score > 0) {
+                  setShowConfetti(true);
+                }
+                
           setShowResults(true);
           setScoresFinalized(true);
           
-          // Store in session/local storage for future use
-          sessionStorage.setItem('gameResults', JSON.stringify([playerScore]));
-          localStorage.setItem('gameResults', JSON.stringify([playerScore]));
+                // Store results for future reference
+                sessionStorage.setItem('gameResults', JSON.stringify([playerResult]));
+                localStorage.setItem('gameResults', JSON.stringify([playerResult]));
+              } else {
+                console.log("No valid player result from API");
           
-          // Set game title and player info
-          if (parsedQuizData) setGameTitle(parsedQuizData.title || "Quiz Game");
-          if (currentPlayerData) {
-            setCurrentPlayer(currentPlayerData.name || '');
-            setPlayerAvatar(currentPlayerData.avatar || 'alligator');
+                // Fall back to stored results if API fails
+                fallbackToStoredResults();
+              }
+            } catch (error) {
+              console.error("Error processing player results:", error);
+              
+              // Fall back to stored results if API fails
+              fallbackToStoredResults();
+            }
+          } else {
+            console.log("No valid player ID available, falling back to stored results");
+            
+            // Fall back to stored results
+            fallbackToStoredResults();
           }
+        } else {
+          console.log("No valid quiz ID available, falling back to stored results");
           
-          // Show confetti for good scores
-          if (totalScore > 0) setShowConfetti(true);
+          // Fall back to stored results
+          fallbackToStoredResults();
         }
-        // SECOND PRIORITY: Use existing stored results
-        else if (parsedResults && Array.isArray(parsedResults) && parsedResults.length > 0) {
+      } catch (error) {
+        console.error('Error in loadDataAndCalculateScores:', error);
+        
+        // Fall back to stored results on error
+        fallbackToStoredResults();
+        
+        setScoreMessage({
+          show: true,
+          message: 'Error loading game results. Using local data instead.',
+          severity: 'error'
+        });
+      } finally {
+        // Always set showResults to true after loading is complete
+        setShowResults(true);
+        setLoading(false);
+        setCalculatingScores(false);
+      }
+    };
+    
+    // Helper function to fall back to stored results when API fails
+    const fallbackToStoredResults = () => {
+      console.log("Falling back to stored results...");
+      
+      // Try to get data from both sessionStorage and localStorage for redundancy
+      const storedResults = sessionStorage.getItem('gameResults') || localStorage.getItem('gameResults');
+      const quizData = sessionStorage.getItem('currentQuiz') || localStorage.getItem('currentQuiz') || 
+                       sessionStorage.getItem('quizPreviewData') || localStorage.getItem('quizPreviewData');
+      const playerInfoData = sessionStorage.getItem('currentPlayer') || localStorage.getItem('currentPlayer');
+      const storedAnswers = sessionStorage.getItem('playerAnswers') || localStorage.getItem('playerAnswers');
+      const formattedQuestionsData = sessionStorage.getItem('formattedQuestions') || localStorage.getItem('formattedQuestions');
+      
+      let parsedResults = null;
+      let parsedQuizData = null;
+      let currentPlayerData = null;
+      let parsedAnswers = [];
+      let quizQuestions = [];
+      
+      try {
+        if (storedResults) parsedResults = JSON.parse(storedResults);
+        if (quizData) parsedQuizData = JSON.parse(quizData);
+        if (playerInfoData) currentPlayerData = JSON.parse(playerInfoData);
+        if (storedAnswers) parsedAnswers = JSON.parse(storedAnswers);
+        if (formattedQuestionsData) quizQuestions = JSON.parse(formattedQuestionsData);
+      } catch (parseError) {
+        console.error("Error parsing stored data:", parseError);
+      }
+      
+      // Use existing stored results if available
+      if (parsedResults && Array.isArray(parsedResults) && parsedResults.length > 0) {
           console.log("Using existing stored results:", parsedResults);
           setPlayerResults(parsedResults);
           setShowResults(true);
@@ -1030,11 +1356,17 @@ export default function GameResultsPage() {
           // Show confetti for good scores
           if (parsedResults[0]?.score > 0) setShowConfetti(true);
           
-          // No need for further calculations
+        // Calculate group results if in team mode
+        if (parsedResults.some(p => p.group)) {
+          setGameMode('team');
+          const calculatedGroups = calculateGroupScores(parsedResults);
+          setGroupResults(calculatedGroups);
+        }
+        
           setScoresFinalized(true);
         }
-        // THIRD PRIORITY: Calculate scores from scratch if we have answers but no scores
-        else if (parsedAnswers && parsedAnswers.length > 0 && quizQuestions && quizQuestions.length > 0) {
+      // Calculate scores from answers if no stored results but we have answers
+      else if (parsedAnswers.length > 0 && quizQuestions.length > 0) {
           console.log("Calculating scores from raw answers and questions");
           
           // Calculate scores without API calls
@@ -1138,32 +1470,11 @@ export default function GameResultsPage() {
           
           setShowResults(true);
           setScoresFinalized(true);
-        } else {
-          // No valid data found
-          console.error("Insufficient data to display results");
-          setScoreMessage({
-            show: true,
-            message: 'No game data found. Please play a quiz first.',
-            severity: 'error'
-          });
-        }
-      } catch (error) {
-        console.error('Error in loadDataAndCalculateScores:', error);
-        setScoreMessage({
-          show: true,
-          message: 'Error loading game results. Please try again.',
-          severity: 'error'
-        });
-      } finally {
-        // Always set showResults to true after loading is complete
-        // This ensures we show something even if calculations failed
-        setShowResults(true);
-        setLoading(false);
       }
     };
     
     loadDataAndCalculateScores();
-  }, []);
+  }, [quizIdParam, playerIdParam, isHost]);
   
   // IMPORTANT: Don't add hardcoded players automatically - only show real results
   // Delete or modify the useEffect that adds hardcoded players
@@ -1224,7 +1535,7 @@ export default function GameResultsPage() {
         }}
       >
         {/* Add a fallback message section for when results don't display properly */}
-        {showResults && playerResults.length === 0 && (
+        {showResults && playerResults.length === 0 && !calculatingScores && (
           <Container maxWidth="md" sx={{ textAlign: 'center', py: 6 }}>
             <Paper sx={{ p: 4, mb: 4, borderRadius: 3, bgcolor: 'rgba(255,255,255,0.9)' }}>
               <Box sx={{ mb: 3 }}>
@@ -1719,6 +2030,19 @@ export default function GameResultsPage() {
                 >
                   Home
                 </Button>
+                {!isHost && playerInfo?.playerId && quizIdParam && (
+                  <Button
+                    variant="contained"
+                    color="secondary"
+                    onClick={() => {
+                      // Create a URL to view more detailed results with explicit parameters
+                      const detailsUrl = `/game-results?quizId=${quizIdParam}&playerId=${playerInfo.playerId}`;
+                      router.push(detailsUrl);
+                    }}
+                  >
+                    View Details
+                  </Button>
+                )}
                 <Button
                   variant="contained"
                   startIcon={<RefreshIcon />}

@@ -26,6 +26,32 @@ import dynamic from 'next/dynamic';
 // Import Animal component with dynamic import to avoid SSR issues
 const Animal = dynamic(() => import('react-animals'), { ssr: false });
 
+// Function to parse avatar URL string into animal name and color
+const parseAvatarUrl = (avatarUrl: string) => {
+  // Default values
+  const defaults = { name: 'dog', color: 'blue' };
+  
+  if (!avatarUrl) return defaults;
+  
+  try {
+    // Handle the simple:// format
+    if (avatarUrl.startsWith('simple://')) {
+      const parts = avatarUrl.replace('simple://', '').split('/');
+      if (parts.length === 2) {
+        return { name: parts[0], color: parts[1] };
+      }
+    } 
+    // Handle just the animal name with default color
+    else if (avatarUrl && !avatarUrl.includes('/')) {
+      return { name: avatarUrl, color: 'blue' };
+    }
+  } catch (error) {
+    console.error('Error parsing avatar URL:', error);
+  }
+  
+  return defaults;
+};
+
 // Map animals to colors for visual consistency
 const animalColorMap = {
   alligator: "green",
@@ -39,9 +65,25 @@ const animalColorMap = {
 };
 
 // Custom AnimalAvatar component
-function AnimalAvatar({ name, size }: { name: string; size: string }) {
-  // Get the color from the mapping
-  const color = animalColorMap[name as keyof typeof animalColorMap] || 'orange';
+function AnimalAvatar({ name, size, avatarUrl }: { name?: string; size: string; avatarUrl?: string }) {
+  let animalName = name || 'dog';
+  let color = 'orange';
+  
+  // If avatarUrl is provided, parse it
+  if (avatarUrl) {
+    const parsed = parseAvatarUrl(avatarUrl);
+    animalName = parsed.name;
+    color = parsed.color;
+  } else {
+    // Otherwise use the direct name and get color from map
+    color = animalColorMap[animalName as keyof typeof animalColorMap] || 'orange';
+  }
+  
+  // Valid animals supported by react-animals
+  const validAnimals = ["alligator", "beaver", "dolphin", "elephant", "fox", "penguin", "tiger", "turtle"];
+  
+  // Make sure the animal name is valid
+  animalName = validAnimals.includes(animalName) ? animalName : 'dog';
   
   return (
     <Box sx={{ 
@@ -58,7 +100,7 @@ function AnimalAvatar({ name, size }: { name: string; size: string }) {
       justifyContent: 'center',
     }}>
       <Animal
-        name={name}
+        name={animalName}
         color={color}
         size="100%"
       />
@@ -72,6 +114,7 @@ export default function PlayerWaitingRoom() {
   const gameCode = searchParams.get('code');
   const playerName = searchParams.get('name') || 'Player';
   const avatarType = searchParams.get('avatar') || 'alligator';
+  const teamName = searchParams.get('team') || null; // Get team name from URL if available
   
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -80,6 +123,7 @@ export default function PlayerWaitingRoom() {
   const [isClient, setIsClient] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [retries, setRetries] = useState(0);
+  const [gameMode, setGameMode] = useState<'solo' | 'team'>(teamName ? 'team' : 'solo'); // Set game mode based on team name
   
   // Use refs to prevent infinite render loops
   const isConnectingRef = useRef(false);
@@ -92,9 +136,11 @@ export default function PlayerWaitingRoom() {
     console.log('Player waiting room parameters:', {
       gameCode,
       playerName,
-      avatarType
+      avatarType,
+      teamName,
+      gameMode
     });
-  }, [gameCode, playerName, avatarType]);
+  }, [gameCode, playerName, avatarType, teamName, gameMode]);
   
   // Handle client-side rendering for the Animal component
   useEffect(() => {
@@ -113,6 +159,62 @@ export default function PlayerWaitingRoom() {
     }
   };
   
+  // Function to parse avatar URL string into animal name and color
+  const parseAvatarUrl = (avatarUrl: string) => {
+    // Default values
+    const defaults = { name: 'dog', color: 'blue' };
+    
+    if (!avatarUrl) return defaults;
+    
+    try {
+      // Handle the simple:// format
+      if (avatarUrl.startsWith('simple://')) {
+        const parts = avatarUrl.replace('simple://', '').split('/');
+        if (parts.length === 2) {
+          return { name: parts[0], color: parts[1] };
+        }
+      } 
+      // Handle just the animal name with default color
+      else if (avatarUrl && !avatarUrl.includes('/')) {
+        return { name: avatarUrl, color: 'blue' };
+      }
+    } catch (error) {
+      console.error('Error parsing avatar URL:', error);
+    }
+    
+    return defaults;
+  };
+
+  // Add this code for getting current player team information from sessionStorage
+  const getCurrentPlayerTeam = (): string | null => {
+    try {
+      // First check URL parameters
+      const urlParams = new URLSearchParams(window.location.search);
+      const teamFromUrl = urlParams.get('team');
+      if (teamFromUrl) {
+        console.log('Found team in URL parameters:', teamFromUrl);
+        return teamFromUrl;
+      }
+      
+      // Then check sessionStorage
+      const playerData = JSON.parse(sessionStorage.getItem('currentPlayer') || '{}');
+      const team = playerData.team || 
+                  playerData.groupName || 
+                  playerData.GroupName || 
+                  sessionStorage.getItem('currentTeam') || 
+                  null;
+                  
+      if (team) {
+        console.log('Found team in sessionStorage:', team);
+      }
+      
+      return team;
+    } catch (e) {
+      console.error('Error getting player team:', e);
+      return null;
+    }
+  };
+
   // Function to connect to SignalR
   const connectToGameServer = useCallback(async () => {
     // Prevent multiple connection attempts
@@ -129,6 +231,16 @@ export default function PlayerWaitingRoom() {
       
       // Clean up any existing intervals
       cleanupIntervals();
+      
+      // Get team information
+      const currentTeam = getCurrentPlayerTeam();
+      console.log(`Current team detected: ${currentTeam || 'none'}`);
+      
+      // Set game mode based on team
+      if (currentTeam) {
+        setGameMode('team');
+        console.log('Setting game mode to team based on detected team');
+      }
       
       // Get player data from sessionStorage
       let playerData = null;
@@ -151,20 +263,57 @@ export default function PlayerWaitingRoom() {
           NickName: playerName,
           AvatarUrl: avatarType,
           GroupId: null,
-          GroupName: null,
-          GroupDescription: null
+          GroupName: currentTeam,
+          GroupDescription: null,
+          team: currentTeam
         };
+      } else {
+        // Make sure team information is properly added to existing player data
+        if (currentTeam) {
+          playerData.GroupName = currentTeam;
+          playerData.team = currentTeam;
+          playerData.groupName = currentTeam;
+        }
       }
       
-      // Format player data for SignalR
+      // Format player data for SignalR, ensuring team data is included
       const signalRPlayerData = {
         Id: playerId,
+        id: playerId,
+        playerId: playerId,
         NickName: playerName,
+        nickName: playerName,
+        name: playerName,
         AvatarUrl: avatarType,
+        avatarUrl: avatarType,
+        avatar: avatarType,
         GroupId: playerData.GroupId || null,
-        GroupName: playerData.GroupName || playerData.team || null,
+        GroupName: currentTeam,
+        team: currentTeam,
+        groupName: currentTeam,
+        teamName: currentTeam,
         GroupDescription: playerData.GroupDescription || null
       };
+      
+      console.log('Connecting to game with player data:', signalRPlayerData);
+      
+      // Try to send a direct SignalR notification first if in team mode
+      if (currentTeam) {
+        try {
+          console.log('Team mode detected, attempting direct SignalR broadcast...');
+          const signalRService = (await import('@/services/signalRService')).default;
+          
+          if (!signalRService.isConnected()) {
+            await signalRService.startConnection();
+          }
+          
+          // Try direct broadcast
+          await signalRService.broadcastPlayerJoin(gameCode, signalRPlayerData);
+          console.log('Direct team mode SignalR broadcast sent');
+        } catch (directErr) {
+          console.warn('Direct team SignalR broadcast failed:', directErr);
+        }
+      }
       
       // Set up fallback mechanism for tracking game events
       // Start tracking waiting time immediately regardless of connection status
@@ -208,13 +357,50 @@ export default function PlayerWaitingRoom() {
             
             console.log('Successfully joined quiz:', gameCode);
             
+            // For team mode, try direct broadcast again
+            if (currentTeam) {
+              try {
+                await signalRService.broadcastPlayerJoin(gameCode, signalRPlayerData);
+                console.log('Additional team mode broadcast sent after connection');
+              } catch (broadcastErr) {
+                console.warn('Additional broadcast failed:', broadcastErr);
+              }
+            }
+            
             // Register for game events
-            signalRService.onGameStarted((gameData) => {
-              console.log('Game started event received:', gameData);
-              // Get the quiz ID either from the event data or fallback to session storage
-              const quizId = gameData?.quizId || gameData?.id || sessionStorage.getItem('currentQuizId') || 0;
-              // Navigate to the active game screen
-              router.push(`/play-quiz/${quizId}?code=${gameCode}&player=true`);
+            signalRService.onStartQuiz((startedQuizCode: string, started: boolean) => {
+              console.log('Game started event received:', { quizCode: startedQuizCode, started });
+              
+              // Check if this event is for our quiz code
+              if (startedQuizCode.toString() === gameCode.toString() && started) {
+                console.log(`Quiz ${startedQuizCode} started, navigating to game screen`);
+                
+                // Store quiz information in sessionStorage if needed
+                try {
+                  // Get quizId from sessionStorage or set it to 0 if not available
+                  const quizId = sessionStorage.getItem('currentQuizId') || 0;
+                  sessionStorage.setItem('currentQuizId', quizId.toString());
+                  
+                  // Get player information
+                  const playerData = JSON.parse(sessionStorage.getItem('currentPlayer') || '{}');
+                  
+                  // Store gameStarted flag in sessionStorage
+                  sessionStorage.setItem('gameStarted', 'true');
+                  
+                  console.log('Ready to play game with data:', {
+                    quizId,
+                    playerData,
+                    gameCode
+                  });
+                } catch (e) {
+                  console.error('Error preparing game data:', e);
+                }
+                
+                // Navigate to the game page
+                router.push(`/game?code=${gameCode}`);
+              } else {
+                console.log(`Received start event for quiz ${startedQuizCode}, but we're waiting for ${gameCode}`);
+              }
             });
             
             return true;
@@ -264,9 +450,22 @@ export default function PlayerWaitingRoom() {
               console.log('Game has started, navigating to game screen');
               clearInterval(pollInterval);
               
-              // Navigate to the active game screen
-              const quizId = response.data.id || 0;
-              router.push(`/play-quiz/${quizId}?code=${gameCode}&player=true`);
+              // Store quiz information in sessionStorage if needed
+              try {
+                // Get the quizId from the response
+                const quizId = response.data.id || 0;
+                sessionStorage.setItem('currentQuizId', quizId.toString());
+                
+                // Store gameStarted flag in sessionStorage
+                sessionStorage.setItem('gameStarted', 'true');
+                
+                console.log('Poll detected game started with quiz ID:', quizId);
+              } catch (e) {
+                console.error('Error storing quiz data from poll:', e);
+              }
+              
+              // Navigate to the game page - uses the same path as the SignalR handler
+              router.push(`/game?code=${gameCode}`);
             }
           } catch (pollError) {
             console.error('Error polling for game status:', pollError);
@@ -323,6 +522,9 @@ export default function PlayerWaitingRoom() {
     connectToGameServer();
   };
   
+  // Get the current team
+  const currentTeam = getCurrentPlayerTeam();
+  
   if (error) {
     return (
       <PublicLayout>
@@ -373,13 +575,40 @@ export default function PlayerWaitingRoom() {
           transition={{ duration: 0.5 }}
           style={{ width: '100%' }}
         >
+          {/* Only change this section to make team mode more visible if team is selected */}
+          {currentTeam && gameMode === 'team' && (
+            <Paper
+              elevation={3}
+              sx={{
+                mb: 3,
+                p: 3,
+                borderRadius: 4,
+                background: 'linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%)',
+                color: 'white',
+                textAlign: 'center'
+              }}
+            >
+              <Typography variant="h5" fontWeight="bold" gutterBottom>
+                Team Mode
+              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
+                <PeopleIcon />
+                <Typography variant="h6">
+                  Your Team: {currentTeam}
+                </Typography>
+              </Box>
+            </Paper>
+          )}
+
           <Paper 
             elevation={3} 
             sx={{ 
               p: 4, 
               textAlign: 'center',
               borderRadius: 4,
-              background: 'linear-gradient(to bottom, #e3f2fd, #ffffff)'
+              background: gameMode === 'team' 
+                ? 'linear-gradient(to bottom, #e8f5e9, #ffffff)' 
+                : 'linear-gradient(to bottom, #e3f2fd, #ffffff)'
             }}
           >
             {!isConnected ? (
@@ -421,7 +650,23 @@ export default function PlayerWaitingRoom() {
                 
                 <Box sx={{ mb: 4, display: 'flex', justifyContent: 'center' }}>
                   {isClient ? (
-                    <AnimalAvatar name={avatarType} size="100px" />
+                    <AnimalAvatar 
+                      name={avatarType} 
+                      size="100px" 
+                      avatarUrl={(() => {
+                        // Check if we have an avatar URL in sessionStorage
+                        try {
+                          const playerData = JSON.parse(sessionStorage.getItem('currentPlayer') || '{}');
+                          if (playerData && playerData.avatarUrl && playerData.avatarUrl.includes('://')) {
+                            console.log('Using avatar URL from sessionStorage:', playerData.avatarUrl);
+                            return playerData.avatarUrl;
+                          }
+                        } catch (e) {
+                          console.error('Error parsing player data for avatar:', e);
+                        }
+                        return avatarType;
+                      })()} 
+                    />
                   ) : (
                     <Avatar
                       sx={{ 
@@ -440,6 +685,28 @@ export default function PlayerWaitingRoom() {
                 <Typography variant="h6" gutterBottom fontWeight="bold">
                   {playerName}
                 </Typography>
+                
+                {currentTeam && (
+                  <Box
+                    sx={{
+                      mt: 2,
+                      mb: 2,
+                      p: 1.5,
+                      borderRadius: 2,
+                      background: 'linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%)',
+                      color: 'white',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 1
+                    }}
+                  >
+                    <PeopleIcon />
+                    <Typography variant="subtitle1" fontWeight="bold">
+                      Team: {currentTeam}
+                    </Typography>
+                  </Box>
+                )}
                 
                 <Typography variant="subtitle2" color="text.secondary" gutterBottom>
                   Game Code: <strong>{gameCode}</strong>

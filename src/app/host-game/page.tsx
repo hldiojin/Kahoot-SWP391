@@ -39,6 +39,72 @@ import MainLayout from '../components/MainLayout';
 import { motion, AnimatePresence } from 'framer-motion';
 import quizService from '@/services/quizService';
 import playerService from '@/services/playerService';
+import signalRService from '@/services/signalRService';
+import dynamic from 'next/dynamic';
+
+// Import Animal component with dynamic import to avoid SSR issues
+const Animal = dynamic(() => import('react-animals'), { ssr: false });
+
+// Function to parse avatar URL string into animal name and color
+const parseAvatarUrl = (avatarUrl: string) => {
+  // Default values
+  const defaults = { name: 'dog', color: 'blue' };
+  
+  if (!avatarUrl) return defaults;
+  
+  try {
+    // Handle the simple:// format
+    if (avatarUrl.startsWith('simple://')) {
+      const parts = avatarUrl.replace('simple://', '').split('/');
+      if (parts.length === 2) {
+        return { name: parts[0], color: parts[1] };
+      }
+    } 
+    // Handle just the animal name with default color
+    else if (avatarUrl && !avatarUrl.includes('/')) {
+      return { name: avatarUrl, color: 'blue' };
+    }
+  } catch (error) {
+    console.error('Error parsing avatar URL:', error);
+  }
+  
+  return defaults;
+};
+
+// Custom avatar component
+function PlayerAvatar({ avatarUrl }: { avatarUrl: string }) {
+  const { name, color } = parseAvatarUrl(avatarUrl);
+  
+  // List of valid animals supported by react-animals
+  const validAnimals = ["alligator", "beaver", "dolphin", "elephant", "fox", "penguin", "tiger", "turtle"];
+  
+  // Make sure the animal name is valid
+  const animalName = validAnimals.includes(name) ? name : 'dog';
+  
+  return (
+    <Box 
+      sx={{ 
+        width: 48, 
+        height: 48, 
+        position: 'relative',
+        borderRadius: '50%',
+        overflow: 'hidden',
+        bgcolor: 'white',
+        border: '2px solid rgba(0,0,0,0.1)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        boxShadow: '0 2px 6px rgba(0,0,0,0.1)'
+      }}
+    >
+      <Animal 
+        name={animalName} 
+        color={color}
+        size="100%"
+      />
+    </Box>
+  );
+}
 
 // Mock players for development
 const mockPlayers = [
@@ -46,6 +112,36 @@ const mockPlayers = [
   { id: 2, name: 'Player 2', avatar: 'https://mui.com/static/images/avatar/2.jpg', team: null },
   { id: 3, name: 'Player 3', avatar: 'https://mui.com/static/images/avatar/3.jpg', team: null },
 ];
+
+// Add a helper function to group players by team
+const groupPlayersByTeam = (players: any[]): {[key: string]: any[]} => {
+  const teamGroups: {[key: string]: any[]} = {};
+  
+  players.forEach(player => {
+    // Use any available team field name - groupName, team, teamName, etc.
+    const teamName = player.groupName || player.team || player.teamName || 'No Team';
+    
+    if (!teamGroups[teamName]) {
+      teamGroups[teamName] = [];
+    }
+    
+    teamGroups[teamName].push(player);
+  });
+  
+  return teamGroups;
+};
+
+// Add a function to count players by team
+const countPlayersByTeam = (players: any[]): {[key: string]: number} => {
+  const teamCounts: {[key: string]: number} = {};
+  
+  players.forEach(player => {
+    const teamName = player.groupName || player.team || player.teamName || 'No Team';
+    teamCounts[teamName] = (teamCounts[teamName] || 0) + 1;
+  });
+  
+  return teamCounts;
+};
 
 export default function HostGamePage() {
   const router = useRouter();
@@ -69,7 +165,248 @@ export default function HostGamePage() {
   // Add new state for waiting dialog
   const [waitingDialogOpen, setWaitingDialogOpen] = useState(false);
 
-  // Load quiz data and set up player polling
+  // Add new state for game mode
+  const [gameMode, setGameMode] = useState<'solo' | 'team'>('solo');
+  const [teamCounts, setTeamCounts] = useState<{[key: string]: number}>({});
+
+  // Function to fetch joined players from API
+  const fetchJoinedPlayers = async () => {
+    if (!quizData?.id) return;
+    
+    try {
+      const res = await quizService.getJoinedPlayers(quizData.id);
+      if (res && res.data && res.data.joinedPlayers) {
+        const joinedPlayers = res.data.joinedPlayers;
+        
+        // Process player data to ensure proper team info
+        const processedPlayers = joinedPlayers.map((player: any) => {
+          // Extract team information from all possible properties
+          const teamName = 
+            player.groupName || 
+            player.GroupName || 
+            player.team || 
+            player.teamName || 
+            null;
+          
+          // Create a consistent player object
+          return {
+            ...player,
+            // Ensure all team properties are set consistently
+            groupName: teamName,
+            GroupName: teamName,
+            team: teamName,
+            teamName: teamName
+          };
+        });
+        
+        setPlayers(processedPlayers);
+        console.log('Updated players list with processed team data:', processedPlayers);
+        
+        // Update team counts if in team mode
+        if (gameMode === 'team') {
+          const counts = countPlayersByTeam(processedPlayers);
+          setTeamCounts(counts);
+          console.log('Updated team counts:', counts);
+        }
+      } else {
+        console.log('No joined players found or invalid response format:', res);
+        // If no players or invalid format, set to empty array
+        setPlayers([]);
+        setTeamCounts({});
+      }
+    } catch (error) {
+      console.error('Error fetching joined players:', error);
+      // On error, don't update players state to avoid UI disruption
+    }
+  };
+
+  // Setup SignalR connection and event listeners
+  useEffect(() => {
+    if (!quizData?.id || !quizData?.quizCode) return;
+    
+    let isMounted = true;
+    let retryCount = 0;
+    const maxRetries = 3;
+    console.log('Setting up SignalR for quiz:', quizData.quizCode);
+    
+    const connectSignalR = async () => {
+      try {
+        await signalRService.startConnection();
+        if (isMounted) {
+          setSignalRConnected(true);
+          setConnectionError(null);
+          console.log('SignalR connected successfully');
+          
+          // Remove existing handlers to avoid duplicates
+          if (signalRService.isConnected()) {
+            signalRService.removeEventHandler("JoinToQuiz");
+            signalRService.removeEventHandler("StartQuiz");
+            console.log('Removed existing SignalR event handlers');
+          }
+          
+          // Listen for player joins with correct event name "JoinToQuiz"
+          signalRService.onPlayerJoined((joinedQuizCode, player) => {
+            console.log(`JoinToQuiz event received in component - Quiz: ${joinedQuizCode}, Player:`, player);
+            
+            if (isMounted && joinedQuizCode.toString() === quizData.quizCode.toString()) {
+              console.log('Quiz code matches, updating players list');
+              
+              // Enhanced team detection with all possible property names
+              const teamName = 
+                player.GroupName || 
+                player.groupName || 
+                player.team || 
+                player.teamName || 
+                null;
+              
+              // Log team information for debugging team mode issues
+              if (gameMode === 'team') {
+                console.log(`Team mode: Player ${player.NickName || player.nickName} joined team: ${teamName}`);
+                
+                // Update team counts directly without waiting for fetch
+                if (teamName) {
+                  setTeamCounts(prev => ({
+                    ...prev,
+                    [teamName]: (prev[teamName] || 0) + 1
+                  }));
+                  
+                  // Also try to add the player to the state directly
+                  setPlayers((currentPlayers) => {
+                    // First check if player already exists (by ID or name)
+                    const existingPlayerIndex = currentPlayers.findIndex((p: any) => 
+                      (p.id === player.Id || p.id === player.id) || 
+                      (p.nickName === player.NickName || p.nickName === player.nickName)
+                    );
+                    
+                    if (existingPlayerIndex >= 0) {
+                      // Update existing player with team info
+                      const updatedPlayers = [...currentPlayers];
+                      updatedPlayers[existingPlayerIndex] = {
+                        ...updatedPlayers[existingPlayerIndex],
+                        groupName: teamName,
+                        team: teamName,
+                        GroupName: teamName,
+                        teamName: teamName
+                      };
+                      console.log('Updated existing player with team info:', updatedPlayers[existingPlayerIndex]);
+                      return updatedPlayers;
+                    } else {
+                      // Add new player with proper formatting
+                      const newPlayer = {
+                        id: player.Id || player.id || Date.now(), // Fallback ID if missing
+                        nickName: player.NickName || player.nickName || player.name || 'Guest',
+                        avatarUrl: player.AvatarUrl || player.avatarUrl || player.avatar || 'alligator',
+                        groupName: teamName,
+                        GroupName: teamName,
+                        team: teamName,
+                        teamName: teamName
+                      };
+                      console.log('Adding new player with team info:', newPlayer);
+                      return [...currentPlayers, newPlayer];
+                    }
+                  });
+                }
+              } else {
+                // For solo mode, still try to add player directly for immediate feedback
+                setPlayers((currentPlayers) => {
+                  // First check if player already exists
+                  const existingPlayerIndex = currentPlayers.findIndex((p: any) => 
+                    (p.id === player.Id || p.id === player.id) || 
+                    (p.nickName === player.NickName || p.nickName === player.nickName)
+                  );
+                  
+                  if (existingPlayerIndex >= 0) {
+                    // Player already exists, no need to add
+                    return currentPlayers;
+                  } else {
+                    // Add new player
+                    const newPlayer = {
+                      id: player.Id || player.id || Date.now(),
+                      nickName: player.NickName || player.nickName || player.name || 'Guest',
+                      avatarUrl: player.AvatarUrl || player.avatarUrl || player.avatar || 'alligator'
+                    };
+                    return [...currentPlayers, newPlayer];
+                  }
+                });
+              }
+              
+              // Force a fresh fetch of joined players from the API
+              fetchJoinedPlayers();
+              
+              // Show notification with player name and team
+              const playerName = player.NickName || player.nickName || player.name || 'A player';
+              setNotification({
+                open: true,
+                message: teamName 
+                  ? `${playerName} has joined the quiz in team ${teamName}!` 
+                  : `${playerName} has joined the quiz!`,
+                type: 'info'
+              });
+            } else {
+              console.log('Quiz code does not match current quiz');
+            }
+          });
+          
+          // Listen for quiz start events
+          signalRService.onStartQuiz((startedQuizCode, started) => {
+            console.log(`Quiz ${startedQuizCode} start status:`, started);
+            if (isMounted && startedQuizCode.toString() === quizData.quizCode.toString() && started) {
+              // Optional: auto-navigate to game
+              setNotification({
+                open: true,
+                message: 'Quiz has started!',
+                type: 'success'
+              });
+              // router.push(`/play-quiz/${quizData.id}?host=true&code=${quizData.quizCode}`);
+            }
+          });
+        }
+      } catch (err) {
+        console.error('Failed to connect to SignalR:', err);
+        if (isMounted) {
+          setSignalRConnected(false);
+          setConnectionError('Failed to connect to game server. Players will not update in real-time.');
+          
+          // Set up alternative polling for players if SignalR fails
+          if (!refreshInterval) {
+            const interval = setInterval(fetchJoinedPlayers, 5000);
+            setRefreshInterval(interval);
+          }
+          
+          // Retry connection a few times
+          if (retryCount < maxRetries) {
+            retryCount++;
+            console.log(`Retrying SignalR connection (${retryCount}/${maxRetries})...`);
+            setTimeout(connectSignalR, 3000); // Retry after 3 seconds
+          }
+        }
+      }
+    };
+    
+    // Start connection attempt
+    connectSignalR();
+    
+    // Initial fetch of players regardless of SignalR status
+    fetchJoinedPlayers();
+    
+    // Set up periodic polling as a backup regardless of SignalR status
+    // This ensures we get player updates even if SignalR is not working
+    if (!refreshInterval) {
+      const interval = setInterval(fetchJoinedPlayers, 10000); // Fetch every 10 seconds
+      setRefreshInterval(interval);
+    }
+    
+    // Cleanup function
+    return () => {
+      isMounted = false;
+      if (refreshInterval) {
+        clearInterval(refreshInterval);
+        setRefreshInterval(null);
+      }
+    };
+  }, [quizData?.id, quizData?.quizCode, gameMode]);
+
+  // Load quiz data
   useEffect(() => {
     const loadQuizData = async () => {
       if (!quizId && !gameCode) {
@@ -87,6 +424,16 @@ export default function HostGamePage() {
           
           if (quizResponse && quizResponse.data) {
             setQuizData(quizResponse.data);
+            
+            // Detect game mode from quiz data
+            if (quizResponse.data.gameMode === 'team') {
+              setGameMode('team');
+              console.log('Detected team mode from quiz data');
+            } else {
+              setGameMode('solo');
+              console.log('Detected solo mode from quiz data');
+            }
+            
             // If there's no game code in the URL but we have a quizId,
             // use the quiz code from the response if available
             if (!gameCode && quizResponse.data.quizCode) {
@@ -102,6 +449,15 @@ export default function HostGamePage() {
           
           if (quizResponse && quizResponse.data) {
             setQuizData(quizResponse.data);
+            
+            // Detect game mode from quiz data
+            if (quizResponse.data.gameMode === 'team') {
+              setGameMode('team');
+              console.log('Detected team mode from quiz data');
+            } else {
+              setGameMode('solo');
+              console.log('Detected solo mode from quiz data');
+            }
           }
         }
         
@@ -121,20 +477,6 @@ export default function HostGamePage() {
         }
         
         setLoading(false);
-        
-        // Start polling for players - this will be replaced with SignalR
-        fetchPlayers();
-        const interval = setInterval(fetchPlayers, 5000); // Poll every 5 seconds
-        setRefreshInterval(interval);
-        
-        // This would be replaced with SignalR connection in production
-        // initializeSignalRConnection();
-        
-        return () => {
-          if (interval) clearInterval(interval);
-          // disconnectSignalR();
-        };
-        
       } catch (error) {
         console.error('Error loading quiz:', error);
         setError('Failed to load quiz data. Please try again.');
@@ -149,108 +491,23 @@ export default function HostGamePage() {
       if (refreshInterval) {
         clearInterval(refreshInterval);
       }
+      
       // Disconnect SignalR when component unmounts
-      // disconnectSignalR();
+      signalRService.stopConnection().catch(err => {
+        console.error('Error disconnecting from SignalR:', err);
+      });
     };
   }, [quizId, gameCode, router, searchParams]);
-  
-  // This function would initialize SignalR connection in production
-  const initializeSignalRConnection = () => {
-    // This is a placeholder for the SignalR connection code
-    // Example SignalR initialization would be:
-    // 
-    // const connection = new HubConnectionBuilder()
-    //   .withUrl('/gameHub')
-    //   .withAutomaticReconnect()
-    //   .build();
-    //
-    // connection.on('PlayerJoined', (player) => {
-    //   setPlayers(prevPlayers => [...prevPlayers, player]);
-    // });
-    //
-    // connection.on('PlayerLeft', (playerId) => {
-    //   setPlayers(prevPlayers => prevPlayers.filter(p => p.id !== playerId));
-    // });
-    //
-    // connection.start()
-    //   .then(() => {
-    //     setSignalRConnected(true);
-    //     connection.invoke('JoinHostRoom', gameCode);
-    //   })
-    //   .catch(err => {
-    //     setConnectionError('Failed to connect to game server. Please try again.');
-    //     console.error('SignalR Connection Error: ', err);
-    //   });
-    
-    // Simulate successful connection for now
-    setTimeout(() => {
-      setSignalRConnected(true);
-    }, 1000);
-  };
-  
-  // This function would disconnect SignalR in production
-  const disconnectSignalR = () => {
-    // This is a placeholder for the SignalR disconnection code
-    // Example SignalR disconnection would be:
-    //
-    // if (connection) {
-    //   connection.stop();
-    // }
-    
-    setSignalRConnected(false);
-  };
-  
-  // Function to fetch players
-  const fetchPlayers = async () => {
-    if (!gameCode && !quizData?.quizCode) return;
-    
-    const code = gameCode || quizData?.quizCode;
-    
-    try {
-      // In production, this would be handled by SignalR
-      // For development, use mock data or API call
-      // const playerResponse = await playerService.getPlayersByGameCode(code);
-      // if (playerResponse && playerResponse.data) {
-      //   setPlayers(playerResponse.data);
-      // }
-      
-      // For development, use random mock players
-      const mockPlayerCount = Math.floor(Math.random() * 5) + 1; // 1-5 players
-      const updatedMockPlayers = Array(mockPlayerCount).fill(0).map((_, i) => ({
-        id: i + 1,
-        name: `Player ${i + 1}`,
-        avatar: `https://mui.com/static/images/avatar/${(i % 8) + 1}.jpg`,
-        team: null
-      }));
-      
-      setPlayers(updatedMockPlayers);
-    } catch (error) {
-      console.error('Error fetching players:', error);
-      // Don't set error state here to avoid disrupting the UI
-      // Just log the error
-    }
-  };
-  
-  // Copy game code to clipboard
-  const copyCodeToClipboard = () => {
-    const code = gameCode || quizData?.quizCode;
-    if (code) {
-      navigator.clipboard.writeText(code.toString());
-      setNotification({
-        open: true,
-        message: 'Game code copied to clipboard!',
-        type: 'success'
-      });
-    }
-  };
   
   // Handle start game
   const handleStartGame = async () => {
     const code = gameCode || quizData?.quizCode;
-    if (!code) {
+    const quizIdNum = quizData?.id;
+    
+    if (!code || !quizIdNum) {
       setNotification({
         open: true,
-        message: 'Cannot start game without a valid game code',
+        message: 'Cannot start game without a valid game code and quiz ID',
         type: 'error'
       });
       return;
@@ -259,78 +516,37 @@ export default function HostGamePage() {
     setIsStarting(true);
     
     try {
-      // Import services
-      const signalRService = (await import('@/services/signalRService')).default;
-      const quizService = (await import('@/services/quizService')).default;
+      console.log(`Starting quiz with ID ${quizIdNum}...`);
       
-      // 1. Validate quiz ID
-      const quizId = quizData?.id;
-      if (!quizId) {
-        throw new Error('Quiz ID is missing');
-      }
+      // Call the REST API to start the quiz - this will trigger SignalR from the backend
+      const startResponse = await quizService.startQuiz(quizIdNum);
+      console.log('Start quiz response:', startResponse);
       
-      console.log(`Starting quiz with ID ${quizId} using quizService.startQuiz...`);
-      
-      // 2. Start the quiz using the REST API
+      // Also send a direct SignalR notification in case the backend notification fails
       try {
-        await quizService.startQuiz(quizId);
-        console.log(`Quiz ${quizId} started successfully via REST API`);
-      } catch (apiError: any) {
-        console.error('Failed to start quiz via REST API:', apiError);
-        throw new Error(`Failed to start quiz: ${apiError.message}`);
-      }
-      
-      // 3. Connect to SignalR if not already connected
-      try {
-        if (!signalRService.isConnected()) {
-          console.log('Connecting to SignalR...');
-          await signalRService.startConnection();
-          await new Promise(resolve => setTimeout(resolve, 1000)); // Allow connection to establish
-        }
-        
         if (signalRService.isConnected()) {
-          console.log(`Connected to SignalR, joining host room for game code ${code}...`);
-          
-          // Host joins the game room first
-          try {
-            await signalRService.joinHostRoom(code.toString());
-            console.log('Successfully joined host room');
-          } catch (joinError) {
-            console.warn('Warning: Failed to join host room:', joinError);
-            // Continue with game start attempt even if joining host room fails
+          // Try to notify clients directly as a fallback
+          console.log(`Sending direct StartQuiz notification via SignalR to code: ${code}`);
+          const connection = signalRService.getConnection();
+          if (connection) {
+            await connection.invoke('StartQuiz', code.toString(), true);
+            console.log('Direct SignalR notification sent');
           }
-          
-          // Notify all players that game has started
-          console.log(`Notifying players via SignalR for game code ${code}...`);
-          try {
-            await signalRService.startGame(code.toString());
-            console.log('SignalR game start notification sent successfully');
-          } catch (startError) {
-            console.warn('Warning: Failed to notify players via SignalR:', startError);
-            // Continue since REST API start was successful
-          }
-        } else {
-          console.warn('Warning: SignalR connection could not be established');
         }
       } catch (signalRError) {
-        console.warn('Warning: SignalR operations failed:', signalRError);
-        // Continue since REST API start was successful
+        console.warn('Error sending direct SignalR notification:', signalRError);
+        // Continue anyway since the REST API should have triggered the backend notification
       }
       
-      // 4. Show waiting dialog and update UI
+      // Show waiting dialog and update UI
       setWaitingDialogOpen(true);
       setIsStarting(false);
       
-      // Log success
-      console.log(`Game with code ${code} started successfully, waiting for players...`);
-      
-      // Update notification to show success
       setNotification({
         open: true,
         message: 'Game started successfully! Waiting for players to join...',
         type: 'success'
       });
-      
     } catch (error: any) {
       console.error('Error starting game:', error);
       setNotification({
@@ -359,6 +575,241 @@ export default function HostGamePage() {
       ...notification,
       open: false
     });
+  };
+
+  // Handle end game and show results
+  const handleViewResults = () => {
+    const quizIdNum = quizData?.id;
+    
+    if (!quizIdNum) {
+      setNotification({
+        open: true,
+        message: 'Cannot view results without a valid quiz ID',
+        type: 'error'
+      });
+      return;
+    }
+    
+    // Clear polling interval before navigating
+    if (refreshInterval) {
+      clearInterval(refreshInterval);
+    }
+    
+    // Store quiz data for results page
+    try {
+      if (quizData) {
+        sessionStorage.setItem('currentQuiz', JSON.stringify(quizData));
+        localStorage.setItem('currentQuiz', JSON.stringify(quizData));
+      }
+    } catch (error) {
+      console.error('Error storing quiz data:', error);
+    }
+    
+    // Navigate to results page with host parameter
+    router.push(`/game-results?quizId=${quizIdNum}&host=true`);
+  };
+
+  // Render the players section differently for team mode
+  const renderPlayers = () => {
+    if (players.length === 0) {
+      return (
+        <Box 
+          display="flex" 
+          flexDirection="column" 
+          alignItems="center" 
+          justifyContent="center" 
+          minHeight="200px"
+        >
+          <Typography variant="body1" color="text.secondary" sx={{ mb: 2 }}>
+            Waiting for players to join...
+          </Typography>
+          <CircularProgress size={30} sx={{ opacity: 0.7 }} />
+        </Box>
+      );
+    }
+    
+    if (gameMode === 'team') {
+      // Group players by team for team mode display
+      const teamGroups = groupPlayersByTeam(players);
+      const teamNames = Object.keys(teamGroups).sort();
+      
+      // Generate colors for teams
+      const teamColors = [
+        '#2196F3', // Blue
+        '#FF9800', // Orange
+        '#4CAF50', // Green
+        '#F44336', // Red
+        '#9C27B0', // Purple
+        '#00BCD4', // Cyan
+        '#FFEB3B', // Yellow
+        '#795548', // Brown
+      ];
+      
+      return (
+        <>
+          <Box sx={{ mb: 3 }}>
+            <Typography variant="subtitle1" fontWeight="medium" color="primary">
+              Teams ({teamNames.length})
+            </Typography>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 1 }}>
+              {teamNames.map((teamName, index) => (
+                <Chip 
+                  key={teamName}
+                  label={`${teamName} (${teamGroups[teamName].length})`}
+                  sx={{ 
+                    bgcolor: teamColors[index % teamColors.length],
+                    color: 'white',
+                    fontWeight: 'bold'
+                  }}
+                />
+              ))}
+            </Box>
+          </Box>
+          
+          <Divider sx={{ mb: 3 }} />
+          
+          {teamNames.map((teamName, teamIndex) => (
+            <Box key={teamName} sx={{ mb: 4 }}>
+              <Box sx={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                mb: 2,
+                p: 1,
+                pl: 2,
+                borderRadius: 2,
+                bgcolor: `${teamColors[teamIndex % teamColors.length]}22`
+              }}>
+                <PeopleIcon sx={{ color: teamColors[teamIndex % teamColors.length], mr: 1 }} />
+                <Typography variant="h6" fontWeight="medium" color="text.primary">
+                  {teamName}
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ ml: 1 }}>
+                  ({teamGroups[teamName].length} players)
+                </Typography>
+                
+                <Box sx={{ flexGrow: 1 }} />
+                
+                <Chip 
+                  size="small"
+                  label={`${teamGroups[teamName].length} members`}
+                  sx={{ 
+                    bgcolor: `${teamColors[teamIndex % teamColors.length]}33`,
+                    fontWeight: 'medium'
+                  }}
+                />
+              </Box>
+              
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
+                {teamGroups[teamName].map((player) => (
+                  <Box 
+                    key={player.id}
+                    sx={{ 
+                      width: { xs: '100%', sm: 'calc(50% - 16px)', md: 'calc(33.33% - 16px)' },
+                      mb: 2
+                    }}
+                  >
+                    <Box 
+                      component={motion.div}
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ duration: 0.3 }}
+                    >
+                      <Paper
+                        elevation={1}
+                        sx={{
+                          p: 2,
+                          borderRadius: 3,
+                          display: 'flex',
+                          alignItems: 'center',
+                          bgcolor: 'rgba(33, 150, 243, 0.04)',
+                          borderLeft: `4px solid ${teamColors[teamIndex % teamColors.length]}`
+                        }}
+                      >
+                        <Box sx={{ mr: 2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          {player.avatarUrl && player.avatarUrl.includes('://') ? (
+                            <PlayerAvatar avatarUrl={player.avatarUrl} />
+                          ) : (
+                            <Avatar 
+                              sx={{ 
+                                width: 48, 
+                                height: 48,
+                                bgcolor: teamColors[teamIndex % teamColors.length]
+                              }}
+                            >
+                              {player.nickName ? player.nickName.charAt(0) : '?'}
+                            </Avatar>
+                          )}
+                        </Box>
+                        <Box>
+                          <Typography variant="body1" fontWeight="medium">
+                            {player.nickName}
+                          </Typography>
+                        </Box>
+                      </Paper>
+                    </Box>
+                  </Box>
+                ))}
+              </Box>
+            </Box>
+          ))}
+        </>
+      );
+    } else {
+      // Solo mode - original display
+      return (
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
+          {players.map((player) => (
+            <Box 
+              key={player.id}
+              sx={{ 
+                width: { xs: '100%', sm: 'calc(50% - 16px)', md: 'calc(33.33% - 16px)' },
+                mb: 2
+              }}
+            >
+              <Box 
+                component={motion.div}
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.3 }}
+              >
+                <Paper
+                  elevation={1}
+                  sx={{
+                    p: 2,
+                    borderRadius: 3,
+                    display: 'flex',
+                    alignItems: 'center',
+                    bgcolor: 'rgba(33, 150, 243, 0.04)'
+                  }}
+                >
+                  <Box sx={{ mr: 2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {player.avatarUrl && player.avatarUrl.includes('://') ? (
+                      <PlayerAvatar avatarUrl={player.avatarUrl} />
+                    ) : (
+                      <Avatar 
+                        sx={{ width: 48, height: 48 }}
+                      >
+                        {player.nickName ? player.nickName.charAt(0) : '?'}
+                      </Avatar>
+                    )}
+                  </Box>
+                  <Box>
+                    <Typography variant="body1" fontWeight="medium">
+                      {player.nickName}
+                    </Typography>
+                    {player.groupName && (
+                      <Typography variant="caption" color="text.secondary">
+                        Team: {player.groupName}
+                      </Typography>
+                    )}
+                  </Box>
+                </Paper>
+              </Box>
+            </Box>
+          ))}
+        </Box>
+      );
+    }
   };
 
   if (loading) {
@@ -407,32 +858,63 @@ export default function HostGamePage() {
               p: 3, 
               mb: 4, 
               borderRadius: 4,
-              background: 'linear-gradient(135deg, #2196F3 0%, #1976D2 100%)',
+              background: gameMode === 'team' 
+                ? 'linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%)' // Green gradient for team mode
+                : 'linear-gradient(135deg, #2196F3 0%, #1976D2 100%)', // Blue gradient for solo mode
               color: 'white'
             }}
           >
             <Box display="flex" flexDirection={{ xs: 'column', md: 'row' }} alignItems="center" justifyContent="space-between">
               <Box>
-                <Typography variant="h4" fontWeight="bold" gutterBottom>
+                <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                  <Typography variant="h4" fontWeight="bold" sx={{ mr: 2 }}>
                   {quizData?.title || 'Host Game'}
                 </Typography>
+                  
+                  <Chip
+                    label={gameMode === 'team' ? 'Team Mode' : 'Solo Mode'}
+                    color={gameMode === 'team' ? 'success' : 'primary'}
+                    sx={{ 
+                      color: 'white', 
+                      borderColor: 'rgba(255,255,255,0.5)', 
+                      fontWeight: 'bold',
+                      bgcolor: 'rgba(255,255,255,0.15)'
+                    }}
+                    variant="outlined"
+                  />
+                </Box>
+                
                 <Typography variant="subtitle1">
                   {quizData?.description || 'Waiting for players to join...'}
                 </Typography>
               </Box>
               
               <Box display="flex" flexDirection="column" alignItems={{ xs: 'center', md: 'flex-end' }} mt={{ xs: 3, md: 0 }}>
+                <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
                 <Chip 
-                  icon={<PeopleIcon />} 
+                    icon={<PersonIcon />} 
                   label={`${players.length} ${players.length === 1 ? 'Player' : 'Players'}`}
                   sx={{ 
                     bgcolor: 'rgba(255, 255, 255, 0.2)', 
                     color: 'white',
-                    mb: 1,
                     fontWeight: 'bold',
                     '& .MuiChip-icon': { color: 'white' }
                   }}
                 />
+                  
+                  {gameMode === 'team' && (
+                    <Chip 
+                      icon={<PeopleIcon />} 
+                      label={`${Object.keys(teamCounts).length} Teams`}
+                      sx={{ 
+                        bgcolor: 'rgba(255, 255, 255, 0.2)', 
+                        color: 'white',
+                        fontWeight: 'bold',
+                        '& .MuiChip-icon': { color: 'white' }
+                      }}
+                    />
+                  )}
+                </Box>
                 
                 <Button
                   variant="contained"
@@ -448,7 +930,7 @@ export default function HostGamePage() {
                     fontWeight: 'bold',
                     boxShadow: '0 4px 10px rgba(0, 0, 0, 0.2)',
                     bgcolor: 'white',
-                    color: '#1976D2',
+                    color: gameMode === 'team' ? '#2E7D32' : '#1976D2',
                     '&:hover': {
                       bgcolor: 'rgba(255, 255, 255, 0.8)',
                     }
@@ -522,7 +1004,17 @@ export default function HostGamePage() {
                   </IconButton>
                   
                   <IconButton 
-                    onClick={copyCodeToClipboard}
+                    onClick={() => {
+                      const code = gameCode || quizData?.quizCode;
+                      if (code) {
+                        navigator.clipboard.writeText(code.toString());
+                        setNotification({
+                          open: true,
+                          message: 'Game code copied to clipboard!',
+                          type: 'success'
+                        });
+                      }
+                    }}
                     color="primary"
                   >
                     <CopyIcon />
@@ -571,61 +1063,7 @@ export default function HostGamePage() {
             
             <Divider sx={{ mb: 2 }} />
             
-            {players.length === 0 ? (
-              <Box 
-                display="flex" 
-                flexDirection="column" 
-                alignItems="center" 
-                justifyContent="center" 
-                minHeight="200px"
-              >
-                <Typography variant="body1" color="text.secondary" sx={{ mb: 2 }}>
-                  Waiting for players to join...
-                </Typography>
-                <CircularProgress size={30} sx={{ opacity: 0.7 }} />
-              </Box>
-            ) : (
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
-                {players.map((player) => (
-                  <Box 
-                    key={player.id}
-                    sx={{ 
-                      width: { xs: '100%', sm: 'calc(50% - 16px)', md: 'calc(33.33% - 16px)' },
-                      mb: 2
-                    }}
-                  >
-                    <Box 
-                      component={motion.div}
-                      initial={{ opacity: 0, scale: 0.9 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      transition={{ duration: 0.3 }}
-                    >
-                      <Paper
-                        elevation={1}
-                        sx={{
-                          p: 2,
-                          borderRadius: 3,
-                          display: 'flex',
-                          alignItems: 'center',
-                          bgcolor: 'rgba(33, 150, 243, 0.04)'
-                        }}
-                      >
-                        <Avatar 
-                          src={player.avatar} 
-                          alt={player.name}
-                          sx={{ width: 48, height: 48, mr: 2 }}
-                        >
-                          {player.name.charAt(0)}
-                        </Avatar>
-                        <Typography variant="body1" fontWeight="medium">
-                          {player.name}
-                        </Typography>
-                      </Paper>
-                    </Box>
-                  </Box>
-                ))}
-              </Box>
-            )}
+            {renderPlayers()}
           </Paper>
         </Box>
       </Container>
@@ -682,9 +1120,7 @@ export default function HostGamePage() {
         }}
       >
         <DialogTitle sx={{ textAlign: 'center' }}>
-          <Typography variant="h5" fontWeight="bold" color="primary">
             Waiting for Players
-          </Typography>
         </DialogTitle>
         <DialogContent>
           <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', py: 2 }}>
@@ -710,6 +1146,18 @@ export default function HostGamePage() {
             }}
           >
             Proceed to Game
+          </Button>
+          
+          <Button
+            variant="outlined"
+            onClick={handleViewResults}
+            sx={{ 
+              borderRadius: 8,
+              px: 3,
+              ml: 2
+            }}
+          >
+            View Results
           </Button>
         </DialogActions>
       </Dialog>
