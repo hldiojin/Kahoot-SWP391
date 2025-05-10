@@ -20,6 +20,9 @@ interface PlayerSignalRData {
 }
 
 class SignalRService {
+  broadcastPlayerJoin(code: string, playerData: any) {
+    throw new Error('Method not implemented.');
+  }
   private connection: signalR.HubConnection | null = null;
   private static instance: SignalRService;
   private connectionPromise: Promise<void> | null = null;
@@ -49,7 +52,7 @@ class SignalRService {
       try {
         console.log('Initializing SignalR connection...');
         
-        // Thử phương pháp 1: Bỏ qua negotiation, chỉ dùng WebSockets
+        // Try WebSockets first with skipNegotiation
         try {
           this.connection = new signalR.HubConnectionBuilder()
             .withUrl(SIGNALR_URL, {
@@ -57,24 +60,40 @@ class SignalRService {
               transport: signalR.HttpTransportType.WebSockets
             })
             .withAutomaticReconnect([0, 2000, 5000, 10000, 15000]) // More robust reconnection policy
+            .configureLogging(signalR.LogLevel.Debug) // Add debug logging
             .build();
             
+          // Add connection state change handler
+          this.connection.onclose((error) => {
+            console.log('SignalR connection closed:', error);
+            this.connection = null;
+            this.connectionPromise = null;
+          });
+          
           await this.connection.start();
-          console.log('SignalR Connected Successfully with skipNegotiation!');
+          console.log('SignalR Connected Successfully with WebSockets!');
           resolve();
           return;
         } catch (wsError) {
-          console.log('WebSockets with skipNegotiation failed, trying alternative methods:', wsError);
+          console.log('WebSockets connection failed, trying fallback methods:', wsError);
         }
         
-        // Phương pháp 2: Dùng tất cả các phương thức với negotiation
+        // Fallback: Try with all transports
         this.connection = new signalR.HubConnectionBuilder()
           .withUrl(SIGNALR_URL)
-          .withAutomaticReconnect([0, 2000, 5000, 10000, 15000]) // More robust reconnection policy
+          .withAutomaticReconnect([0, 2000, 5000, 10000, 15000])
+          .configureLogging(signalR.LogLevel.Debug)
           .build();
           
+        // Add connection state change handler
+        this.connection.onclose((error) => {
+          console.log('SignalR connection closed:', error);
+          this.connection = null;
+          this.connectionPromise = null;
+        });
+        
         await this.connection.start();
-        console.log('SignalR Connected Successfully with negotiation!');
+        console.log('SignalR Connected Successfully with fallback transport!');
         resolve();
       } catch (err) {
         console.error('All SignalR connection attempts failed:', err);
@@ -119,13 +138,75 @@ class SignalRService {
     
     console.log('Registering listener for JoinToQuiz event');
     
-    // Xóa handler cũ nếu có để tránh duplicate
+    // Remove old handler to avoid duplicates
     this.connection!.off("JoinToQuiz");
     
-    // Đăng ký handler mới
+    // Register new handler with proper event name
     this.connection!.on("JoinToQuiz", (quizCode: string, player: any) => {
       console.log(`JoinToQuiz event received - Quiz: ${quizCode}`, player);
-      callback(quizCode, player);
+      
+      // Format player data consistently
+      const formattedPlayer = this.formatPlayerData(player);
+      
+      // Store player data in session storage for redundancy
+      if (typeof window !== 'undefined') {
+        try {
+          // Store in team-specific list if team mode
+          if (formattedPlayer.GroupName) {
+            const teamKey = `team_players_${formattedPlayer.GroupName}`;
+            let teamPlayers = [];
+            try {
+              const existing = sessionStorage.getItem(teamKey);
+              if (existing) {
+                teamPlayers = JSON.parse(existing);
+              }
+            } catch (e) {
+              console.warn('Error reading team players:', e);
+            }
+            
+            // Add to team if not already there
+            const existsInTeam = teamPlayers.some((p: any) => 
+              p.Id === formattedPlayer.Id || 
+              p.NickName === formattedPlayer.NickName
+            );
+            
+            if (!existsInTeam) {
+              teamPlayers.push(formattedPlayer);
+              sessionStorage.setItem(teamKey, JSON.stringify(teamPlayers));
+              console.log(`Added player to team ${formattedPlayer.GroupName} in session storage`);
+            }
+          }
+          
+          // Also store in global joined players list
+          const joinedKey = `joined_players_${quizCode}`;
+          let joinedPlayers = [];
+          try {
+            const existing = sessionStorage.getItem(joinedKey);
+            if (existing) {
+              joinedPlayers = JSON.parse(existing);
+            }
+          } catch (e) {
+            console.warn('Error reading joined players:', e);
+          }
+          
+          // Add to joined players if not already there
+          const existsInJoined = joinedPlayers.some((p: any) => 
+            p.Id === formattedPlayer.Id || 
+            p.NickName === formattedPlayer.NickName
+          );
+          
+          if (!existsInJoined) {
+            joinedPlayers.push(formattedPlayer);
+            sessionStorage.setItem(joinedKey, JSON.stringify(joinedPlayers));
+            console.log(`Added player to joined players list for quiz ${quizCode}`);
+          }
+        } catch (storageErr) {
+          console.warn('Error storing player data:', storageErr);
+        }
+      }
+      
+      // Call the callback with formatted player data
+      callback(quizCode, formattedPlayer);
     });
   }
 
@@ -166,86 +247,169 @@ class SignalRService {
   }
 
   /**
-   * Directly broadcast a JoinToQuiz event to notify the host
-   * This is a fallback when other methods fail
+   * Log player join information to console without attempting server methods
+   * This replaces the previous broadcastPlayerJoin method since we know the methods don't exist
    * @param quizCode Quiz code to join
    * @param playerData Player information
    */
-  public async broadcastPlayerJoin(quizCode: string, playerData: any): Promise<void> {
+  public logPlayerJoin(quizCode: string, playerData: any): void {
     if (!this.isConnected() || !this.connection) {
-      console.error('Cannot broadcast player join, connection not established');
+      console.warn('SignalR not connected, cannot sync player join');
       return;
     }
 
     try {
       const formattedPlayerData = this.formatPlayerData(playerData);
-      console.log(`Attempting direct JoinToQuiz broadcast for quiz ${quizCode}:`, formattedPlayerData);
+      console.log(`Player joining quiz ${quizCode}:`, formattedPlayerData);
       
-      // Try multiple methods in sequence to ensure one works
-      
-      // 1. Directly invoke the JoinToQuiz method on the server
-      try {
-        await this.connection.invoke('JoinToQuiz', quizCode.toString(), formattedPlayerData);
-        console.log(`Direct JoinToQuiz broadcast sent for quiz ${quizCode}`);
-      } catch (err1) {
-        console.warn('Direct JoinToQuiz invoke failed:', err1);
-        
-        // 2. Try using send instead of invoke
+      // Store in session storage for local data syncing
+      if (typeof window !== 'undefined') {
         try {
-          await this.connection.send('JoinToQuiz', quizCode.toString(), formattedPlayerData);
-          console.log(`JoinToQuiz sent via send() for quiz ${quizCode}`);
-        } catch (err2) {
-          console.warn('JoinToQuiz send() failed:', err2);
-        }
-      }
-      
-      // 3. Also try PlayerJoined event which might be used in some implementations
-      try {
-        await this.connection.invoke('PlayerJoined', quizCode.toString(), formattedPlayerData);
-        console.log(`PlayerJoined broadcast sent for quiz ${quizCode}`);
-      } catch (err3) {
-        console.warn('PlayerJoined invoke failed:', err3);
-      }
-      
-      // 4. Try a generic JoinQuizWithTeam event
-      if (formattedPlayerData.GroupName) {
-        try {
-          await this.connection.invoke('JoinQuizWithTeam', 
-            quizCode.toString(), 
-            formattedPlayerData,
-            formattedPlayerData.GroupName
+          // Store player data
+          const key = `player_joined_${quizCode}_${formattedPlayerData.Id}`;
+          sessionStorage.setItem(key, JSON.stringify({
+            player: formattedPlayerData,
+            timestamp: new Date().toISOString()
+          }));
+          
+          // Add to joined players list
+          let joinedPlayers = [];
+          const joinedPlayersKey = `joined_players_${quizCode}`;
+          try {
+            const existing = sessionStorage.getItem(joinedPlayersKey);
+            if (existing) {
+              joinedPlayers = JSON.parse(existing);
+            }
+          } catch (err) {
+            console.warn('Error parsing joined players:', err);
+          }
+          
+          // Add player if not already in list
+          const exists = joinedPlayers.some((p: any) => 
+            p.Id === formattedPlayerData.Id || p.id === formattedPlayerData.Id
           );
-          console.log(`JoinQuizWithTeam broadcast sent for quiz ${quizCode} with team ${formattedPlayerData.GroupName}`);
-        } catch (err4) {
-          console.warn('JoinQuizWithTeam invoke failed:', err4);
+          
+          if (!exists) {
+            joinedPlayers.push(formattedPlayerData);
+            sessionStorage.setItem(joinedPlayersKey, JSON.stringify(joinedPlayers));
+            console.log(`Added player to joined players list (${joinedPlayers.length} total)`);
+          }
+        } catch (storageErr) {
+          console.warn('Error storing player join data locally:', storageErr);
         }
       }
     } catch (err) {
-      console.error('Error broadcasting player join:', err);
+      console.error('Error logging player join:', err);
     }
   }
 
   /**
-   * Format player data consistently to ensure all required properties are present
-   * @param playerData Raw player data
-   * @returns Formatted player data
+   * Player joins a quiz using the server's expected format
+   * @param quizCode Quiz code to join
+   * @param playerData Player information
    */
-  private formatPlayerData(playerData: any): PlayerSignalRData {
-    // Create base player data with required fields
-    const formattedData: PlayerSignalRData = {
-      Id: playerData.Id || playerData.id || playerData.playerId || 0,
-      NickName: playerData.NickName || playerData.nickName || playerData.name || 'Guest',
-      AvatarUrl: playerData.AvatarUrl || playerData.avatarUrl || playerData.avatar || 'alligator',
-      GroupId: playerData.GroupId || playerData.groupId || null,
-      GroupName: playerData.GroupName || playerData.groupName || playerData.team || playerData.teamName || null,
-      GroupDescription: playerData.GroupDescription || playerData.groupDescription || null,
-      // Add lowercase variants for compatibility
-      groupName: playerData.GroupName || playerData.groupName || playerData.team || playerData.teamName || null,
-      team: playerData.GroupName || playerData.groupName || playerData.team || playerData.teamName || null,
-      nickName: playerData.NickName || playerData.nickName || playerData.name || 'Guest'
-    };
-
-    return formattedData;
+  public async joinQuiz(quizCode: string, playerData: any): Promise<void> {
+    // Ensure we have a valid connection before proceeding
+    if (!this.isConnected()) {
+      try {
+        const connected = await this.safeStartConnection();
+        if (!connected) {
+          console.warn('SignalR connection failed, continuing with REST API only');
+          return;
+        }
+      } catch (error) {
+        console.warn('SignalR connection error, continuing with REST API only:', error);
+        return;
+      }
+    }
+    
+    try {
+      // Format player data consistently for all operations
+      const formattedPlayerData = this.formatPlayerData(playerData);
+      
+      // Check if this is a team player
+      const isTeamMode = !!formattedPlayerData.GroupName;
+      
+      // Log complete player data to help diagnose team mode issues
+      console.log(`Connected to SignalR for quiz ${quizCode} with player data:`, formattedPlayerData);
+      
+      // Special handling for team mode - log detailed team info
+      if (isTeamMode) {
+        console.log(`🟢 TEAM MODE: Player ${formattedPlayerData.NickName} is connected via SignalR in team ${formattedPlayerData.GroupName}`);
+      }
+      
+      // IMPORTANT: Don't try to call methods that don't exist on the server
+      // The server expects to send events TO clients, not receive them FROM clients
+      
+      // Just store the connection info locally - don't try to call server methods
+      console.log(`Establishing SignalR connection for quiz ${quizCode}`);
+        
+      // Save connection and player info to session storage regardless of method success
+      if (typeof window !== 'undefined') {
+        try {
+          // Store SignalR connection info
+          sessionStorage.setItem(`signalr_connected_${quizCode}`, 'true');
+          sessionStorage.setItem(`player_data_${quizCode}`, JSON.stringify(formattedPlayerData));
+          
+          // Store in team-specific storage if this is team mode
+          if (isTeamMode && formattedPlayerData.GroupName) {
+            const teamName = formattedPlayerData.GroupName;
+            const teamPlayersKey = `team_players_${teamName}`;
+            let teamPlayers = [];
+            try {
+              const existing = sessionStorage.getItem(teamPlayersKey);
+              if (existing) {
+                teamPlayers = JSON.parse(existing);
+              }
+            } catch (e) {
+              console.warn(`Error reading team players:`, e);
+            }
+            
+            // Add to team if not already there
+            const existsInTeam = teamPlayers.some((p: any) => 
+              p.id === formattedPlayerData.Id || p.Id === formattedPlayerData.Id || 
+              (p.nickname === formattedPlayerData.NickName)
+            );
+            
+            if (!existsInTeam) {
+              teamPlayers.push(formattedPlayerData);
+              sessionStorage.setItem(teamPlayersKey, JSON.stringify(teamPlayers));
+              console.log(`Added player to team ${teamName} players list`);
+            }
+          }
+          
+          // Add to the main joined players list
+          const joinedPlayersKey = `joined_players_${quizCode}`;
+          let joinedPlayers = [];
+          try {
+            const existing = sessionStorage.getItem(joinedPlayersKey);
+            if (existing) {
+              joinedPlayers = JSON.parse(existing);
+            }
+          } catch (e) {
+            console.warn(`Error reading joined players:`, e);
+          }
+          
+          // Add to joined players if not already there
+          const existsInJoined = joinedPlayers.some((p: any) => 
+            p.id === formattedPlayerData.Id || p.Id === formattedPlayerData.Id || 
+            (p.nickname === formattedPlayerData.NickName)
+          );
+          
+          if (!existsInJoined) {
+            joinedPlayers.push(formattedPlayerData);
+            sessionStorage.setItem(joinedPlayersKey, JSON.stringify(joinedPlayers));
+          }
+          
+          console.log('Successfully stored player data locally');
+        } catch (storageErr) {
+          console.warn('Error saving SignalR status to storage:', storageErr);
+        }
+      }
+    } catch (err) {
+      console.error('Error joining quiz via SignalR:', err);
+      console.warn('SignalR connection failed, but player will be added via REST API');
+    }
   }
 
   /**
@@ -277,133 +441,157 @@ class SignalRService {
   }
   
   /**
-   * Player joins a quiz using the server's expected format
-   * @param quizCode Quiz code to join
-   * @param playerData Player information
+   * Format player data consistently to ensure all required properties are present
+   * @param playerData Raw player data
+   * @returns Formatted player data
    */
-  public async joinQuiz(quizCode: string, playerData: any): Promise<void> {
-    // Ensure we have a valid connection before proceeding
-    if (!this.isConnected()) {
-      try {
-        const connected = await this.safeStartConnection();
-        if (!connected) {
-          console.warn('SignalR connection failed, continuing with REST API only');
-          return;
-        }
-      } catch (error) {
-        console.warn('SignalR connection error, continuing with REST API only:', error);
-        return;
-      }
-    }
+  private formatPlayerData(playerData: any): PlayerSignalRData {
+    // Detect if this is a team mode player by checking for any team-related properties
+    const isTeamMode = !!(
+      playerData.team || 
+      playerData.teamName || 
+      playerData.GroupName || 
+      playerData.groupName || 
+      playerData.GroupId || 
+      playerData.groupId
+    );
     
-    try {
-      // Format player data consistently for all operations
-      const formattedPlayerData = this.formatPlayerData(playerData);
+    // Get team name from any possible source
+    const teamName = 
+      playerData.team || 
+      playerData.teamName || 
+      playerData.GroupName || 
+      playerData.groupName || 
+      null;
       
-      // Check if this is a team player
-      const isTeamMode = !!formattedPlayerData.GroupName;
+    // Get team description or create default one
+    const teamDescription = 
+      playerData.GroupDescription || 
+      playerData.groupDescription || 
+      (teamName ? `Team for ${playerData.NickName || playerData.nickName || playerData.name || 'player'}` : null);
       
-      // Log complete player data to help diagnose team mode issues
-      console.log(`Attempting to join quiz ${quizCode} via SignalR with player data:`, formattedPlayerData);
+    console.log(`Formatting player data. Team mode detected: ${isTeamMode}, Team name: ${teamName}, Team description: ${teamDescription}`);
+    
+    // Create base player data with required fields
+    const formattedData: PlayerSignalRData = {
+      Id: playerData.Id || playerData.id || playerData.playerId || 0,
+      NickName: playerData.NickName || playerData.nickName || playerData.name || 'Guest',
+      AvatarUrl: playerData.AvatarUrl || playerData.avatarUrl || playerData.avatar || 'alligator',
+      // Always include these fields, but they'll be null for solo mode
+      GroupId: playerData.GroupId || playerData.groupId || null,
+      GroupName: teamName, // Use the extracted team name
+      GroupDescription: teamDescription, // Use the extracted/created team description
+      // Add lowercase variants for compatibility
+      groupName: teamName,
+      team: teamName,
+      nickName: playerData.NickName || playerData.nickName || playerData.name || 'Guest'
+    };
+
+    // For team mode, add extra logging and ensure all team fields are set
+    if (isTeamMode && teamName) {
+      console.log(`🟢 Team mode player: ${formattedData.NickName} in team ${teamName} with description: ${teamDescription}`);
       
-      // Special handling for team mode - log detailed team info
-      if (isTeamMode) {
-        console.log(`🟢 TEAM MODE: Player ${formattedPlayerData.NickName} joining team ${formattedPlayerData.GroupName}`);
-      }
+      // Make sure we log all the values for debugging
+      console.log(`Team details - GroupId: ${formattedData.GroupId}, GroupName: ${formattedData.GroupName}, team: ${formattedData.team}`);
       
-      // First try the direct broadcast approach - only if player has an ID to avoid duplicates
-      if (formattedPlayerData.Id > 0) {
-        try {
-          await this.broadcastPlayerJoin(quizCode, formattedPlayerData);
-          console.log(`Direct JoinToQuiz broadcast successful for quiz ${quizCode}`);
-          // Continue with regular operations as well for redundancy
-        } catch (broadcastErr) {
-          console.warn('Direct JoinToQuiz broadcast failed:', broadcastErr);
-        }
-      } else {
-        console.log('Skipping direct broadcast because player has no ID yet');
-      }
-      
-      // Try AddToGroup method first - this is the standard SignalR method for joining a group
+      // Store the joined team player in session storage for the host to find
       try {
-        await this.connection!.invoke('AddToGroup', quizCode.toString());
-        console.log(`Player added to SignalR group for quiz ${quizCode}`);
-        
-        // Then register the player with the quiz - only if the player has an ID
-        if (formattedPlayerData.Id > 0) {
-          await this.connection!.invoke('RegisterPlayer', quizCode.toString(), formattedPlayerData);
-          console.log(`Player registered for quiz ${quizCode}${formattedPlayerData.GroupName ? ` in team ${formattedPlayerData.GroupName}` : ''}`);
+        if (typeof window !== 'undefined' && window.sessionStorage) {
+          // Add to multiple storage locations for redundancy
           
-          // If team mode, also try calling RegisterTeamPlayer if the method exists
-          if (isTeamMode) {
-            try {
-              await this.connection!.invoke('RegisterTeamPlayer', quizCode.toString(), formattedPlayerData);
-              console.log(`Team mode: Player registered with team ${formattedPlayerData.GroupName}`);
-            } catch (teamRegisterErr) {
-              console.warn('RegisterTeamPlayer not available, using standard registration:', teamRegisterErr);
-              
-              // Try a generic PlayerJoin method with team info
-              try {
-                await this.connection!.invoke('PlayerJoin', quizCode.toString(), formattedPlayerData);
-                console.log(`PlayerJoin invoked for team player in quiz ${quizCode}`);
-              } catch (playerJoinErr) {
-                console.warn('PlayerJoin fallback failed:', playerJoinErr);
-              }
-            }
-          }
-        } else {
-          console.log('Skipping RegisterPlayer because player has no ID yet');
-        }
-        
-        return;
-      } catch (addToGroupErr) {
-        console.warn('AddToGroup method failed:', addToGroupErr);
-        
-        // Try JoinGroup as an alternative
-        try {
-          await this.connection!.invoke('JoinGroup', quizCode.toString());
-          console.log(`Player joined group for quiz ${quizCode} using JoinGroup`);
-          
-          // Also try registering the player with the quiz if JoinGroup succeeds - only if player has an ID
-          if (formattedPlayerData.Id > 0) {
-            try {
-              await this.connection!.invoke('RegisterPlayer', quizCode.toString(), formattedPlayerData);
-              console.log(`Player registered for quiz ${quizCode} after JoinGroup successful`);
-            } catch (registerErr) {
-              console.warn('RegisterPlayer failed after JoinGroup:', registerErr);
-            }
-          } else {
-            console.log('Skipping RegisterPlayer after JoinGroup because player has no ID yet');
-          }
-          
-          return;
-        } catch (joinGroupErr) {
-          console.warn('JoinGroup method failed:', joinGroupErr);
-        }
-        
-        // Final fallback - try PlayerJoin method which might be used in some implementations
-        if (formattedPlayerData.Id > 0) {
+          // 1. Store in team-specific list
+          const teamPlayersKey = `team_players_${teamName}`;
+          let teamPlayers = [];
           try {
-            await this.connection!.invoke('PlayerJoin', quizCode.toString(), formattedPlayerData);
-            console.log(`Player joined quiz ${quizCode} using PlayerJoin method`);
-            return;
-          } catch (playerJoinErr) {
-            console.warn('PlayerJoin method failed:', playerJoinErr);
+            const existing = sessionStorage.getItem(teamPlayersKey);
+            if (existing) {
+              teamPlayers = JSON.parse(existing);
+            }
+          } catch (e) {
+            console.warn('Error reading stored team players:', e);
           }
-        } else {
-          console.log('Skipping PlayerJoin because player has no ID yet');
+          
+          // Check if player already exists in team list
+          const playerExistsInTeam = teamPlayers.some((p: any) => 
+            p.Id === formattedData.Id || 
+            p.NickName === formattedData.NickName
+          );
+          
+          // Add player if not already in team list
+          if (!playerExistsInTeam) {
+            teamPlayers.push({
+              ...formattedData,
+              joinTime: new Date().toISOString()
+            });
+            sessionStorage.setItem(teamPlayersKey, JSON.stringify(teamPlayers));
+            console.log(`Added player to team ${teamName} in session storage (total: ${teamPlayers.length})`);
+          }
+          
+          // 2. Add to the global joined players list
+          const allPlayersKey = `joined_players_all`;
+          let allPlayers = [];
+          try {
+            const existing = sessionStorage.getItem(allPlayersKey);
+            if (existing) {
+              allPlayers = JSON.parse(existing);
+            }
+          } catch (e) {
+            console.warn('Error parsing global players list:', e);
+          }
+          
+          // Check if player exists in global list
+          const playerExistsGlobal = allPlayers.some((p: any) => 
+            p.Id === formattedData.Id || 
+            p.NickName === formattedData.NickName
+          );
+          
+          // Add to global list if not there
+          if (!playerExistsGlobal) {
+            allPlayers.push({
+              ...formattedData,
+              joinTime: new Date().toISOString()
+            });
+            sessionStorage.setItem(allPlayersKey, JSON.stringify(allPlayers));
+            console.log(`Added player to global players list (total: ${allPlayers.length})`);
+          }
+          
+          // 3. Also store in quiz-specific player list if we have a quiz code
+          if (playerData.quizId || playerData.gameCode) {
+            const quizId = playerData.quizId || playerData.gameCode;
+            const quizPlayersKey = `joined_players_${quizId}`;
+            let quizPlayers = [];
+            try {
+              const existing = sessionStorage.getItem(quizPlayersKey);
+              if (existing) {
+                quizPlayers = JSON.parse(existing);
+              }
+            } catch (e) {
+              console.warn('Error parsing quiz players list:', e);
+            }
+            
+            // Check if player exists in quiz list
+            const playerExistsInQuiz = quizPlayers.some((p: any) => 
+              p.Id === formattedData.Id || 
+              p.NickName === formattedData.NickName
+            );
+            
+            // Add to quiz list if not there
+            if (!playerExistsInQuiz) {
+              quizPlayers.push({
+                ...formattedData,
+                joinTime: new Date().toISOString()
+              });
+              sessionStorage.setItem(quizPlayersKey, JSON.stringify(quizPlayers));
+              console.log(`Added player to quiz ${quizId} players list (total: ${quizPlayers.length})`);
+            }
+          }
         }
-        
-        // If we can't join a group properly, we should still be able to receive broadcasts
-        // Log a warning but don't throw an error since the REST API is the primary mechanism
-        console.warn('Could not join SignalR group. Player will be added via REST API but real-time updates may be delayed.');
-        return;
+      } catch (storageError) {
+        console.warn('Error storing team player:', storageError);
       }
-    } catch (err) {
-      console.error('Error joining quiz via SignalR:', err);
-      // Don't throw an error, as the REST API is the primary mechanism
-      console.warn('SignalR connection failed, but player will be added via REST API');
     }
+
+    return formattedData;
   }
 }
 

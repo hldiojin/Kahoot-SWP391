@@ -76,6 +76,7 @@ interface PlayerScore {
   avatar?: string;
   group?: string; // Add group property
   id?: number; // Add id property for player identification
+  nickname?: string; // Add nickname property
 }
 
 interface GroupScore {
@@ -370,8 +371,10 @@ const fetchQuizResults = async (quizId: number): Promise<QuizResults | null> => 
     
     // Fall back to direct API calls as a last resort
     console.log('Attempting direct API call to ResultQuiz endpoint...');
+    
+    // Make sure we're using the correct endpoint - ResultQuiz (singular) not ResultsQuiz (plural)
     const response = await fetch(
-      `${API_BASE_URL}/api/Quiz/ResultQuiz/${quizId}`,
+      API_BASE_URL + '/api/Quiz/ResultQuiz/' + quizId,
       {
         method: 'GET',
         headers: {
@@ -1603,109 +1606,38 @@ export default function GameResultsPage() {
             
             <Paper sx={{ p: 4, mb: 4, borderRadius: 3, bgcolor: 'rgba(255,255,255,0.9)' }}>
               <Box sx={{ mb: 4 }}>
-                {playerResults[0]?.avatar && (
-                  <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>
-                    <Box sx={{ width: 100, height: 100 }}>
-                      <Animal
-                        name={getAnimalAvatar(playerResults[0].avatar).name}
-                        color={getAnimalAvatar(playerResults[0].avatar).color}
-                        size="100%"
-                      />
-                    </Box>
-                  </Box>
+                {/* Hiển thị tiêu đề khác nhau cho host và player */}
+                {isHost ? (
+                  <Typography variant="h4" color="primary" gutterBottom>
+                    Game Results
+                  </Typography>
+                ) : (
+                  <>
+                    {playerResults[0]?.avatar && (
+                      <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>
+                        <Box sx={{ width: 100, height: 100 }}>
+                          <Animal
+                            name={getAnimalAvatar(playerResults[0].avatar).name}
+                            color={getAnimalAvatar(playerResults[0].avatar).color}
+                            size="100%"
+                          />
+                        </Box>
+                      </Box>
+                    )}
+                    <Typography variant="h4" color="primary" gutterBottom>
+                      Game Complete!
+                    </Typography>
+                  </>
                 )}
-                <Typography variant="h4" color="primary" gutterBottom>
-                  Game Complete!
-                </Typography>
                 <Typography variant="body1" color="text.secondary">
-                  {gameTitle ? `You've completed ${gameTitle}` : "You've completed the quiz"}
+                  {isHost 
+                    ? `${gameTitle ? gameTitle : 'Quiz'} - Host View` 
+                    : gameTitle ? `You've completed ${gameTitle}` : "You've completed the quiz"}
                 </Typography>
               </Box>
               
-              {/* Score card */}
-              <Card 
-                sx={{ 
-                  mb: 4, 
-                  maxWidth: 500, 
-                  mx: 'auto',
-                  borderRadius: 3,
-                  boxShadow: '0 8px 24px rgba(0,0,0,0.12)'
-                }}
-              >
-                <CardHeader
-                  title="Your Score"
-                  sx={{ 
-                    bgcolor: 'primary.main', 
-                    color: 'white',
-                    textAlign: 'center',
-                    pb: 1
-                  }}
-                />
-                <CardContent sx={{ p: 4 }}>
-                  <Typography 
-                    variant="h2" 
-                    color="primary" 
-                    sx={{ 
-                      fontWeight: 'bold', 
-                      textAlign: 'center',
-                      mb: 2
-                    }}
-                  >
-                    {playerResults[0]?.score || 0}
-                  </Typography>
-                  
-                  <Stack spacing={2} sx={{ mt: 3 }}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <Typography variant="body1" color="text.secondary">
-                        Correct Answers:
-                      </Typography>
-                      <Typography variant="body1" fontWeight="bold">
-                        {playerResults[0]?.correctAnswers || 0} / {playerResults[0]?.totalQuestions || 0}
-                      </Typography>
-                    </Box>
-                    
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <Typography variant="body1" color="text.secondary">
-                        Accuracy:
-                      </Typography>
-                      <Typography variant="body1" fontWeight="bold">
-                        {playerResults[0]?.totalQuestions ? 
-                          Math.round((playerResults[0]?.correctAnswers / playerResults[0]?.totalQuestions) * 100) : 0}%
-                      </Typography>
-                    </Box>
-                    
-                    {playerResults[0]?.timeBonus !== undefined && playerResults[0]?.timeBonus > 0 && (
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <Typography variant="body1" color="text.secondary">
-                          Time Bonus:
-                        </Typography>
-                        <Typography variant="body1" fontWeight="bold" color="success.main">
-                          +{playerResults[0]?.timeBonus}
-                        </Typography>
-                      </Box>
-                    )}
-                    
-                    {playerResults.length > 0 && (
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <Typography variant="body1" color="text.secondary">
-                          Avg. Answer Time:
-                        </Typography>
-                        <Typography variant="body1" fontWeight="bold">
-                          {playerResults[0] && typeof playerResults[0].averageAnswerTime === 'number' 
-                            ? playerResults[0].averageAnswerTime.toFixed(1) 
-                            : '0.0'}s
-                        </Typography>
-                      </Box>
-                    )}
-                  </Stack>
-                </CardContent>
-              </Card>
-
-              {/* Add Question Details - integrate with same styling */}
-              <QuestionDetails />
-
-              {/* Add Leaderboard */}
-              {playerResults.length > 1 && (
+              {/* Score card chỉ hiển thị cho player, không hiển thị cho host */}
+              {!isHost && (
                 <Card 
                   sx={{ 
                     mb: 4, 
@@ -1716,7 +1648,7 @@ export default function GameResultsPage() {
                   }}
                 >
                   <CardHeader
-                    title="Leaderboard"
+                    title="Your Score"
                     sx={{ 
                       bgcolor: 'primary.main', 
                       color: 'white',
@@ -1724,74 +1656,156 @@ export default function GameResultsPage() {
                       pb: 1
                     }}
                   />
-                  <CardContent sx={{ p: 0 }}>
-                    <List sx={{ width: '100%', p: 0 }}>
-                      {playerResults.map((player, index) => (
-                        <ListItem
-                          key={index}
-                          sx={{
-                            py: 2,
-                            px: 3,
-                            borderBottom: index < playerResults.length - 1 ? '1px solid rgba(0,0,0,0.12)' : 'none',
-                            bgcolor: player.name === playerInfo?.name ? 'rgba(25, 118, 210, 0.08)' : 'transparent'
-                          }}
-                        >
-                          <ListItemAvatar>
-                            <Avatar
-                              sx={{
-                                width: 40,
-                                height: 40,
-                                bgcolor: index === 0 ? 'gold' : index === 1 ? 'silver' : index === 2 ? '#cd7f32' : 'grey.300'
-                              }}
-                            >
-                              {index + 1}
-                            </Avatar>
-                          </ListItemAvatar>
-                          <ListItemText
-                            primary={
-                              <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                                <Box sx={{ width: 30, height: 30, mr: 1 }}>
-                                  {player.avatar && (
-                                    <Animal
-                                      name={getAnimalAvatar(player.avatar).name}
-                                      color={getAnimalAvatar(player.avatar).color}
-                                      size="100%"
-                                    />
-                                  )}
-                                </Box>
-                                <Typography variant="body1" fontWeight={player.name === playerInfo?.name ? 'bold' : 'normal'}>
-                                  {player.name}
-                                  {player.name === playerInfo?.name && ' (You)'}
-                                </Typography>
-                              </Box>
-                            }
-                            secondary={
-                              <Typography variant="body2" color="text.secondary">
-                                {player.correctAnswers || 0}/{player.totalQuestions || 0} correct
-                              </Typography>
-                            }
-                          />
-                          <Typography
-                            variant="h6"
-                            color={index === 0 ? 'primary' : 'text.primary'}
-                            fontWeight={index === 0 ? 'bold' : 'medium'}
-                          >
-                            {player.score}
+                  <CardContent sx={{ p: 4 }}>
+                    <Typography 
+                      variant="h2" 
+                      color="primary" 
+                      sx={{ 
+                        fontWeight: 'bold', 
+                        textAlign: 'center',
+                        mb: 2
+                      }}
+                    >
+                      {playerResults[0]?.score || 0}
+                    </Typography>
+                    
+                    <Stack spacing={2} sx={{ mt: 3 }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <Typography variant="body1" color="text.secondary">
+                          Correct Answers:
+                        </Typography>
+                        <Typography variant="body1" fontWeight="bold">
+                          {playerResults[0]?.correctAnswers || 0} / {playerResults[0]?.totalQuestions || 0}
+                        </Typography>
+                      </Box>
+                      
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <Typography variant="body1" color="text.secondary">
+                          Accuracy:
+                        </Typography>
+                        <Typography variant="body1" fontWeight="bold">
+                          {playerResults[0]?.totalQuestions ? 
+                            Math.round((playerResults[0]?.correctAnswers / playerResults[0]?.totalQuestions) * 100) : 0}%
+                        </Typography>
+                      </Box>
+                      
+                      {playerResults[0]?.timeBonus !== undefined && playerResults[0]?.timeBonus > 0 && (
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <Typography variant="body1" color="text.secondary">
+                            Time Bonus:
                           </Typography>
-                        </ListItem>
-                      ))}
-                    </List>
+                          <Typography variant="body1" fontWeight="bold" color="success.main">
+                            +{playerResults[0]?.timeBonus}
+                          </Typography>
+                        </Box>
+                      )}
+                      
+                      {playerResults.length > 0 && (
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <Typography variant="body1" color="text.secondary">
+                            Avg. Answer Time:
+                          </Typography>
+                          <Typography variant="body1" fontWeight="bold">
+                            {playerResults[0] && typeof playerResults[0].averageAnswerTime === 'number' 
+                              ? playerResults[0].averageAnswerTime.toFixed(1) 
+                              : '0.0'}s
+                          </Typography>
+                        </Box>
+                      )}
+                    </Stack>
                   </CardContent>
                 </Card>
               )}
+
+              {/* Hiển thị question details chỉ cho người chơi, không hiển thị cho host */}
+              {!isHost && <QuestionDetails />}
+
+              {/* Leaderboard luôn hiển thị cho cả host và player */}
+              <Card 
+                sx={{ 
+                  mb: 4, 
+                  maxWidth: isHost ? 800 : 500, 
+                  mx: 'auto',
+                  borderRadius: 3,
+                  boxShadow: '0 8px 24px rgba(0,0,0,0.12)'
+                }}
+              >
+                <CardHeader
+                  title={isHost ? "Players Ranking" : "Leaderboard"}
+                  sx={{ 
+                    bgcolor: 'primary.main', 
+                    color: 'white',
+                    textAlign: 'center',
+                    pb: 1
+                  }}
+                />
+                <CardContent sx={{ p: 0 }}>
+                  <List sx={{ width: '100%', p: 0 }}>
+                    {playerResults.map((player, index) => (
+                      <ListItem
+                        key={index}
+                        sx={{
+                          py: 2,
+                          px: 3,
+                          borderBottom: index < playerResults.length - 1 ? '1px solid rgba(0,0,0,0.12)' : 'none',
+                          bgcolor: player.name === playerInfo?.name ? 'rgba(25, 118, 210, 0.08)' : 'transparent'
+                        }}
+                      >
+                        <ListItemAvatar>
+                          <Avatar
+                            sx={{
+                              width: 40,
+                              height: 40,
+                              bgcolor: index === 0 ? 'gold' : index === 1 ? 'silver' : index === 2 ? '#cd7f32' : 'grey.300'
+                            }}
+                          >
+                            {index + 1}
+                          </Avatar>
+                        </ListItemAvatar>
+                        <ListItemText
+                          primary={
+                            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                              <Box sx={{ width: 30, height: 30, mr: 1 }}>
+                                {player.avatar && (
+                                  <Animal
+                                    name={getAnimalAvatar(player.avatar).name}
+                                    color={getAnimalAvatar(player.avatar).color}
+                                    size="100%"
+                                  />
+                                )}
+                              </Box>
+                              <Typography variant="body1" fontWeight={player.name === playerInfo?.name ? 'bold' : 'normal'}>
+                                {player.name || player.nickname || `Player ${index + 1}`}
+                                {player.name === playerInfo?.name && !isHost && ' (You)'}
+                              </Typography>
+                            </Box>
+                          }
+                          secondary={
+                            <Typography variant="body2" color="text.secondary">
+                              {player.correctAnswers || 0}/{player.totalQuestions || 0} correct
+                            </Typography>
+                          }
+                        />
+                        <Typography
+                          variant="h6"
+                          color={index === 0 ? 'primary' : 'text.primary'}
+                          fontWeight={index === 0 ? 'bold' : 'medium'}
+                        >
+                          {player.score}
+                        </Typography>
+                      </ListItem>
+                    ))}
+                  </List>
+                </CardContent>
+              </Card>
               
-              {/* Add Team Leaderboard for team mode */}
+              {/* Team Leaderboard cho team mode */}
               {gameMode === 'team' && groupResults.length > 0 && (
                 <Card 
                   sx={{ 
                     mt: 5, 
                     mb: 4, 
-                    maxWidth: 500, 
+                    maxWidth: isHost ? 800 : 500, 
                     mx: 'auto',
                     borderRadius: 3,
                     boxShadow: '0 12px 24px rgba(0,0,0,0.12)',
@@ -1858,14 +1872,16 @@ export default function GameResultsPage() {
                         </Typography>
                       </Box>
                       
-                      <Box sx={{ textAlign: 'center' }}>
-                        <Typography variant="body2" color="rgba(255,255,255,0.8)" gutterBottom>
-                          Your Team
-                        </Typography>
-                        <Typography variant="h6" fontWeight="bold">
-                          #{groupResults.findIndex(g => g.name === (playerInfo?.team || "Your Team")) + 1 || '-'}
-                        </Typography>
-                      </Box>
+                      {!isHost && (
+                        <Box sx={{ textAlign: 'center' }}>
+                          <Typography variant="body2" color="rgba(255,255,255,0.8)" gutterBottom>
+                            Your Team
+                          </Typography>
+                          <Typography variant="h6" fontWeight="bold">
+                            #{groupResults.findIndex(g => g.name === (playerInfo?.team || "Your Team")) + 1 || '-'}
+                          </Typography>
+                        </Box>
+                      )}
                     </Box>
                     
                     {/* Background elements */}
@@ -1892,7 +1908,7 @@ export default function GameResultsPage() {
                   <CardContent sx={{ p: 0, bgcolor: '#f9f9fc' }}>
                     <List disablePadding>
                       {groupResults.map((group, index) => {
-                        const isYourTeam = group.name === (playerInfo?.team || "Your Team");
+                        const isYourTeam = !isHost && group.name === (playerInfo?.team || "Your Team");
                         return (
                           <Box
                             key={index}

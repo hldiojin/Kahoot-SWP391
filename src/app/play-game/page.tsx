@@ -52,8 +52,6 @@ const getStoredGameModeForQuizCode = (quizCode: string | null): string | null =>
   return null;
 };
 
-// Manually override game mode for specific quiz codes
-// This is a temporary fix for specific problematic quizzes
 const forceTeamModeForQuiz = (quizCode: string | null): boolean => {
   if (!quizCode) return false;
   
@@ -178,6 +176,10 @@ interface PlayerInfo {
   quizId?: number;
   groupName?: string | null;
   GroupName?: string | null;
+  GroupDescription?: string | null;
+  groupDescription?: string | null;
+  GroupId?: number | null;
+  groupId?: number | null;
 }
 
 export default function PlayGamePage() {
@@ -506,6 +508,15 @@ export default function PlayGamePage() {
     try {
       console.log(`Using direct API call to join team mode quiz: QuizId=${quizId}, PlayerId=${playerId}, Team=${teamName}`);
       
+      // Check if we've already joined this team
+      const joinKey = `joined_team_${playerId}_${teamName}`;
+      const alreadyJoined = sessionStorage.getItem(joinKey);
+      
+      if (alreadyJoined) {
+        console.log(`Player ${playerId} has already joined team ${teamName}, skipping duplicate direct join`);
+        return;
+      }
+      
       // Get QuizService
       const quizService = (await import('@/services/quizService')).default;
       
@@ -520,6 +531,9 @@ export default function PlayGamePage() {
           team: teamName
         }
       );
+      
+      // Mark this player as having joined this team
+      sessionStorage.setItem(joinKey, 'true');
       
       console.log('Direct team mode join result:', joinResult);
     } catch (err) {
@@ -551,6 +565,26 @@ export default function PlayGamePage() {
       // Log team mode status
       if (gameMode === 'team') {
         console.log(`🟢 TEAM MODE: Player ${playerName} is joining team ${selectedTeam}`);
+        
+        // Store quiz as team mode in multiple locations for redundancy
+        try {
+          // Session storage team mode flags
+          sessionStorage.setItem('gameMode', 'team');
+          sessionStorage.setItem(`quizMode_${code}`, 'team');
+          
+          // Local storage team mode flags
+          localStorage.setItem(`quizIsTeamMode_${code}`, 'true');
+          
+          const teamModeQuizzes = JSON.parse(localStorage.getItem('teamModeQuizzes') || '[]');
+          if (!teamModeQuizzes.includes(code)) {
+            teamModeQuizzes.push(code);
+            localStorage.setItem('teamModeQuizzes', JSON.stringify(teamModeQuizzes));
+          }
+          
+          console.log('Saved team mode flags to storage');
+        } catch (storageErr) {
+          console.warn('Error saving team mode flags:', storageErr);
+        }
       }
 
       // 1. Build player data according to the API's expected format
@@ -561,6 +595,10 @@ export default function PlayGamePage() {
         team: gameMode === 'team' ? selectedTeam : null,
         groupName: gameMode === 'team' ? selectedTeam : null, // Add groupName for compatibility
         GroupName: gameMode === 'team' ? selectedTeam : null, // Add GroupName for SignalR format
+        GroupDescription: gameMode === 'team' ? `Team for ${playerName}` : null, // Add GroupDescription for SignalR format
+        groupDescription: gameMode === 'team' ? `Team for ${playerName}` : null, // Add groupDescription for compatibility
+        GroupId: null, // Will be set after finding the group ID
+        groupId: null, // Will be set after finding the group ID
         gameCode: code,
         joinTime: new Date().toISOString()
       };
@@ -590,6 +628,7 @@ export default function PlayGamePage() {
       
       // 3. Create player using direct API call
       let playerId = 0;
+      let playerCreationSuccess = false;
       
       if (quizId) {
         try {
@@ -603,7 +642,11 @@ export default function PlayGamePage() {
             // Add team information for API
             groupName: gameMode === 'team' ? selectedTeam : null,
             team: gameMode === 'team' ? selectedTeam : null,
-            GroupName: gameMode === 'team' ? selectedTeam : null
+            GroupName: gameMode === 'team' ? selectedTeam : null,
+            GroupDescription: gameMode === 'team' ? `Team for ${playerName.trim()}` : null,
+            groupDescription: gameMode === 'team' ? `Team for ${playerName.trim()}` : null,
+            GroupId: null, // Will be set later if we find a group ID
+            groupId: null  // Will be set later if we find a group ID
           };
           
           console.log('Creating player with data:', playerApiData);
@@ -621,6 +664,7 @@ export default function PlayGamePage() {
           );
           
           console.log('Player creation response:', response.data);
+          playerCreationSuccess = true;
           
           // Extract player ID from response
           if (typeof response.data === 'object') {
@@ -639,77 +683,10 @@ export default function PlayGamePage() {
             console.log(`Player created with ID: ${playerId}`);
           
             // Update player data with ID
-          playerData.id = playerId;
-          playerData.playerId = playerId;
+            playerData.id = playerId;
+            playerData.playerId = playerId;
             playerData.avatarUrl = playerApiData.avatarUrl;
             playerData.quizId = quizId;
-            
-            // If in team mode, log additional debug information
-            if (gameMode === 'team' && selectedTeam) {
-              console.log(`🟢 TEAM MODE: Player ${playerName} (ID: ${playerId}) joined team: ${selectedTeam}`);
-              
-              // For team mode, attempt direct SignalR notification immediately
-              directSignalRNotify(code, {
-                id: playerId,
-                playerId: playerId,
-                nickName: playerName,
-                name: playerName,
-                avatarUrl: playerApiData.avatarUrl,
-                avatar: selectedAnimal,
-                team: selectedTeam,
-                groupName: selectedTeam,
-                GroupName: selectedTeam,
-                quizId: quizId
-              });
-              
-              // Also try the direct team mode join method
-              try {
-                await directJoinTeamModeQuiz(quizId, playerId, selectedTeam);
-                console.log('Successfully called directJoinTeamModeQuiz');
-              } catch (teamJoinErr) {
-                console.warn('Error calling directJoinTeamModeQuiz:', teamJoinErr);
-              }
-            }
-            
-            // Try to join the player to the quiz using the JoinQuiz API
-            try {
-              console.log(`Registering player ${playerId} with quiz ${quizId}`);
-              
-              // For team mode, try the JoinTeam endpoint if available
-              if (gameMode === 'team' && selectedTeam) {
-                try {
-                  console.log(`Trying JoinTeam endpoint for player ${playerId} with team ${selectedTeam}`);
-                  const joinTeamResponse = await axios.post(
-                    `${API_BASE_URL}/api/Group/JoinTeam?playerId=${playerId}&teamName=${encodeURIComponent(selectedTeam)}&quizId=${quizId}`,
-                    {
-                      playerDTO: {
-                        playerId: playerId,
-                        nickname: playerName,
-                        avatarUrl: `simple://${selectedAnimal}/${animalColorMap[selectedAnimal as keyof typeof animalColorMap] || 'orange'}`,
-                        score: 0,
-                        quizId: quizId,
-                        groupName: selectedTeam,
-                        teamName: selectedTeam
-                      },
-                      teamName: selectedTeam,
-                      quizId: quizId
-                    },
-                    {
-                      headers: {
-                        'Content-Type': 'application/json'
-                      }
-                    }
-                  );
-                  console.log('Join team response:', joinTeamResponse.data);
-                } catch (joinTeamError) {
-                  console.warn('JoinTeam endpoint not available or failed:', joinTeamError);
-                }
-              }
-            } catch (joinError) {
-              console.warn('Error joining quiz, will continue anyway:', joinError);
-            }
-          } else {
-            console.warn('Could not extract player ID from response');
           }
         } catch (error: any) {
           console.error('Error creating player:', error);
@@ -719,40 +696,264 @@ export default function PlayGamePage() {
           }
           
           // Continue anyway to show the waiting room
-          console.warn('Player creation failed, continuing to waiting room');
+          console.warn('Player creation failed, continuing to waiting room with fallback data');
+          
+          // Generate a temporary player ID for UI consistency
+          playerId = Date.now(); // Use timestamp as a temporary unique ID
+          playerData.id = playerId;
+          playerData.playerId = playerId;
         }
       } else {
         console.warn('No valid quizId found for player creation');
+        // Generate a temporary player ID for UI consistency
+        playerId = Date.now();
+        playerData.id = playerId;
+        playerData.playerId = playerId;
       }
       
-      // 5. Store player data in session storage
+      // Try to connect using SignalR for team mode (with more aggressive fallback)
+      let signalRConnected = false;
+      
+      if (gameMode === 'team' && selectedTeam && playerId > 0) {
+        // Prepare team player data with all required fields for backend
+        const teamPlayerData = {
+          id: playerId,
+          playerId: playerId,
+          nickName: playerName,
+          name: playerName,
+          avatarUrl: playerData.avatarUrl,
+          AvatarUrl: playerData.avatarUrl,
+          avatar: selectedAnimal,
+          // Team-specific fields required by backend C# code
+          GroupId: null as number | null,
+          GroupName: selectedTeam,
+          groupName: selectedTeam,
+          GroupDescription: `Team for ${playerName}`,
+          groupDescription: `Team for ${playerName}`,
+          team: selectedTeam,
+          teamName: selectedTeam,
+          quizId: quizId,
+          gameCode: code
+        };
+        
+        // Try to connect with SignalR but don't wait too long (max 3 seconds)
+        let signalRComplete = false;
+        
+        setTimeout(() => {
+          if (!signalRComplete) {
+            console.warn('SignalR connection attempt timed out after 3 seconds, continuing with local storage fallback');
+            signalRComplete = true;
+          }
+        }, 3000);
+        
+        try {
+          console.log('Setting up SignalR connection for team player...');
+          const signalRService = (await import('@/services/signalRService')).default;
+          
+          const connectionPromise = new Promise<void>(async (resolve) => {
+            try {
+              if (!signalRService.isConnected()) {
+                await signalRService.safeStartConnection();
+                console.log('Successfully connected to SignalR');
+              }
+              
+              // First connect to SignalR
+              await signalRService.joinQuiz(code, teamPlayerData);
+              console.log('Player connected to SignalR hub');
+              
+              // Log player join info
+              signalRService.logPlayerJoin(code, teamPlayerData);
+              console.log('Player join logged in SignalR service');
+              
+              signalRConnected = true;
+              resolve();
+            } catch (err) {
+              console.error('SignalR connection failed:', err);
+              resolve(); // Resolve anyway to continue
+            }
+          });
+          
+          // Wait for connection with timeout
+          const timeoutPromise = new Promise<void>((resolve) => {
+            setTimeout(() => {
+              resolve();
+            }, 3000); // 3 second timeout
+          });
+          
+          // Race the promises
+          await Promise.race([connectionPromise, timeoutPromise]);
+          signalRComplete = true;
+        } catch (err) {
+          console.error('SignalR service error:', err);
+          signalRComplete = true;
+        }
+        
+        const alreadyJoinedTeam = sessionStorage.getItem(`joined_team_${playerId}_${selectedTeam}`);
+        
+        if (!alreadyJoinedTeam) {
+          try {
+            console.log(`Adding player ${playerId} to team ${selectedTeam} for quiz ${quizId}`);
+            const groupService = (await import('@/services/groupService')).default;
+            
+            const groupId = await groupService.findGroupIdByName(quizId!, selectedTeam);
+            
+            if (groupId) {
+              console.log(`Found group ID ${groupId} for team ${selectedTeam}`);
+              
+              const joinResult = await groupService.joinGroup(groupId, playerId);
+              console.log('Successfully joined team:', joinResult);
+              
+              sessionStorage.setItem('currentGroupId', groupId.toString());
+              sessionStorage.setItem(`player_${playerId}_groupId`, groupId.toString());
+              
+              sessionStorage.setItem(`joined_team_${playerId}_${selectedTeam}`, 'true');
+              
+              teamPlayerData.GroupId = groupId;
+              
+              playerData.groupId = groupId;
+              playerData.GroupId = groupId;
+            } else {
+              console.error(`Could not find group ID for team ${selectedTeam}`);
+            }
+          } catch (groupError) {
+            console.error('Error adding player to team:', groupError);
+            // Continue anyway - this is not critical for UI flow
+          }
+        } else {
+          console.log(`Player ${playerId} has already joined team ${selectedTeam}, skipping API call`);
+          
+          // Try to get the group ID from session storage if available
+          const groupId = sessionStorage.getItem('currentGroupId') || sessionStorage.getItem(`player_${playerId}_groupId`);
+          if (groupId) {
+            teamPlayerData.GroupId = parseInt(groupId);
+            
+            // Update original playerData to include groupId
+            playerData.groupId = parseInt(groupId);
+            playerData.GroupId = parseInt(groupId);
+          }
+        }
+      }
+      
+      // Store data in session/local storage for redundancy
       try {
-        // Format proper player data for storage
+        // Get the group ID from session storage if available
+        const groupId = gameMode === 'team' ? 
+          (sessionStorage.getItem('currentGroupId') ? 
+            parseInt(sessionStorage.getItem('currentGroupId')!) : null) : 
+          null;
+        
+        // Save player data under multiple keys for redundancy
         const storagePlayerData = {
           playerId: playerId,
           id: playerId,
           nickname: playerName,
           name: playerName,
-          avatarUrl: `simple://${selectedAnimal}/${animalColorMap[selectedAnimal as keyof typeof animalColorMap] || 'orange'}`,
+          nickName: playerName,
+          NickName: playerName,
+          avatarUrl: playerData.avatarUrl,
+          AvatarUrl: playerData.avatarUrl,
           avatar: selectedAnimal,
           score: 0,
           quizId: quizId,
           teamName: gameMode === 'team' ? selectedTeam : null,
           groupName: gameMode === 'team' ? selectedTeam : null,
           GroupName: gameMode === 'team' ? selectedTeam : null,
+          GroupDescription: gameMode === 'team' ? `Team for ${playerName}` : null,
+          groupDescription: gameMode === 'team' ? `Team for ${playerName}` : null,
+          GroupId: gameMode === 'team' ? groupId : null,
+          groupId: gameMode === 'team' ? groupId : null,
           team: gameMode === 'team' ? selectedTeam : null,
-          gameCode: code
+          gameCode: code,
+          joinTime: new Date().toISOString()
         };
         
+        // Store under multiple keys for redundancy
         sessionStorage.setItem('currentPlayerName', playerName);
         sessionStorage.setItem('currentPlayerAvatar', selectedAnimal);
         sessionStorage.setItem('currentPlayer', JSON.stringify(storagePlayerData));
+        sessionStorage.setItem(`player_${playerId}`, JSON.stringify(storagePlayerData));
+        sessionStorage.setItem(`player_${code}_${playerId}`, JSON.stringify(storagePlayerData));
         
         // Also save game mode and team information to sessionStorage
         sessionStorage.setItem('gameMode', gameMode);
         if (gameMode === 'team') {
           sessionStorage.setItem('currentTeam', selectedTeam);
           console.log(`Saved team information to sessionStorage: ${selectedTeam}`);
+          
+          // Add to joined players list for quiz
+          const joinedPlayersKey = `joined_players_${quizId}`;
+          let joinedPlayers = [];
+          try {
+            const existing = sessionStorage.getItem(joinedPlayersKey);
+            if (existing) {
+              joinedPlayers = JSON.parse(existing);
+            }
+          } catch (e) {
+            console.warn('Error parsing joined players:', e);
+          }
+          
+          // Add player if not already in list
+          const exists = joinedPlayers.some((p: any) => 
+            p.id === playerId || p.Id === playerId || 
+            p.playerId === playerId ||
+            (p.nickName === playerName || p.NickName === playerName)
+          );
+          
+          if (!exists) {
+            joinedPlayers.push(storagePlayerData);
+            sessionStorage.setItem(joinedPlayersKey, JSON.stringify(joinedPlayers));
+            console.log('Added player to joined players list for host to find');
+          }
+          
+          // Also add to team-specific list
+          let teamPlayers = [];
+          const teamPlayersKey = `team_players_${selectedTeam}`;
+          try {
+            const existing = sessionStorage.getItem(teamPlayersKey);
+            if (existing) {
+              teamPlayers = JSON.parse(existing);
+            }
+          } catch (err) {
+            console.warn('Error parsing team players:', err);
+          }
+          
+          // Add to team list if not already there
+          const existsInTeam = teamPlayers.some((p: any) => 
+            p.id === playerId || p.Id === playerId || 
+            p.playerId === playerId ||
+            (p.nickName === playerName || p.NickName === playerName)
+          );
+          
+          if (!existsInTeam) {
+            teamPlayers.push(storagePlayerData);
+            sessionStorage.setItem(teamPlayersKey, JSON.stringify(teamPlayers));
+            console.log(`Added player to team ${selectedTeam} players list`);
+          }
+          
+          // Add to global players list
+          const globalPlayersKey = `joined_players_all`;
+          let globalPlayers = [];
+          try {
+            const existing = sessionStorage.getItem(globalPlayersKey);
+            if (existing) {
+              globalPlayers = JSON.parse(existing);
+            }
+          } catch (err) {
+            console.warn('Error parsing global players:', err);
+          }
+          
+          // Add to global list if not already there
+          const existsInGlobal = globalPlayers.some((p: any) => 
+            p.id === playerId || p.Id === playerId || 
+            p.playerId === playerId ||
+            (p.nickName === playerName || p.NickName === playerName)
+          );
+          
+          if (!existsInGlobal) {
+            globalPlayers.push(storagePlayerData);
+            sessionStorage.setItem(globalPlayersKey, JSON.stringify(globalPlayers));
+            console.log('Added player to global players list');
+          }
         }
         
         console.log('Stored player data:', storagePlayerData);
@@ -761,98 +962,55 @@ export default function PlayGamePage() {
         // Non-critical error, continue
       }
       
-      // 6. Try SignalR connection in the background without waiting
-      // This prevents blocking the user flow if SignalR fails
-      setTimeout(async () => {
-        try {
-          console.log('Attempting optional SignalR connection...');
-          const signalRService = (await import('@/services/signalRService')).default;
-          
-          // Format player data for SignalR
-          const signalRPlayerData = {
-            Id: playerId,
-            NickName: playerName,
-            AvatarUrl: selectedAnimal,
-            GroupId: null,
-            GroupName: gameMode === 'team' ? selectedTeam : null,
-            team: gameMode === 'team' ? selectedTeam : null,
-            groupName: gameMode === 'team' ? selectedTeam : null,
-            GroupDescription: null
-          };
-          
-          console.log('SignalR player data:', signalRPlayerData);
-          
-          // Try SignalR connection with timeout
-          const timeoutPromise = new Promise((_, reject) => {
-            setTimeout(() => reject(new Error('SignalR connection timeout')), 5000);
-          });
-          
-          // Connect to SignalR if not already connected
-          const connectionPromise = (async () => {
-            if (!signalRService.isConnected()) {
-              console.log('Connecting to SignalR...');
-              await signalRService.startConnection();
-              console.log('SignalR connection established');
-            
-              // Try to join the quiz via SignalR
-              try {
-            await signalRService.joinQuiz(code, signalRPlayerData);
-                console.log('Player joined quiz via SignalR');
-                
-                // For team mode, also try the direct broadcast method
-                if (gameMode === 'team') {
-                  await signalRService.broadcastPlayerJoin(code, signalRPlayerData);
-                  console.log('Team mode: direct SignalR broadcast sent');
-                }
-              } catch (joinErr) {
-                console.warn('Error joining quiz via SignalR:', joinErr);
-              }
-            } else {
-              console.log('SignalR already connected, trying to join quiz');
-              try {
-                await signalRService.joinQuiz(code, signalRPlayerData);
-                console.log('Player joined quiz via SignalR (existing connection)');
-                
-                // For team mode, also try the direct broadcast method
-                if (gameMode === 'team') {
-                  await signalRService.broadcastPlayerJoin(code, signalRPlayerData);
-                  console.log('Team mode: direct SignalR broadcast sent');
-                }
-              } catch (joinErr) {
-                console.warn('Error joining quiz via SignalR (existing connection):', joinErr);
-              }
-            }
-          })();
-          
-          // Race with timeout
-          await Promise.race([connectionPromise, timeoutPromise]);
-        } catch (signalRError) {
-          console.error('SignalR connection failed, but proceeding anyway:', signalRError);
-          // Non-blocking error, player will still be in the game via REST API
-        }
-      }, 100);
-      
       // 7. Navigate to player waiting room with team info if in team mode
       let waitingRoomUrl = `/play-game/player?code=${code}&name=${encodeURIComponent(playerName)}&avatar=${selectedAnimal}`;
       
       // Add team parameter if in team mode
       if (gameMode === 'team' && selectedTeam) {
         waitingRoomUrl += `&team=${encodeURIComponent(selectedTeam)}`;
+        
+        // Add group ID if available
+        const groupId = sessionStorage.getItem('currentGroupId');
+        if (groupId) {
+          waitingRoomUrl += `&groupId=${groupId}`;
+        }
       }
+      
+      // Add player ID parameter if available
+      if (playerId) {
+        waitingRoomUrl += `&playerId=${playerId}`;
+      }
+      
+      // Also add a timestamp to prevent caching issues
+      waitingRoomUrl += `&t=${Date.now()}`;
       
       console.log('Navigating to:', waitingRoomUrl);
       
-      // Navigate immediately
+      // For team mode, we need to manually force a redirect due to router issues
+      if (gameMode === 'team') {
+        try {
+          console.log('Using direct navigation for team mode');
+          window.location.href = waitingRoomUrl;
+          return; // End function early to avoid double navigation
+        } catch (directNavError) {
+          console.error('Direct navigation failed:', directNavError);
+          // Continue with normal router navigation as fallback
+        }
+      }
+      
+      // Navigate using the router for non-team mode or as fallback
       try {
         router.push(waitingRoomUrl);
-        console.log('Navigation initiated');
+        console.log('Navigation initiated via router');
       } catch (navError) {
         console.error('Navigation error:', navError);
         // Set error state to show manual navigation option
         setNavigationError(true);
         
         // Fallback: Try direct navigation if router fails
-        window.location.href = waitingRoomUrl;
+        setTimeout(() => {
+          window.location.href = waitingRoomUrl;
+        }, 500);
       }
       
       // After a short delay, if we're still on this page, show manual navigation option

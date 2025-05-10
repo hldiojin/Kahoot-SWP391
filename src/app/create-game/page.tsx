@@ -656,30 +656,31 @@ const CreateGamePage = () => {
               // Use only the number of teams selected by the user
               const selectedTeamNames = teamNames.slice(0, teamCount);
               
-              const teamPromises = selectedTeamNames.map((teamName, index) => {
-                const groupData = {
-                  id: 0,
-                  name: teamName,
-                  description: `${teamName} for quiz ${quizId}`,
-                  rank: index + 1,
-                  maxMembers: membersPerTeam,
-                  totalPoint: 0,
-                  createdBy: currentUser.id,
-                  createdAt: new Date().toISOString(),
-                  quizId: quizId
-                };
+              console.log(`Creating teams directly for quiz ${quizId}`);
+              
+              try {
+                // Call the new direct team creation function to avoid checking for existing groups
+                const createdTeams = await groupService.createTeamsDirectly(quizId, selectedTeamNames, membersPerTeam);
                 
-                return groupService.createGroup(groupData);
-              });
-              
-              const teamResults = await Promise.allSettled(teamPromises);
-              console.log("Team creation results:", teamResults);
-              
-              // Count successful team creations
-              const successfulTeams = teamResults.filter(result => result.status === 'fulfilled').length;
-              console.log(`Successfully created ${successfulTeams} teams for quiz ${quizId}`);
+                console.log(`Successfully created ${createdTeams.length} teams directly for quiz ${quizId}:`, createdTeams);
+                
+                // Mark that teams have been created
+                const teamsCreatedKey = `teams_created_for_quiz_${quizId}`;
+                sessionStorage.setItem(teamsCreatedKey, 'true');
+                
+                // Store team names in session storage
+                sessionStorage.setItem(`quiz_team_names_${quizId}`, JSON.stringify(selectedTeamNames));
+                
+                // Store created teams data in session storage
+                if (createdTeams.length > 0) {
+                  sessionStorage.setItem(`quiz_groups_${quizId}`, JSON.stringify(createdTeams));
+                }
+              } catch (createError) {
+                console.error("Error creating teams directly:", createError);
+                // Continue with the quiz creation process even if team creation fails
+              }
             } catch (teamError) {
-              console.error("Error creating teams:", teamError);
+              console.error("Error in team mode handling:", teamError);
               // Continue even if team creation fails
             }
           }

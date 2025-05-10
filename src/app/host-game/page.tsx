@@ -188,6 +188,12 @@ export default function HostGamePage() {
             player.teamName || 
             null;
           
+          // Extract or create team description
+          const teamDescription = 
+            player.GroupDescription || 
+            player.groupDescription || 
+            (teamName ? `Team for ${player.NickName || player.nickName || player.name || 'Guest'}` : null);
+          
           // Create a consistent player object
           return {
             ...player,
@@ -195,7 +201,10 @@ export default function HostGamePage() {
             groupName: teamName,
             GroupName: teamName,
             team: teamName,
-            teamName: teamName
+            teamName: teamName,
+            // Ensure all description properties are set consistently
+            GroupDescription: teamDescription,
+            groupDescription: teamDescription
           };
         });
         
@@ -259,9 +268,15 @@ export default function HostGamePage() {
                 player.teamName || 
                 null;
               
+              // Extract or create team description
+              const teamDescription = 
+                player.GroupDescription || 
+                player.groupDescription || 
+                (teamName ? `Team for ${player.NickName || player.nickName || player.name || 'Guest'}` : null);
+              
               // Log team information for debugging team mode issues
               if (gameMode === 'team') {
-                console.log(`Team mode: Player ${player.NickName || player.nickName} joined team: ${teamName}`);
+                console.log(`Team mode: Player ${player.NickName || player.nickName} joined team: ${teamName} with description: ${teamDescription}`);
                 
                 // Update team counts directly without waiting for fetch
                 if (teamName) {
@@ -286,7 +301,9 @@ export default function HostGamePage() {
                         groupName: teamName,
                         team: teamName,
                         GroupName: teamName,
-                        teamName: teamName
+                        teamName: teamName,
+                        GroupDescription: teamDescription,
+                        groupDescription: teamDescription
                       };
                       console.log('Updated existing player with team info:', updatedPlayers[existingPlayerIndex]);
                       return updatedPlayers;
@@ -299,7 +316,9 @@ export default function HostGamePage() {
                         groupName: teamName,
                         GroupName: teamName,
                         team: teamName,
-                        teamName: teamName
+                        teamName: teamName,
+                        GroupDescription: teamDescription,
+                        groupDescription: teamDescription
                       };
                       console.log('Adding new player with team info:', newPlayer);
                       return [...currentPlayers, newPlayer];

@@ -1420,7 +1420,7 @@ const quizService = {
       let resultsResponse;
       try {
         resultsResponse = await axios.get(
-          `${API_BASE_URL}/api/Quiz/ResultsQuiz/${quizId}`,
+          `${API_BASE_URL}/api/Quiz/ResultQuiz/${quizId}`,
           {
             headers: {
               'Content-Type': 'application/json'
@@ -1428,7 +1428,7 @@ const quizService = {
           }
         );
       } catch (error) {
-        console.warn(`ResultsQuiz endpoint failed: ${error}`);
+        console.warn(`ResultQuiz endpoint failed: ${error}`);
         return {
           status: 404,
           message: 'Could not fetch quiz results',
