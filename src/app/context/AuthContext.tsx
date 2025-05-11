@@ -50,7 +50,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Helper function to decode JWT
   const decodeToken = (token: string) => {
     try {
-      const base64Url = token.split('.')[1];
+      if (!token || typeof token !== 'string') {
+        console.error('Invalid token format', token);
+        return null;
+      }
+      
+      const parts = token.split('.');
+      if (parts.length !== 3) {
+        console.error('Token does not have three parts', token);
+        return null;
+      }
+      
+      const base64Url = parts[1];
+      if (!base64Url) {
+        console.error('Token payload section is missing', token);
+        return null;
+      }
+      
       const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
       const jsonPayload = decodeURIComponent(
         atob(base64)
